@@ -166,9 +166,11 @@ pub fn build_submit_deliverable_tx(
         bytes
     };
 
+    let signatures = vec![vec![]; calls.len()];
     Ok(Transaction {
         calls,
         proofs: vec![],
+        signatures,
         tx_commitment,
         nullifiers: vec![],
     })

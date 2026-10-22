@@ -3,9 +3,8 @@
 ## Abstract
 
 This contract enables deployment of custom smart contracts on chain.
-A user deploys their custom `WASM` bincode via `DeployV1`, optionally with the
-singleton rule, and can then `LockV1` the contract so its code is final and
-can't be modified further.
+A user deploys their custom `WASM` bincode via `DeployV1`, and can then `LockV1`
+the contract so its code is final and can't be modified further.
 
 There is **no update function**: `Deployooor` exposes exactly `DeployV1` (0x00) and
 `LockV1` (0x01). A `DeployUpdateV1` struct exists in `model.rs` but no dispatch path

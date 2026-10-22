@@ -92,7 +92,7 @@ primitives and their risk/governance roles are:
 | Primitive | Role |
 |---|---|
 | `native_token` | The one consensus-critical meter — Pedersen supply audit + plaintext fee totalization |
-| `deployooor` | Binds the manifest to the contract at birth |
+| `deployooor` | Plaintext deployment and locking; carries no manifest or cost profile |
 | `manifest` | Self-declared cost profiles — deployer stakes reputation on accuracy |
 | `identity` + `attestation` | Vouching — third parties verify safety, lowering the risk factor |
 | `oracle` | Feeds — price, randomness, attestation data (informational, non-consensus) |

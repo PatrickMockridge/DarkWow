@@ -3656,9 +3656,10 @@ def _deserialize_state(data: bytes) -> Optional[object]:
 class CapabilityResolver:
     """Models bin/dww/src/capability.rs::CapabilityResolver.
 
-    Manifest-first architecture. Every contract carries its interface on-chain
-    via a TOML manifest (0x4D magic byte). Capability resolution reads the
-    manifest's [[capabilities]] and [[actions]] tables — zero per-contract code.
+    Manifest-first architecture. A contract's interface is declared by a TOML
+    manifest (genesis manifests are embedded in the wallet; a deploy's `ix` is an
+    init payload, not a manifest). Capability resolution reads the manifest's
+    [[capabilities]] and [[actions]] tables — zero per-contract code.
 
     Only native_token is a special case: its contract-call scanning is
     hardcoded in scan_block_linear because fee payment and mint rewards
@@ -7627,13 +7628,13 @@ contract_zk_binaries = {
 # CONTRACT MANIFEST MODEL
 # ==============================================================================
 # Composable, modular contract manifest system. The manifest is a TOML
-# document embedded in the deployment ix field. It describes a contract's
-# functions, capabilities, actions, state trees, ZK circuits, dependencies,
-# and parameter schemas — enabling any wallet to interact with any contract
-# without hardcoded Rust knowledge.
+# document declaring a contract's functions, capabilities, actions, state
+# trees, ZK circuits, dependencies, and parameter schemas — enabling any
+# wallet to interact with any contract without hardcoded Rust knowledge.
+# Genesis manifests are embedded in the wallet; DeployV1's `ix` is the new
+# contract's __initialize payload and carries no manifest semantics.
 #
 # Syntax: TOML (repo standard — dww_config.toml, Cargo.toml)
-# Magic byte: 0x4D (ASCII 'M') prefix in deploy ix
 # ==============================================================================
 
 import re
@@ -7886,9 +7887,6 @@ class ContractManifest:
 
 
 # --- Manifest Parsing ---
-
-MANIFEST_MAGIC_BYTE = 0x4D  # ASCII 'M'
-
 
 def parse_manifest(toml_str: str) -> ContractManifest:
     """Parse a TOML manifest string into a ContractManifest.
@@ -8292,20 +8290,6 @@ def bind_witnesses(manifest: ContractManifest, circuit_name: str,
     return [b for b in bound if b is not None]
 
 
-def is_manifest(deploy_ix: bytes) -> bool:
-    """Check if deployment ix contains a manifest (starts with magic byte)."""
-    return len(deploy_ix) > 0 and deploy_ix[0] == MANIFEST_MAGIC_BYTE
-
-
-def parse_manifest_from_deploy(deploy_ix: bytes) -> Optional[ContractManifest]:
-    """Parse manifest from deployment ix bytes. Returns None if no manifest."""
-    if not is_manifest(deploy_ix):
-        return None
-    toml_bytes = deploy_ix[1:]
-    toml_str = toml_bytes.decode('utf-8')
-    return parse_manifest(toml_str)
-
-
 # --- Manifest Resolver ---
 
 class ManifestResolver:
@@ -8480,17 +8464,17 @@ GENESIS_CONTRACT_NAMES = {"native_token", "deployooor", "promissory_note", "iden
 #     The manifest is the COMPLETE interface — no other metadata needed.
 #
 #   STAGE 2: GENESIS / DEPLOY
-#     Genesis: apply_genesis_deployments() stores the manifest on-chain during
-#              genesis-block execution.
+#     Genesis: apply_genesis_deployments() writes the manifest host-side during
+#              genesis-block execution for the seven manifest-bearing contracts.
 #              Key = contract_id || b"_manifest" in contracts sled tree.
-#     Deploy:  DeployParamsV1.ix = 0x4D || manifest_toml_bytes
-#              Magic byte 0x4D ('M') distinguishes manifest from legacy data.
+#     Deploy:  DeployParamsV1.ix is the new contract's __initialize payload.
+#              DeployV1 assigns it no manifest semantics (upstream has none).
 #
 #   STAGE 3: SCANNING
-#     Wallet scans blocks. DeployV1 handler detects 0x4D prefix in deploy ix.
-#     Calls ContractManifest::from_deploy_ix() → parse_manifest_from_deploy().
-#     Stores parsed manifest in SQLite via wallet.store_manifest().
-#     Same path for genesis contracts and user-deployed contracts.
+#     Wallet scans blocks. The DeployV1 handler discovers the deployment at
+#     derive_public(public_key) and extracts embedded zkas binaries. It does not
+#     parse a manifest from ix; genesis manifests are seeded from the wallet's
+#     embedded copies, and a user contract's manifest is a wallet-side declaration.
 #
 #   STAGE 4: RESOLUTION
 #     CapabilityResolver reads stored manifests from SQLite.
@@ -9785,12 +9769,12 @@ produces = [{ name = "receipt" }]
     manifest = parse_manifest(manifest_toml)
     assert manifest is not None, "Failed to parse manifest"
 
-    # ── Stage 0: Deploy — 0x4D magic byte detection ──────────────────
-    # Per manifest.md:61-63, deploy ix prefix 0x4D signals a manifest
+    # ── Stage 0: Deploy — `ix` is an init payload, not a manifest ────
+    # DeployV1 assigns `ix` no manifest semantics. The manifest is the
+    # wallet-side declaration for this known contract.
     contract_id = ContractId(b"dao_escrow_contract_id_v1________")  # 32 bytes
-    deploy_ix = b'\x4D' + manifest_toml.encode('utf-8')
-    assert deploy_ix[0] == 0x4D, "Deploy ix must have 0x4D magic byte"
-    assert is_manifest(deploy_ix), "is_manifest() must detect 0x4D prefix"
+    deploy_ix = b''  # __initialize payload; carries no manifest
+    assert b"dao_escrow" not in deploy_ix
 
     # ── Stage 1: Resolve — typed capabilities from manifest ──────────
     # ManifestResolver provides lookup by name, code, discriminant.
@@ -10140,25 +10124,12 @@ name = "bad"
 
 # --- Deploy Lifecycle ---
 
-def create_deploy_ix(manifest: Optional[ContractManifest]) -> bytes:
-    """Create the deploy ix field from a manifest.
-
-    If manifest is provided: 0x4D + TOML bytes.
-    If manifest is None: legacy opaque bytes (example: empty).
-    This is opt-in — deployers choose whether to include a manifest.
-    """
-    if manifest is None:
-        return b''  # legacy — no manifest, wallet uses hardcoded descriptors
-
-    toml_str = _manifest_to_toml(manifest)
-    return b'\x4D' + toml_str.encode('utf-8')
-
-
 def _manifest_to_toml(m: ContractManifest) -> str:
     """Serialize a ContractManifest to TOML string.
 
     This matches the format in manifest.md — the wallet parses this
-    back into a ContractManifest via parse_manifest().
+    back into a ContractManifest via parse_manifest(). It is a manifest
+    serializer only: DeployV1's `ix` is not a manifest envelope.
     """
     lines = [
         "[contract]",
@@ -10240,44 +10211,29 @@ def _manifest_to_toml(m: ContractManifest) -> str:
 
 
 def model_manifest_lifecycle():
-    """Full lifecycle: create → deploy → scan → resolve → query.
+    """Full lifecycle: author → deploy → resolve → query.
 
     This models the complete flow:
-    1. Deployer creates a manifest TOML (opt-in)
-    2. Manifest is embedded in DeployParamsV1::ix with 0x4D prefix
-    3. Contract is deployed via Deployooor
-    4. Wallet scans the deploy transaction, detects 0x4D prefix
-    5. Manifest is parsed and stored in SQLite
-    6. Wallet queries manifest to discover functions, capabilities, params
-    7. CLI uses manifest to validate user input and dispatch calls
+    1. Developer authors manifest.toml in the contract's source directory
+    2. DeployV1's `ix` is the new contract's __initialize payload — it carries
+       no manifest (upstream DeployV1 assigns it no manifest semantics)
+    3. The wallet discovers the deployment at derive_public(public_key)
+    4. For a known contract (all genesis contracts) the wallet already holds
+       the manifest as its own declaration; genesis manifests are seeded at
+       startup from the embedded copies
+    5. Wallet queries the manifest to discover functions, capabilities, params
+    6. CLI uses the manifest to validate user input and dispatch calls
     """
-    # 1. Deployer creates manifest (opt-in — can pass None to skip)
+    # 1. Developer authors the manifest.
     manifest = parse_manifest(DAO_ESCROW_MANIFEST)
     assert manifest.name == "dao_escrow"
 
-    # 2. Create deploy ix
-    ix_bytes = create_deploy_ix(manifest)
-    assert ix_bytes[0] == 0x4D  # magic byte
-    assert b"dao_escrow" in ix_bytes  # TOML is embedded
+    # 2. `ix` is opaque init data, not a manifest envelope.
+    ix_bytes = b''
+    assert b"dao_escrow" not in ix_bytes
 
-    # 3. Opt-out: deploy WITHOUT manifest
-    ix_no_manifest = create_deploy_ix(None)
-    assert ix_no_manifest == b''  # legacy — no manifest bytes
-
-    # 4. Wallet scans — detects manifest
-    assert is_manifest(ix_bytes) == True
-    assert is_manifest(ix_no_manifest) == False
-
-    # 5. Wallet parses manifest from deploy ix
-    parsed = parse_manifest_from_deploy(ix_bytes)
-    assert parsed is not None
-    assert parsed.name == "dao_escrow"
-
-    parsed_none = parse_manifest_from_deploy(ix_no_manifest)
-    assert parsed_none is None  # legacy — falls back to hardcoded descriptors
-
-    # 6. Wallet stores manifest (modeled as resolver creation)
-    resolver = ManifestResolver(parsed)
+    # 3-5. The wallet already holds the manifest; resolution is its declaration.
+    resolver = ManifestResolver(manifest)
 
     # 7. CLI queries
     funcs = resolver.list_functions()

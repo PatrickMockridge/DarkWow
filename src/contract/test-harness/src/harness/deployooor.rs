@@ -21,76 +21,41 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use dwow_core::{
-    zk::{ProvingKey, ZkCircuit},
-    zkas::ZkBinary,
-    Result,
-};
-use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, Keypair},
-    pasta::pallas,
-};
+use dwow_core::{zk::ProvingKey, zkas::ZkBinary, Result};
+use dwow_sdk::crypto::Keypair;
 
 use dwow_deployooor_contract::client::{
     deploy_v1::{DeployCallBuilder, DeployCallDebris},
-    lock_v1::{build_lock_call, LockPlan},
+    lock_v1::{LockCallBuilder, LockCallDebris},
 };
 
-/// Deployooor Harness for isolated testing
+/// Deployooor Harness for isolated testing.
 ///
-/// `DeployV1` is native WASM with no circuit. `LockV1` carries the `LockV2` proof that the caller
-/// knows the deployer's secret (docs-review F-511).
-pub struct DeployooorHarness {
-    lock_zkbin: ZkBinary,
-    lock_pk: ProvingKey,
-}
+/// Deployooor is plaintext infrastructure: `DeployV1` and `LockV1` carry no
+/// circuit. Authorization is the transaction signature over the deploy key.
+pub struct DeployooorHarness;
 
 impl DeployooorHarness {
-    /// Spawn a new Deployooor harness, loading the `LockV2` circuit.
+    /// Spawn a new Deployooor harness.
     pub fn spawn() -> Self {
-        let lock_bin: &[u8] = include_bytes!("../../../deployooor/proof/lock.zk.bin");
-        let lock_zkbin = ZkBinary::decode(lock_bin, false).unwrap();
-        let lock_circuit =
-            ZkCircuit::new(dwow_core::zk::empty_witnesses(&lock_zkbin).unwrap(), &lock_zkbin);
-        let lock_pk =
-            ProvingKey::build(lock_zkbin.k, &lock_circuit).expect("ProvingKey::build failed");
-        Self { lock_zkbin, lock_pk }
+        Self
     }
 
-    /// Build a deploy call
-    ///
-    /// Creates a DeployV1 call to deploy a WASM contract.
+    /// Build a deploy call.
     pub fn build_deploy_call(
         &self,
         deploy_keypair: Keypair,
         wasm_bincode: Vec<u8>,
         deploy_ix: Vec<u8>,
     ) -> Result<DeployCallDebris> {
-        let builder = DeployCallBuilder {
-            deploy_keypair,
-            wasm_bincode,
-            deploy_ix,
-            singleton: false,
-            singleton_name: String::new(),
-        };
+        let builder = DeployCallBuilder { deploy_keypair, wasm_bincode, deploy_ix };
         builder.build()
     }
 
-    /// Prepare a `LockV1` call over the deployer's keypair. The caller proves it against the frame
-    /// commitment (`plan.prove(frame)`) once the call's frame is known.
-    pub fn build_lock_call(
-        &self,
-        deploy_keypair: Keypair,
-        tx_nonce: pallas::Base,
-    ) -> Result<LockPlan> {
-        let deployer_secret = *deploy_keypair.secret.inner();
-        build_lock_call(
-            deploy_keypair,
-            deployer_secret,
-            tx_nonce,
-            self.lock_zkbin.clone(),
-            self.lock_pk.clone(),
-        )
+    /// Build a `LockV1` call over the deployer's keypair.
+    pub fn build_lock_call(&self, deploy_keypair: Keypair) -> Result<LockCallDebris> {
+        let builder = LockCallBuilder { deploy_keypair };
+        builder.build()
     }
 }
 
@@ -100,26 +65,14 @@ impl super::ContractHarness for DeployooorHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["LockV2"]
+        vec![]
     }
 
-    fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
-        (ns == "LockV2").then_some(&self.lock_zkbin)
+    fn get_zkbin(&self, _ns: &str) -> Option<&ZkBinary> {
+        None
     }
 
-    fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
-        (ns == "LockV2").then_some(&self.lock_pk)
+    fn get_pk(&self, _ns: &str) -> Option<&ProvingKey> {
+        None
     }
-}
-
-/// Result of deploy call
-pub struct DeployResult {
-    pub wasm_bincode: Vec<u8>,
-    pub public_key: dwow_sdk::crypto::PublicKey,
-    pub ix: Vec<u8>,
-}
-
-/// Result of lock call
-pub struct LockResult {
-    pub public_key: dwow_sdk::crypto::PublicKey,
 }

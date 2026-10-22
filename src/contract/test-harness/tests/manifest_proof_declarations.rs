@@ -129,13 +129,11 @@ const MULTISIG_MANIFEST: &str = include_str!("../../multisig/manifest.toml");
 /// The genesis contracts whose manifests are **deployed**, i.e. the ones whose bytes ride in the
 /// genesis transaction and are read back by a wallet through `contract_client.rs`.
 ///
-/// Eight of the nine. `native_token` is excluded because it is the one bespoke citizen: the wallet
-/// embeds its scan and write paths (wallet.md §6.4), the genesis table passes `&[]` for it, and
-/// its on-disk `manifest.toml` is documentation rather than a deployment input. `deployooor` is
-/// deployed (G1's other half); its manifest is read through the generic client. The list must
-/// match `bin/dwowd/src/lib.rs`'s table.
+/// Seven of the nine. `native_token` and `deployooor` are excluded because they are the two
+/// bespoke citizens: the wallet embeds their scan and write paths, the genesis table passes
+/// `&[]` for both, and their on-disk manifests are documentation rather than deployment inputs.
+/// The list must match `bin/dwowd/src/lib.rs`'s table.
 const DEPLOYED_GENESIS_MANIFESTS: &[(&str, &str)] = &[
-    ("deployooor", include_str!("../../deployooor/manifest.toml")),
     ("promissory_note", include_str!("../../promissory_note/manifest.toml")),
     ("identity", include_str!("../../identity/manifest.toml")),
     ("oracle", ORACLE_MANIFEST),
@@ -248,22 +246,22 @@ fn every_deployed_genesis_manifest_resolves_its_own_proof_circuits() {
         }
     }
 
-    // The control: the count is the number of ZK functions in the eight deployed manifests, so a
+    // The control: the count is the number of ZK functions in the seven deployed manifests, so a
     // parser that silently stopped finding functions would be caught rather than pass vacuously.
     //
-    // **Re-measured 2026-10-22: 34, the same number with a different composition.** G8 removed
-    // attestation's `check_not_revoked` endpoint and circuit (−1) from the seven manifest-bearing
-    // contracts, and G1 deployed `deployooor` (+1, `LockV1`). `native_token` remains excluded: it
-    // is natively embedded, the genesis table passes `&[]`, and its manifest is documentation.
-    // 34 − 1 + 1 = 34. The earlier seven-manifest count was 34 (2026-10-05), 32 before that. A
-    // different count means either the parser stopped finding functions or a genesis manifest's
-    // declarations moved — both are reasons to read, not to adjust the number.
+    // **Re-measured 2026-10-22: 33.** G8 removed attestation's `check_not_revoked` endpoint and
+    // circuit (−1) from the seven manifest-bearing contracts. Deployooor is no longer in the
+    // deployed list: it is plaintext infrastructure with no manifest, so its `LockV1` proof site
+    // is gone too. `native_token` remains excluded for the same reason. The earlier seven-manifest
+    // count was 34 (2026-10-05), 32 before that. A different count means either the parser stopped
+    // finding functions or a genesis manifest's declarations moved — both are reasons to read, not
+    // to adjust the number.
     assert_eq!(
-        checked, 34,
-        "the eight deployed genesis manifests declare 34 proof-bearing functions (re-measured \
-         2026-10-22; 34 over seven manifests on 2026-10-05, before G8 and deployooor). A different \
-         count means either the parser stopped finding functions or a genesis manifest's \
-         declarations moved — the latter is legitimate, so re-measure before assuming the former"
+        checked, 33,
+        "the seven deployed genesis manifests declare 33 proof-bearing functions (re-measured \
+         2026-10-22; 34 over seven manifests on 2026-10-05, before G8). A different count means \
+         either the parser stopped finding functions or a genesis manifest's declarations moved — \
+         the latter is legitimate, so re-measure before assuming the former"
     );
 }
 
@@ -494,21 +492,24 @@ fn every_contract_manifest_agrees_with_its_own_circuits() {
     // fails loudly on drift is the opposite of the hardcoded-coverage failure `OBL-C79` records;
     // what it must not become is a number nobody re-measures.
     // **Re-measured 2026-10-13: 31 → 32, and the baseline is what was wrong, not the tree.** The
-    // 2026-09-24 measurement read 25 and named six additions that brought it to 31; the tree has
-    // 32, and `git log --diff-filter=A` shows **no `manifest.toml` added since 2026-08-01** (the
+    // 2026-09-24 measurement read 25 and named six additions that brought it to 31; the tree had
+    // 32 until deployooor's manifest was removed on 2026-10-22 (back to 31),
+    // and `git log --diff-filter=A` shows **no `manifest.toml` added since 2026-08-01** (the
     // `entropy` stub's, whose directory carries neither a manifest nor a `proof/` today). So no
     // contract has joined since the baseline was taken — it was short by one from the start, the
     // same class this comment already records twice above. The enumeration itself is clean: of the
-    // 34 directories under `src/contract/`, exactly 32 have both a `manifest.toml` and a `proof/`,
-    // and the two that do not are `entropy` and `test-harness`. The `sites` value below has drifted
-    // independently — 676 → 671 — and is re-measured in its own right further down.
+    // 34 directories under `src/contract/`, exactly 31 have both a `manifest.toml` and a `proof/`,
+    // and the three that do not are `entropy`, `test-harness` and the now manifest-less
+    // `deployooor`. The `sites` value below has drifted independently — 676 → 671 — and is
+    // re-measured in its own right further down.
     assert_eq!(
         contracts.len(),
-        32,
-        "32 contracts ship both a manifest.toml and a proof/ directory (re-measured 2026-10-13; the \
-         2026-09-24 baseline of 31 was short by one, no contract having joined since 2026-08-01); a \
-         different count means either the enumeration above changed or a contract moved — and the \
-         contract list is printed above, so the reader can tell which"
+        31,
+        "31 contracts ship both a manifest.toml and a proof/ directory (re-measured 2026-10-22; \
+         deployooor is plaintext infrastructure with no manifest; the 2026-09-24 baseline of 31 was \
+         short by one, no contract having joined since 2026-08-01); a different count means either \
+         the enumeration above changed or a contract moved — the contract list is printed above, so \
+         the reader can tell which"
     );
     // **Re-measured 2026-09-28: 673 → 666, and the movement is the `dao_escrow` re-wire, measured
     // rather than assumed.** The guard fired and was right — the tree had moved. Between the
@@ -539,16 +540,19 @@ fn every_contract_manifest_agrees_with_its_own_circuits() {
     // value — the legitimate direction this comment names). So this is a re-measurement of drift,
     // not evidence that a parser stopped seeing sites.
     //
-    // **Re-measured 2026-10-22: 671 → 667, and the movement is G8's removal.** Attestation's
-    // `check_not_revoked` endpoint and circuit left one (A) function, one (B) declared circuit,
-    // one (C) built circuit and one (D) entry: −4. The deployed-manifest list and the
-    // `proof_circuits` parsing do not move the walk (one site per proof-bearing function, one per
-    // declared or built circuit); the second test still scans every manifest, deployed or not.
+    // **Re-measured 2026-10-22: 667 → 663, and the movement is the deployooor port.** The
+    // plaintext deployooor has no manifest and no proof directory, so its `LockV1` function, its
+    // LockV2 declared circuit, its lock.zk built circuit and its D entry leave the walk: −4. G8's
+    // earlier `check_not_revoked` removal is the previous −4 (671 → 667). The deployed-manifest
+    // list and the `proof_circuits` parsing do not move the walk (one site per proof-bearing
+    // function, one per declared or built circuit); the second test still scans every manifest,
+    // deployed or not.
     assert_eq!(
-        sites, 667,
-        "the four checks walk 667 sites over those manifests (re-measured 2026-10-22 after G8 \
-         removed attestation's check_not_revoked; 671 on 2026-10-13, 676 on 2026-10-05, 666 on \
-         2026-09-28 after the dao_escrow re-wire, 673 on 2026-09-24 before it). A different count \
+        sites, 663,
+        "the four checks walk 663 sites over those manifests (re-measured 2026-10-22 after the \
+         deployooor port; 667 after G8's check_not_revoked removal, 671 on 2026-10-13, 676 on \
+         2026-10-05, 666 on 2026-09-28 after the dao_escrow re-wire, 673 on 2026-09-24 before it). \
+         A different count \
          means a parser stopped seeing sites, or a manifest's declarations moved — the latter is \
          legitimate, so re-measure before assuming the former"
     );

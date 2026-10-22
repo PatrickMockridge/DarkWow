@@ -802,51 +802,27 @@ fn scan_block(
                     if let Ok(params) = dwow_serial::deserialize::<DeployParamsV1>(
                         &call.data[1..]
                     ) {
+                        // `ix` is the new contract's `__initialize` payload. The local
+                        // wallet also recognises its own self-declared display metadata
+                        // when the payload decodes as `ContractMetadata`; it never reads
+                        // a manifest from `ix`.
                         let metadata = ContractMetadata::from_ix_bytes(&params.ix);
-                        let manifest_result =
-                            dwow_sdk::manifest::ContractManifest::from_deploy_ix(&params.ix);
 
-                        // Genesis contracts carry well-known ContractIds, not
-                        // derive_public(deploy_key) (wallet.md §3, manifest.md
-                        // Circuit Binary Delivery — M2). Key the zkas/manifests
-                        // under the well-known id so the generic prover finds them.
-                        //
-                        // **But only for the genesis block** (`OBL-C244`). `get_contract_id` resolves a
-                        // manifest's *name*, and the genesis deploy is the one place the chain ignores the
-                        // deploy key — `build_genesis_deployment_txs` fixes a key the genesis rule ignores,
-                        // binding by its hard-coded table. Every later `DeployV1` is bound by
-                        // `ContractId::derive_public(params.public_key)` in the chain's own arm
-                        // (`src/contract/deployooor/src/entrypoint/deploy.rs`), and the chain never reads
-                        // the manifest name at all — so consulting the name outside genesis keys a
-                        // deployer's own manifest under a genesis contract's id and shadows the real one.
-                        let named_id = if height == BlockHeight::new(1) {
-                            match &manifest_result {
-                                Some(Ok(m)) => crate::contract_imports::get_contract_id(&m.name),
-                                _ => None,
-                            }
-                        } else {
-                            None
-                        };
-                        let contract_id = named_id
-                            .unwrap_or(ContractId::derive_public(params.public_key));
+                        // A deployment is bound to `derive_public(deploy_key)`
+                        // (upstream DeployV1's rule). Genesis is the one exception:
+                        // its transactions are skipped by sync and the authority's
+                        // artifacts are seeded from the embedded manifests, so the
+                        // scan never sees them here.
+                        let contract_id = ContractId::derive_public(params.public_key);
                         let contract_id_str = bs58::encode(contract_id.to_bytes()).into_string();
 
-                        let manifest_json = match manifest_result {
-                            Some(Ok(ref m)) => serde_json::to_string(m).ok(),
-                            Some(Err(ref e)) => {
-                                tracing::error!(target: "dww::scan",
-                                    "[scan_block] DeployV1: manifest parse error for {}: {:?}",
-                                    &contract_id_str[..8], e);
-                                None
-                            }
-                            None => None,
-                        };
                         result.deployments.push(DeploymentDiscovery {
                             contract_id,
                             deployer_pubkey: params.public_key,
                             metadata,
-                            manifest_json,
-                            // Filled after the zkas extraction below, from this deploy's WASM.
+                            // Deployooor's `ix` is the init payload, not a
+                            // manifest: there is nothing to store or compare.
+                            manifest_json: None,
                             manifest_wasm: None,
                             height: height,
                         });
@@ -863,19 +839,12 @@ fn scan_block(
                         // open-ended slice and failed on the bytes after the first binary, so
                         // both lists were empty and the Layer-2 verdict measured nothing
                         // (`OBL-C249`).
-                        //
-                        // `embedded` is kept in WASM order, *before* the storage dedup: the
-                        // Layer-2 check compares circuits as a multiset, because a manifest may
-                        // declare one namespace across several circuits.
                         let extracted =
                             crate::manifest_verify::extract_embedded_circuits(&params.wasm_bincode);
                         let mut seen: std::collections::HashSet<String> =
                             std::collections::HashSet::new();
-                        let mut embedded: Vec<crate::manifest_verify::EmbeddedCircuit> =
-                            Vec::with_capacity(extracted.len());
                         for (circuit, bytes) in extracted {
                             let ns = circuit.namespace.clone();
-                            embedded.push(circuit);
                             if seen.insert(ns.clone()) {
                                 result.messages.push(format!(
                                     "[scan_block] zkas '{}' extracted for {}",
@@ -890,38 +859,10 @@ fn scan_block(
                             }
                         }
 
-                        // Layer 2 (`OBL-C237`): compare the manifest against this deploy's own
-                        // WASM. A mismatch is recorded, never silently believed.
-                        let verdict = match manifest_result {
-                            Some(Ok(ref m)) => {
-                                Some(crate::manifest_verify::verify(m, &params.wasm_bincode, &embedded))
-                            }
-                            _ => None,
-                        };
-                        if let Some(ref v) = verdict {
-                            for err in &v.errors {
-                                result.messages.push(format!(
-                                    "[scan_block] MANIFEST/WASM MISMATCH for {}: {}",
-                                    &contract_id_str[..8], err
-                                ));
-                                tracing::warn!(target: "dww::scan",
-                                    "manifest/WASM mismatch for {}: {}", contract_id_str, err);
-                            }
-                            for warning in &v.warnings {
-                                result.messages.push(format!(
-                                    "[scan_block] layer-2 warning for {}: {}",
-                                    &contract_id_str[..8], warning
-                                ));
-                            }
-                            result.messages.push(format!(
-                                "[scan_block] layer-2 for {}: {}",
-                                &contract_id_str[..8],
-                                if v.ok { "manifest matches the deployed WASM" } else { "MISMATCH" },
-                            ));
-                        }
-                        if let Some(dep) = result.deployments.last_mut() {
-                            dep.manifest_wasm = verdict;
-                        }
+                        // Layer 2 (`OBL-C237`) compares a deployed manifest with
+                        // this deploy's own WASM. DeployV1 carries no manifest, so
+                        // only the genesis manifests seeded by the host are
+                        // checked (in `manifest_verify`'s own controls).
                     }
                 }
                 continue;
@@ -2097,15 +2038,15 @@ required_barbs = ["Spend","Mine"]
             "tripwire: uncovered composition must be dropped — no CapRecord");
     }
 
-    /// P8 — User-deployed contract manifest discovery pipeline.
+    /// P8 — User-deployed contract discovery and manifest-driven Path 2 typing.
     ///
-    /// Exercises the full DeployV1 → manifest extraction → deployment discovery →
-    /// manifest storage → manifest-driven Path 2 typing chain. This is the code
-    /// path that genesis seeding bypasses at wallet init — without this test,
-    /// `from_deploy_ix()`, the 0x4D magic byte, and the DeployV1 manifest handler
-    /// have zero pre-Docker coverage.
+    /// Exercises DeployV1 → deployment discovery (bound to
+    /// `derive_public(deploy_key)`) → wallet-supplied manifest storage →
+    /// manifest-driven Path 2 typing. `ix` is the new contract's
+    /// `__initialize` payload: DeployV1 assigns it no manifest semantics, so
+    /// discovery must not read a manifest out of it.
     #[test]
-    fn test_deployv1_manifest_discovery_to_path2_typing() {
+    fn test_deployv1_discovery_to_path2_typing() {
         use dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID;
         use dwow_sdk::deploy::DeployParamsV1;
         use dwow_sdk::manifest::ContractManifest;
@@ -2162,17 +2103,11 @@ produces = [{ name = "thing_cap" }]
 required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","ProveInclusion"]
 "#;
 
-        // Step 2: build deploy_ix with 0x4D magic byte + TOML
-        let deploy_ix = {
-            let mut ix = vec![0x4Du8];
-            ix.extend_from_slice(manifest_toml.as_bytes());
-            ix
-        };
-        let manifest_parsed = ContractManifest::from_deploy_ix(&deploy_ix);
-        assert!(manifest_parsed.is_some(), "0x4D magic byte must be detected");
-        let manifest_parsed = manifest_parsed.unwrap();
-        assert!(manifest_parsed.is_ok(), "manifest TOML must parse");
-        let manifest_parsed = manifest_parsed.unwrap();
+        // Step 2: the deploy carries an init payload and the manifest is the
+        // wallet's own declaration, supplied out of band (not packed into ix).
+        let deploy_ix = vec![0xAAu8, 0xBB];
+        let manifest_parsed = ContractManifest::from_toml(manifest_toml)
+            .expect("manifest TOML must parse");
         assert_eq!(manifest_parsed.name, "synthetic_user_contract");
 
         // Step 3: build DeployParamsV1 with this ix
@@ -2180,8 +2115,6 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
             wasm_bincode: vec![0x00, 0x61, 0x73, 0x6d],
             public_key: deployer_kp.public,
             ix: deploy_ix,
-            singleton: false,
-            singleton_name: String::new(),
         };
         let mut deploy_call_data = vec![0x00u8];
         deploy_params.encode(&mut deploy_call_data)
@@ -2223,13 +2156,10 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
         let dep = &deploy_result.deployments[0];
         assert_eq!(dep.contract_id, contract_id,
             "P8: DeploymentDiscovery.contract_id must match derived ContractId");
-        assert!(dep.manifest_json.is_some(),
-            "P8: DeploymentDiscovery.manifest_json must be Some for a 0x4D-ix deploy");
-        let manifest_json = dep.manifest_json.as_ref().unwrap();
-        let stored_manifest: ContractManifest = serde_json::from_str(manifest_json)
-            .expect("manifest_json must deserialize");
-        assert_eq!(stored_manifest.name, "synthetic_user_contract",
-            "P8: manifest JSON roundtrip must preserve name");
+        assert!(dep.manifest_json.is_none(),
+            "P8: DeployV1 `ix` is an init payload, not a manifest — discovery must not parse one");
+        assert!(dep.manifest_wasm.is_none(),
+            "P8: no manifest means no Layer-2 verdict");
 
         // Step 6: store manifest via wallet DB (simulating scan_block_linear)
         let wallet = crate::walletdb::WalletDb::new(None, None, false)
@@ -2245,7 +2175,9 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
             lock_status: "unlocked".into(),
         };
         wallet.insert_contract_metadata_with_manifest(&record, None).ok();
-        wallet.store_manifest(&cid_str, manifest_json)
+        let manifest_json = serde_json::to_string(&manifest_parsed)
+            .expect("manifest serializes");
+        wallet.store_manifest(&cid_str, &manifest_json)
             .expect("store_manifest must succeed");
 
         // Step 7: read back via get_contract_manifest
@@ -2309,17 +2241,15 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
             "P8: created_at_height must match call block height");
     }
 
-    /// `OBL-C244` — only the genesis block may let a manifest's *name* choose the
-    /// contract id.
+    /// `OBL-C244` — a deploy can never be keyed by a manifest's *name*.
     ///
     /// `ContractId::derive_public(deploy_key)` is what the chain binds every
-    /// `DeployV1` to (`src/contract/deployooor/src/entrypoint/deploy.rs`); the genesis
-    /// deploy is the single exception, because `build_genesis_deployment_txs` fixes a
-    /// key the genesis rule ignores and binds by its hard-coded table. Resolving the
-    /// name at any other height keys a deployer's own manifest under a genesis
-    /// contract's id and shadows the real one.
+    /// `DeployV1` to (`src/contract/deployooor/src/entrypoint/deploy_v1.rs`).
+    /// `ix` is the new contract's `__initialize` payload; the scan does not
+    /// parse a manifest out of it, so even a payload that *looks* like the old
+    /// `0x4D` manifest envelope cannot select a genesis contract's id.
     #[test]
-    fn test_deployv1_name_chooses_genesis_id_only_in_genesis_block() {
+    fn test_deployv1_name_cannot_choose_a_genesis_id() {
         use dwow_sdk::crypto::{DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
         use dwow_sdk::deploy::DeployParamsV1;
         use dwow_serial::Encodable;
@@ -2376,8 +2306,6 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
                 wasm_bincode: vec![0x00, 0x61, 0x73, 0x6d],
                 public_key: deployer_kp.public,
                 ix: deploy_ix.clone(),
-                singleton: false,
-                singleton_name: String::new(),
             };
             let mut call_data = vec![0x00u8];
             params.encode(&mut call_data).expect("DeployParamsV1 must encode");
@@ -2417,17 +2345,21 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
             r.deployments[0].contract_id
         };
 
-        // Outside genesis the chain binds by the deploy key, so the wallet must too:
-        // the claimed name must NOT be able to select a genesis contract's id.
+        // The wallet binds by the deploy key at every height: the payload's
+        // claimed name must not be able to select a genesis contract's id.
+        // (`NATIVE_TOKEN_CONTRACT_ID` is imported above for that comparison.)
+        assert_ne!(
+            ContractId::derive_public(deployer_kp.public), *NATIVE_TOKEN_CONTRACT_ID,
+            "OBL-C244: the fixture's deploy key must not already derive the genesis id",
+        );
         assert_eq!(
             scan_at(100), ContractId::derive_public(deployer_kp.public),
-            "OBL-C244: a non-genesis deploy must be keyed by derive_public(deploy_key), \
-             not by the name its manifest claims",
+            "OBL-C244: a deploy must be keyed by derive_public(deploy_key), \
+             not by the name its payload claims",
         );
-        // In the genesis block the name *is* the binding, and the genesis id is the answer.
         assert_eq!(
-            scan_at(1), *NATIVE_TOKEN_CONTRACT_ID,
-            "OBL-C244: the genesis block's deploys are still keyed by the hard-coded table",
+            scan_at(1), ContractId::derive_public(deployer_kp.public),
+            "OBL-C244: the key rule holds at height 1 too; there is no name exception",
         );
     }
 

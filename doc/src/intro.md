@@ -68,7 +68,7 @@ the spec.
 | nullifier_root block header verification | [IMPLEMENTED] | `src/linear/src/chain_state.rs` |
 | Supply audit (Pedersen mass balance) | [IMPLEMENTED] | `src/linear/src/proof_of_token_balance.rs` |
 | 9 genesis contracts | [IMPLEMENTED] | `src/contract/<name>/` |
-| 32 contracts (code + manifests) | [IMPLEMENTED] | `src/contract/<name>/` |
+| 32 contracts (31 manifests; deployooor has none) | [IMPLEMENTED] | `src/contract/<name>/` |
 | 32 zkVM opcodes (31 usable — `noop` computes nothing) | [IMPLEMENTED] | `src/zkas/opcode.rs` |
 | dwowd daemon (mining, P2P, RPC) | [IMPLEMENTED] | `bin/dwowd/` |
 | dwow_wallet — DRKW scan + transfer | [IMPLEMENTED] | `bin/dww/` |

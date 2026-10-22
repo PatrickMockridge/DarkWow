@@ -23,7 +23,6 @@
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
-
 //! Smart contract implementing non-native smart contract deployment.
 
 use dwow_sdk::error::ContractError;
@@ -48,7 +47,7 @@ impl TryFrom<u8> for DeployFunction {
     }
 }
 
-#[cfg(not(feature = "no-entrypoint"))]
+#[cfg(all(not(feature = "no-entrypoint"), target_arch = "wasm32"))]
 /// WASM entrypoint functions
 pub mod entrypoint;
 
@@ -62,25 +61,9 @@ pub mod error;
 /// Client API for interaction with this smart contract
 pub mod client;
 
-// These are the different sled trees that will be created
+// These are the different kvdb trees that will be created
 pub const DEPLOY_CONTRACT_INFO_TREE: &str = "info";
 pub const DEPLOY_CONTRACT_LOCK_TREE: &str = "lock";
-pub const DEPLOY_CONTRACT_SINGLETON_TREE: &str = "singleton";
 
 // These are keys inside the info tree
 pub const DEPLOY_CONTRACT_DB_VERSION: &[u8] = b"db_version";
-pub const DEPLOY_CONTRACT_WASM_HASH_KEY: &[u8] = b"wasm_hash";
-
-/// `LockV2` circuit namespace — the deployooor lock's ZK proof (docs-review F-511; the lock was
-/// documented as signature-gated and enforced nothing).
-pub const DEPLOY_CONTRACT_ZKAS_LOCK_NS_V2: &str = "LockV2";
-
-/// WASM imports that are NOT allowed in deployed contracts.
-/// These provide access to internal DarkWow functions that regular contracts
-/// should never use directly.
-pub const DISALLOWED_WASM_IMPORTS: &[&str] = &[
-    "db_clear_all",
-    "db_drop_tree",
-    "db_drop_all",
-    "exec_dangerous",
-];

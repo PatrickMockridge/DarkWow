@@ -1774,7 +1774,7 @@ the risk distribution.
 | `manifest` | Self-declared cost profiles — deployer stakes reputation on accuracy |
 | `identity` + `attestation` | Vouching — third parties verify contract safety, lower risk factor |
 | `endowment` + `escrow` | Economic underwriting — slashable stake backs cost declarations |
-| `deployooor` | Contract deployment — binds manifest to contract at birth |
+| `deployooor` | Plaintext deployment/locking — no manifest, no cost declaration |
 | Fee window system (§12) | Miner feedback loop — observed vs declared costs → risk factor adjustment |
 
 This is the defining differentiator: **decentralized self-governance through

@@ -29,7 +29,13 @@
 //!   3. Negative: building a deploy call with empty WASM fails
 
 use dwow_contract_test_harness::{harness::DeployooorHarness, init_logger};
-use dwow_sdk::{crypto::{Keypair, SecretKey}, pasta::pallas};
+use dwow_sdk::{
+    crypto::{ContractId, Keypair, SecretKey},
+    deploy::DeployParamsV1,
+    pasta::pallas,
+};
+use dwow_serial::{Decodable, Encodable};
+use dwow_deployooor_contract::model::{DeployUpdateV1, LockParamsV1, LockUpdateV1};
 use tracing::info;
 
 #[test]
@@ -65,7 +71,7 @@ fn deploy_integration() {
 
     // Build a lock call
     info!(target: "deploy", "Building lock call");
-    let lock_result = harness.build_lock_call(deploy_keypair.clone(), dwow_sdk::pasta::pallas::Base::from(0u64));
+    let lock_result = harness.build_lock_call(deploy_keypair.clone());
     assert!(lock_result.is_ok(), "Lock call should build successfully");
 
     // Negative: building a deploy call with empty WASM must fail
@@ -93,4 +99,33 @@ fn deploy_integration() {
     );
 
     info!(target: "deploy", "All integration tests PASSED");
+}
+
+/// Every wire type of the two endpoints round-trips deterministically.
+#[test]
+fn deployooor_wire_types_roundtrip() {
+    fn roundtrip<T>(value: &T)
+    where
+        T: Encodable + Decodable,
+    {
+        let mut first = Vec::new();
+        value.encode(&mut first).expect("encode");
+        let decoded = T::decode(&mut &first[..]).expect("decode");
+        let mut second = Vec::new();
+        decoded.encode(&mut second).expect("re-encode");
+        assert_eq!(first, second, "encode must be deterministic");
+        assert!(!first.is_empty());
+    }
+
+    let kp = Keypair::new(SecretKey::from_base(pallas::Base::from(42)));
+    let contract_id = ContractId::derive_public(kp.public);
+
+    roundtrip(&DeployParamsV1 {
+        wasm_bincode: vec![0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00],
+        public_key: kp.public,
+        ix: vec![0x00, 0x01, 0x02, 0x03],
+    });
+    roundtrip(&DeployUpdateV1 { contract_id });
+    roundtrip(&LockParamsV1 { public_key: kp.public });
+    roundtrip(&LockUpdateV1 { contract_id });
 }

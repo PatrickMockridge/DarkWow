@@ -37,18 +37,21 @@ See [Contract Manifest](manifest.md) for how manifests are discovered and stored
 
 ## Layer 2: WASM Verification
 
-**Implemented at scan time, 2026-10-21 (`OBL-C237`).** The `DeployV1` call carries the WASM
-binary, so the wallet does not need to download it: `bin/dww/src/scan.rs` extracts the embedded
-zkas binaries and `bin/dww/src/manifest_verify.rs` compares them with the manifest that same
-deploy carries. The verdict is stored in `contract_metadata.manifest_wasm_verdict` and shown by
-`dwow_wallet contract show <contract_id>`.
+**The comparison is implemented (`OBL-C237`), but since the upstream Deployooor port
+(2026-10-22) a `DeployV1` call carries no manifest.** `bin/dww/src/scan.rs` still extracts the
+embedded zkas binaries from the deployed WASM, and `bin/dww/src/manifest_verify.rs` can compare
+them with a manifest — the genesis manifests are embedded in the wallet and checked by its own
+controls. A user deployment's manifest is a wallet-side declaration, so there is no
+scan-time manifest to compare against that deployment; this is tracked as `OBL-C262`. The
+stored verdict (`contract_metadata.manifest_wasm_verdict`) therefore remains empty unless a
+manifest was supplied out of band.
 
 This layer answers a mechanical question: does the manifest accurately describe
 the binary?
 
 **What it checks**:
 
-- The module parses and exports the four fixed SDK symbols — `__initialize`,
+- The module parses and exports the five fixed SDK symbols — `memory`, `__initialize`,
   `__entrypoint`, `__update`, `__metadata` (and optionally `__spend_hook`).
 - Every ZK circuit declared in the manifest exists in the WASM's data sections, matched as a
   multiset of `(namespace, witness count, opcode count)`. The zkas binary header carries no
@@ -60,9 +63,10 @@ the binary?
 
 **What it does not check, and why the old wording was wrong**:
 
-- **"Every function exists as a WASM export" was never checkable.** The SDK exports four fixed
-  symbols; contract functions are selector arms inside `__entrypoint`, not exports. The deploy
-  entrypoint already requires those four symbols on chain (`deployooor`'s `deploy_v1`).
+- **"Every function exists as a WASM export" was never checkable.** The SDK exports five fixed
+  symbols (`memory` and four functions); contract functions are selector arms inside
+  `__entrypoint`, not exports. The deploy entrypoint already requires those five symbols on
+  chain (`deployooor`'s `deploy_v1`).
 - Whether the WASM logic is correct, whether the circuits are sound, whether the capability
   model is implemented (Layer 3 concern).
 - Whether a manifest's `namespace` values agree with the compiled circuits is *checked against

@@ -140,6 +140,7 @@ fn stage_4_refuses_a_valid_proof_bound_to_a_different_commitment() {
             parent_index: None,
         }],
         proofs: vec![vec![proof.clone()]],
+        signatures: vec![vec![]],
         tx_commitment: commitment.to_repr(),
         nullifiers: vec![],
     };

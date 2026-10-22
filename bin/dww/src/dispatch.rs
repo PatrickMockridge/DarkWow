@@ -59,8 +59,8 @@ pub enum DbDependency {
 ///
 ///   NativeToken — consensus-critical. Fee payment and coinbase rewards
 ///       are consensus operations, not per-contract business logic.
-///   Deployooor  — deployment infrastructure. DeployV1 detection enables
-///       on-chain manifest discovery for all contracts.
+///   Deployooor  — deployment infrastructure. DeployV1 detection discovers
+///       newly deployed contracts (it carries no manifest).
 ///
 /// ```text
 /// 1. Native Token path    — consensus infrastructure (Merkle proofs, fee payment)
@@ -144,8 +144,8 @@ fn classify_category(cmd: &WalletCommand) -> CommandCategory {
         | WalletCommand::Burn { .. } => CommandCategory::LocalBuild,
 
         // ── Generic capability: manifest-driven (any contract) ────────
-        // Deploy, Invoke, Lock go through the manifest pipeline.
-        // Zero per-contract code. The manifest IS the interface.
+        // Deploy and Lock are the plaintext Deployooor commands; Invoke goes
+        // through the manifest pipeline. Zero per-contract code.
         WalletCommand::Contract { command } => match command {
             ContractSubcmd::Deploy { .. }
             | ContractSubcmd::Invoke { .. }
@@ -343,18 +343,19 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             }
         }
 
-        // === Contract deploy — wire --manifest flag ===
+        // === Contract deploy ===
         WalletCommand::Contract {
             command:
                 ContractSubcmd::Deploy {
                     deploy_auth,
                     wasm_path,
                     deploy_ix,
-                    manifest,
                 },
         } => {
-            // Build deploy ix: manifest TOML takes priority if provided
-            let ix_bytes = build_deploy_ix(deploy_ix.as_deref(), manifest.as_deref())?;
+            // `ix` is the new contract's `__initialize` payload, verbatim.
+            let ix_bytes = deploy_ix
+                .map(|s| s.as_bytes().to_vec())
+                .unwrap_or_default();
             // Deploy via existing async deploy path
             smol::block_on(async {
                 // Parse deploy key, read WASM, build and broadcast deploy tx
@@ -376,8 +377,8 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                     .deploy_contract(&keypair, wasm_bin, ix_bytes)
                     .await?;
                 // deploy_contract attaches the FeeV3 call (0x08) (real fee proofs,
-                // fee nullifier) and signs per-call — deploy authority row +
-                // fee ephemeral row (wallet.md §6.3 steps 6-7).
+                // fee nullifier) and signs the deploy authority's row; the fee
+                // row carries no signer (wallet.md §6.3 steps 6-7).
                 let tx_b64 =
                     crate::wallet_util::base64_encode(
                         &dwow_serial::serialize_async(&tx).await,
@@ -1240,24 +1241,6 @@ fn resolve_show_trust(contract_id: &str, _dww: &Dww) -> Option<dwow_sdk::manifes
     // The attestations_json column in contract_metadata stores attestation data
     // discovered during scan. When populated, parse and display as [ATTESTED by X].
     Some(TrustTier::Unverified)
-}
-
-/// Build deploy ix bytes from --manifest flag or legacy deploy_ix string.
-fn build_deploy_ix(deploy_ix: Option<&str>, manifest_path: Option<&str>) -> Result<Vec<u8>> {
-    match manifest_path {
-        Some(path) => {
-            use dwow_sdk::manifest::ContractManifest;
-            let toml_str = std::fs::read_to_string(path)
-                .map_err(|e| Error::Custom(format!("Failed to read manifest file: {e}")))?;
-            let m = ContractManifest::from_toml(&toml_str)
-                .map_err(|e| Error::Custom(format!("Invalid manifest TOML: {e}")))?;
-            m.to_deploy_ix()
-                .map_err(|e| Error::Custom(format!("Failed to encode manifest: {e}")))
-        }
-        None => Ok(deploy_ix
-            .map(|s| s.as_bytes().to_vec())
-            .unwrap_or_default()),
-    }
 }
 
 #[cfg(test)]

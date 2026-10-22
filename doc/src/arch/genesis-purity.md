@@ -40,7 +40,7 @@ decision row rather than an addition.
 
 | Counter | Contract | Crate | Tier | Manifest sections |
 |---|---|---|---|---|
-| 2 | Deployooor | `dwow_deployooor_contract` | consensus | functions, capabilities, actions, trees, circuits |
+| 2 | Deployooor | `dwow_deployooor_contract` | consensus | — (plaintext infrastructure; no manifest) |
 | 3 | Promissory Note | `dwow_promissory_note_contract` | ecosystem | functions, capabilities, actions, trees, circuits, parameters |
 | 4 | NativeToken | `dwow_native_token_contract` | consensus | functions, capabilities, actions, trees, circuits |
 | 5 | Identity | `dwow_identity_contract` | ecosystem | functions, capabilities, actions, circuits, trees |
@@ -82,7 +82,7 @@ name = "deployooor"
 crate = "dwow_deployooor_contract"
 counter = 2
 tier = "consensus"
-class_a = ["functions", "capabilities", "actions", "trees", "circuits"]
+class_a = []
 
 [[contract]]
 name = "promissory_note"
@@ -355,6 +355,16 @@ rule). **The build has since been performed:** 32 artifacts built from clean and
 genesis wasms built from clean twice and byte-identical, 9/9 CLEAN, and the pin re-recorded once
 from the computed line; the genesis module reports 10/10. The nine heavyweight specs and the devnet
 pipeline remain the pipeline's steps; this document must not be read as claiming them for this tree.
+
+**2026-10-22 (later): deployooor reverted to the upstream plaintext contract.** The contract's
+local additions — the chunked-Poseidon WASM content commitment, the singleton tree/fields, the
+`LockV2` circuit and proof, the deployooor `manifest.toml` and its `deployment_right` capability,
+and `tx_nonce` — are deleted, not repaired. `DeployV1` and `LockV1` are plaintext and authorized by
+the deploy key's transaction Schnorr signature (`Transaction.signatures` / `verify_sigs`, restored
+in `src/tx` and verified in the block-accept path). Deployooor's genesis entry passes `&[]`, so
+**seven of the nine** genesis contracts deploy a manifest; `native_token` and `deployooor` are the
+two bespoke citizens. The WASM/sdk changes move the pin: the rebuild, re-pin, freshness checks and
+the nine heavyweight specs remain to be run, and this paragraph claims none of them.
 
 **What it cannot establish.**
 

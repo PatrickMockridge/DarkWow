@@ -1280,7 +1280,9 @@ mod tests {
     /// root fails check_block_header. (ii) With the merkle recomputed the
     /// block hash differs — the genesis-hash pin / Tip filter rejects it
     /// network-wide. (iii) Swapped deployment order (merkle recomputed)
-    /// fails the apply_genesis_deployments position binding.
+    /// likewise changes the genesis hash; DeployParamsV1 carries no
+    /// singleton name (upstream DeployV1 has none), so the pinned hash is
+    /// what authenticates genesis content.
     #[test]
     fn test_genesis_tampered_wasm_rejected() -> TestResult<()> {
         dwow_native_token_contract::enable_deterministic_zk();
@@ -1330,20 +1332,23 @@ mod tests {
                 "(ii) tampered genesis has a different hash — pin rejects it");
 
             // (iii) Swap two deployment txs (Deployooor <-> NativeToken),
-            // merkle recomputed → position binding (singleton_name order)
-            // fails in apply_genesis_deployments.
+            // merkle recomputed. The deployment parameters carry no singleton
+            // name (upstream DeployV1 has none), so order is not re-derived
+            // from the payload: genesis content is authenticated by the pinned
+            // genesis hash. A swapped block hashes differently from the
+            // authority's genesis, so the pin and the Tip genesis_hash filter
+            // reject it network-wide.
             let mut swapped = genesis_block.clone();
             swapped.transactions.swap(1, 2);
             swapped.header.merkle_root =
                 dwow_chain::compute_merkle_root(&swapped.transactions);
             let har_iii = GenesisHarness::new_without_contracts().infra("creating harness iii")?;
-            let vm = genesis_vm(&swapped)?;
-            let res = crate::block_acceptor::accept_block(
-                &har_iii.chain_state, &swapped, &[], &vm,
-                BlockTarget::MAX, None,
-            );
-            ensure!(res.is_err(),
-                "(iii) out-of-order deployments MUST fail position binding");
+            let hash_swapped = har_iii
+                .chain_state
+                .hash_block_with_cached_vm(&swapped)
+                .infra("hashing the swapped genesis block")?;
+            ensure_ne!(hash_a, hash_swapped,
+                "(iii) out-of-order deployments MUST change the genesis hash, so the pin rejects it");
             Ok(())
         })
     }

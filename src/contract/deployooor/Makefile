@@ -39,17 +39,6 @@ PKGNAME = $(shell grep '^name = ' Cargo.toml | cut -d' ' -f3 | tr -d '"')
 # wasm contract binary
 WASM_BIN = $(PKGNAME:=.wasm)
 
-# zkas compiler - absolute path to ensure we find the right binary
-ZKAS = $(abspath ../../../zkas)
-
-# ZKAS version tracking
-ZKAS_VERSION_FILE = .zkas_version
-
-# zkas circuits — `LockV2` is the lock's proof that the caller knows the deployer's secret
-# (docs-review F-511).
-ZK_SRC := $(wildcard proof/*.zk)
-ZK_BINS := $(ZK_SRC:.zk=.zk.bin)
-
 # wasm source files
 WASM_SRC = \
 	Cargo.toml \
@@ -66,7 +55,7 @@ SOURCE_HASH_FILE = .source_hash
 # Inputs whose contents can change the built WASM or its circuits: this crate's
 # Rust sources and manifest, its zk circuits, and the shared sdk/serial crates.
 # $(wildcard) drops any that don't exist and sorts what remains.
-SOURCE_MANIFEST = $(wildcard $(WASM_SRC) $(ZK_SRC) manifest.toml)
+SOURCE_MANIFEST = $(wildcard $(WASM_SRC))
 
 # One "path sha256" line per input, sorted, then hashed. Including the path
 # makes renames and content swaps visible; sorting removes the dependence on
@@ -94,31 +83,9 @@ check-source-hash:
 		fi; \
 	fi
 
-# Check if zkas version changed
-check-zkas-version:
-	@current_ver=$$($(ZKAS) --version 2>/dev/null || echo "none"); \
-	if [ -f $(ZKAS_VERSION_FILE) ]; then \
-		stored_ver=$$(cat $(ZKAS_VERSION_FILE)); \
-		if [ "$$stored_ver" != "$$current_ver" ]; then \
-			echo "ZKas version changed ($$stored_ver -> $$current_ver), removing old binaries"; \
-			rm -f proof/*.zk.bin; \
-			echo "$$current_ver" > $(ZKAS_VERSION_FILE); \
-		fi; \
-	else \
-		echo "No version file, recording current zkas version..."; \
-		echo "$$current_ver" > $(ZKAS_VERSION_FILE); \
-	fi
+all: check-source-hash $(WASM_BIN)
 
-# Pattern rule for ZK binaries
-proof/%.zk.bin: proof/%.zk $(ZKAS) check-zkas-version
-	$(ZKAS) $< -o $@
-
-all: check-source-hash $(WASM_BIN) $(ZK_BINS)
-
-# `$(ZK_BINS)` is a prerequisite, not a sibling of it in `all`: the wasm embeds each circuit with
-# `include_bytes!` (from `init_contract`), so compiling it before the circuits exist fails outright
-# with "couldn't read .../proof/lock.zk.bin". Listing both under `all` does not order them.
-$(WASM_BIN): $(ZK_BINS) $(WASM_SRC) ../../../script/contract_build_recipe.txt ../../../script/contract-build-recipe.mk Makefile
+$(WASM_BIN): $(WASM_SRC) ../../../script/contract_build_recipe.txt ../../../script/contract-build-recipe.mk Makefile
 	RUSTFLAGS="$(WASM_RUSTFLAGS)" RUSTC_BOOTSTRAP=$(CONTRACT_RUSTC_BOOTSTRAP) $(CARGO) build --target=$(WASM_TARGET) \
 		--release --package $(PKGNAME)
 	cp -f ../../../target/$(WASM_TARGET)/release/$@ $@
@@ -144,7 +111,7 @@ clean:
 		--release --package $(PKGNAME)
 	RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) clean --target=$(RUST_TARGET) \
 		--release --package $(PKGNAME)
-	rm -f $(WASM_BIN) $(SOURCE_HASH_FILE) proof/*.zk.bin $(ZKAS_VERSION_FILE)
+	rm -f $(WASM_BIN) $(SOURCE_HASH_FILE)
 
 .PHONY: all test-integration test clippy clean check-source-hash
 include ../../../script/contract-build-recipe.mk

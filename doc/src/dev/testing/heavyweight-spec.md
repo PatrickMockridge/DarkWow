@@ -71,9 +71,9 @@ No deployed manifest — it is the bespoke citizen and its wallet paths are embe
 `manifest.toml` is documentation. It IS the consensus. A bug here halts the chain.
 
 **Infrastructure (deployooor):** The second sanctioned citizen. Deploys WASM contracts,
-marks them immutable. Pure WASM, zero ZK circuits. It carries a manifest deployed at genesis
-(`deployooor/manifest.toml`), which the generic client reads. Without deployooor, manifest
-discovery is impossible.
+marks them immutable. Pure WASM, zero ZK circuits, no manifest: both endpoints are
+plaintext and authorized by the deploy key's transaction signature. Without deployooor,
+contracts cannot be deployed at all.
 
 **L1 O-Cap Primitives (box, purse):** Minimal capability containers. Depend on nothing.
 Other contracts compose from them. Box: linear delegation (Put/Take). Purse: fungible
@@ -104,8 +104,8 @@ May compose from genesis contracts via spend_hook or child calls.
   (`Mint_V2`, `Burn_V2`, `Fee_V3`) but is not deployed at genesis and is not read for capability
   construction; the wallet embeds its scan and write paths. Every block depends on it structurally
   via coinbase + FeeCollect.
-- **deployooor** carries a genesis-deployed manifest and zero ZK circuits. All WASM contracts
-  start here.
+- **deployooor** carries zero ZK circuits and no manifest; it is plaintext infrastructure.
+  All WASM contracts start here.
 - **promissory_note** is a DeFi capability, not a token. Completely separate from native_token.
   PN has nothing to do with fee payment. Fee payment is exclusively native_token's domain.
 - **box** and **purse** depend on nothing. Other contracts depend on THEM.
@@ -423,13 +423,15 @@ effects explicitly (reward amount, AEAD encryption, nullifier insertion, fee pla
 ### 5.2 Infrastructure — deployooor
 
 **Role:** Second sanctioned citizen. Deploys WASM, locks contracts. 2 functions:
-DeployV1 (0x00), LockV1 (0x01). Zero ZK circuits.
+DeployV1 (0x00), LockV1 (0x01). Zero ZK circuits, no manifest.
 
 **Test SHALL:**
 - Use `DEPLOYOOOR_CONTRACT_ID` — never `chain.deploy()`
 - DeployV1: use a real valid WASM binary, verify WASM appears in contracts tree
-- LockV1: verify deployed contract becomes immutable
+- LockV1: verify deployed contract becomes immutable (`lock[id] == true`)
 - No ZK proofs — `circuits()` is empty
+- Carry the deploy key's transaction signature on the call's row; a missing or
+  non-owner signature SHALL be rejected
 - Verify state: deployed WASM exists in contracts tree, lock flag is set
 
 ### 5.3 L1 O-Cap Primitives — box, purse

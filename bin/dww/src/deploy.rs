@@ -35,6 +35,7 @@ use dwow_sdk::{
     tx::ContractCall,
 };
 use dwow_sdk::deploy::DeployParamsV1;
+use dwow_serial::Encodable;
 use rand::rngs::OsRng;
 
 use crate::{scan::ScanCache, Dww};
@@ -50,10 +51,10 @@ impl Dww {
     /// 3. Attaches the FeeV3 call (0x08) from the wallet's DRKW caps
     ///    (`build_fee_and_finalize_tx` — real fee proofs, fee nullifier
     ///    published, outer tx_commitment computed)
-    /// 4. Signs per-call: the deploy row with the deploy authority
-    ///    (DeployV1 metadata declares `[params.public_key]`,
-    ///    deployooor entrypoint/deploy_v1.rs), the fee row with the fee
-    ///    ephemeral — one signature row per call, in call order
+    /// 4. Signs per-call, one signature row per call in call order: the
+    ///    deploy row with the deploy authority (DeployV1 metadata declares
+    ///    `[params.public_key]`, deployooor entrypoint/deploy_v1.rs); the
+    ///    fee row stays empty because its metadata declares no signer.
     #[allow(dead_code)]
     pub async fn deploy_contract(
         &self,
@@ -71,15 +72,16 @@ impl Dww {
             deploy_keypair: deploy_keypair.clone(),
             wasm_bincode,
             deploy_ix,
-            singleton: false,
-            singleton_name: String::new(),
         };
 
-        let call_data = builder.build_call_data()
-            .map_err(|e| Error::Custom(format!("Failed to build deploy call data: {:?}", e)))?;
+        let deploy = builder
+            .build()
+            .map_err(|e| Error::Custom(format!("Failed to build deploy call: {:?}", e)))?;
+        let mut call_data = vec![0x00u8];
+        deploy.params.encode(&mut call_data)
+            .map_err(|e| Error::Custom(format!("Failed to encode DeployParamsV1: {:?}", e)))?;
 
         // Create Deployooor contract call
-        // Function code 0x00 = DeployV1 is encapsulated in build_call_data()
         let deployooor_id = *DEPLOYOOOR_CONTRACT_ID;
         let deploy_call = ContractCall {
             contract_id: deployooor_id,
@@ -110,7 +112,13 @@ impl Dww {
             proofs: vec![],
         };
 
-        let tx = fee.finish(deploy_leaf, tx_commitment)?;
+        let mut tx = fee.finish(deploy_leaf, tx_commitment)?;
+        // Deployooor's DeployV1 publishes [params.public_key] as its signature
+        // pubkey; the deploy authority signs the deploy call's row. The fee row
+        // stays empty (its metadata declares no signature key).
+        let deploy_sigs = tx.create_sigs(&[deploy_keypair.secret.clone()])
+            .map_err(|e| Error::Custom(format!("deploy signature: {e}")))?;
+        tx.signatures[0] = deploy_sigs;
 
         Ok(tx)
     }

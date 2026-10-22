@@ -127,20 +127,28 @@ verification, metadata pubkey inspection, or any other channel. Every primitive
 the wallet possesses was received in an `AeadEncryptedNote` and decrypted with
 a `SecretKey` the wallet holds.
 
-**Schnorr signatures are prohibited from the wallet path.** The wallet does NOT:
+**Schnorr signatures are prohibited for ZK capability contracts.** For every
+capability contract the wallet does NOT:
 - Verify Schnorr signatures against contract metadata pubkeys
-- Produce Schnorr signatures for contract authorization
-- Use signature verification as a discovery or authorization mechanism
-- Store or manage Schnorr signing keys for per-contract authentication
+- Produce Schnorr signatures for capability authorization
+- Use signature verification as a capability discovery mechanism
+- Store or manage Schnorr signing keys for per-contract capability authentication
 
-The transaction-level Schnorr signature (`create_sigs` / `verify_sigs`) is removed.
-Authorization is via ZK proof + nullifier exclusively. The ZK circuit proves
-secret key knowledge — by `ec_mul_base(secret, NULLIFIER_K)` in the curve-derivation contracts (escrow,
-bridge, oracle and their siblings) or by `poseidon_hash(witness_base(7), secret)` in `promissory_note`,
-`box` and `purse`; see contract-standards.md §3 — the contract verifies
-the proof against public inputs from metadata, and the nullifier prevents replay.
-No signature is required, produced, or verified at any layer of the wallet stack.
-See contract-standards.md §3 for the full rationale.
+Authorization for a capability is via ZK proof + nullifier exclusively. The ZK
+circuit proves secret key knowledge — by `ec_mul_base(secret, NULLIFIER_K)` in the
+curve-derivation contracts (escrow, bridge, oracle and their siblings) or by
+`poseidon_hash(witness_base(7), secret)` in `promissory_note`, `box` and `purse`;
+see contract-standards.md §3 — the contract verifies the proof against public
+inputs from metadata, and the nullifier prevents replay.
+
+**One exception, and it is not on the capability path.** Deployooor is plaintext
+infrastructure: `DeployV1` and `LockV1` declare the deploy key in metadata and are
+authorized by the transaction-level Schnorr signature (`Transaction::create_sigs` /
+`verify_sigs`, one row per call in call order). The wallet produces that signature
+for deploy and lock, and for no other contract. Every other call's row is empty
+unless the contract's metadata declares a signer; see
+`doc/src/spec/contract/deploy/scheme.md` §Signatures.
+See contract-standards.md §3 for the capability rationale.
 
 ### 0.1 Component Architecture
 
@@ -658,14 +666,17 @@ code changes. The manifest IS the type declaration.
 ### 5.1 Manifest Discovery Pipeline
 
 ```
-DeployV1 tx on chain
-  → scan_block_linear() detects 0x4D magic byte
-  → ContractManifest::from_deploy_ix() parses TOML
+Genesis: wallet embeds manifest.toml; host stores the seven deployed genesis ix
+  → wallet seeds manifests at startup
+Post-genesis: manifest is a wallet-side declaration for a known contract
   → wallet.store_manifest() stores type declaration
   → CapabilityResolver reads manifest
   → Wallet constructs capability types from manifest + discovered primitives
   → CLI: contract show / contract invoke --params
 ```
+
+`DeployV1` `ix` is the new contract's `__initialize` payload; the wallet does not
+parse a manifest out of it.
 
 ### 5.2 Trust Model
 
@@ -755,8 +766,10 @@ For an invocation `dwow_wallet contract invoke <contract_id> <action> --params '
    the action's `proof_circuit` (§6.4).
 6. Attach the fee capability (DRKW) per the fee builder; the fee input's nullifier is
    likewise published in `Transaction.nullifiers`.
-7. Return the `Transaction { calls, proofs, tx_commitment, nullifiers }`
-   (`dwow_core::tx::Transaction`, `src/tx/mod.rs`) — no signature field, per §0.
+7. Return the `Transaction { calls, proofs, signatures, tx_commitment, nullifiers }`
+   (`dwow_core::tx::Transaction`, `src/tx/mod.rs`). `signatures` holds one row per
+   call in call order; every row is empty for a capability transaction (§0). The
+   only rows the wallet signs are the plaintext Deployooor deploy/lock rows.
    Broadcast (§6.5) is the shell's responsibility, not `f`'s.
 
 The capability (the note being exercised) is NOT in the params. The params are pure

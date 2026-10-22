@@ -1,8 +1,13 @@
 # Contract Metadata
 
-DarkWow contracts carry self-declared on-chain metadata — name, symbol, category, and
-description — embedded in the `ix` field of `DeployParamsV1`. The wallet discovers this
-metadata during block scanning and surfaces it in contract listings.
+DarkWow contracts can carry self-declared metadata — name, symbol, category, and
+description — carried in the `ix` field of `DeployParamsV1`. `ix` is the new
+contract's `__initialize` payload; Deployooor assigns it no semantics (upstream
+`DeployV1` has none). When the payload decodes as `ContractMetadata`, the wallet's
+scan records it and surfaces it in contract listings. The wallet CLI does not add
+metadata to `ix`: a deploy's trailing argument is the init payload verbatim. The
+encoding remains a local convention used by test fixtures and by operators that
+choose to supply a metadata payload.
 
 All metadata is displayed as `[UNVERIFIED]` in wallet UIs. The metadata slot is designed
 to accommodate future attestation-based verification: DAOs, auditors, and
@@ -16,7 +21,7 @@ is deferred.
 DeployParamsV1 {
     wasm_bincode: Vec<u8>,     // WASM binary
     public_key: PublicKey,     // Deployer's public key
-    ix: Vec<u8>,               // ContractMetadata::to_ix_bytes()
+    ix: Vec<u8>,               // __initialize payload; may decode as metadata
 }
                     │
                     ▼
@@ -40,16 +45,18 @@ DeployParamsV1 {
     ┌───────────────────────────────────────┐
     │  Wallet scan (scan_block_linear)       │
     │  Detects DeployV1 calls, decodes      │
-    │  metadata from ix, persists to DB      │
+    │  metadata from ix when it parses,     │
+    │  persists to DB                        │
     └───────────────────────────────────────┘
 ```
 
 ### Why `ix`?
 
-`DeployParamsV1::ix` is part of every deployment payload but was previously unused.
-It passes through to the contract's `__initialize` function — contracts that ignore
-their init payload (25 of 32) see the metadata bytes as a no-op. This means metadata
-requires zero changes to existing contracts and zero extra transactions.
+`DeployParamsV1::ix` is part of every deployment payload and is passed to the
+contract's `__initialize` function. A contract that ignores its init payload sees
+any metadata bytes as a no-op; a contract that parses `ix` owns those bytes. This is
+why metadata is an optional local convention rather than a contract-level field:
+Deployooor neither writes nor requires it.
 
 ## Types
 

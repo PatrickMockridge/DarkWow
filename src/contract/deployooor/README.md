@@ -1,12 +1,12 @@
 # Deployooor — Contract Deployment Infrastructure
 
-## The Capability
+## What It Is
 
 Deployooor is the deployment factory: it validates WASM binaries, deploys them at
 a key-derived ContractId, and locks deployed contracts immutably. It is **pure WASM
-with no ZK circuits** — `deploy` and `lock` are native contract calls authorized by
-the deployer's transaction signature. It is the second sanctioned citizen
-(`wallet.md` §0.1).
+with no ZK circuits and no manifest** — `deploy` and `lock` are plaintext contract
+calls authorized by the deployer's transaction signature. It is infrastructure, not
+a capability contract (`wallet.md` §0.1).
 
 **Trust tier:** consensus-critical (genesis counter 2). Required for every
 user-deployed contract.
@@ -37,53 +37,36 @@ Exec (`deploy_process_instruction_v1`) validates, in order:
 
 1. **Lock check** — reject if `lock[contract_id]` is set.
 2. **WASM validation** — `wasmparser::validate(wasm_bincode)`.
-3. **Export scan** — requires `memory`, `__initialize`, `__entrypoint`, `__update`,
-   `__metadata` (and optional `__spend_hook`).
-4. **Import scan** — reject `db_clear_all`, `db_drop_tree`, `db_drop_all`, `exec_dangerous`.
-5. **Singleton enforcement** — if `singleton` is set, the `singleton_name` must not
-   already be claimed.
-6. **wasm_hash** — `poseidon_hash([0, wasm_bincode.len()])`.
+3. **Export scan** — requires `memory`, `__initialize`, `__entrypoint`, `__update`
+   and `__metadata`.
 
-Apply writes the lock marker (`lock[contract_id] = 0`) and the wasm hash into `info`.
-The runtime then materializes the WASM and calls `__initialize` with the deploy `ix`.
+Apply writes `lock[contract_id] = false` (deployed, mutable). The runtime then
+materializes the WASM and calls `__initialize` with the deploy `ix` verbatim.
 
 ## Lock Flow (`lock`)
 
 Exec requires the contract to exist and be unlocked; Apply sets
-`lock[contract_id] = 1`, making it immutable. Only a transaction signed by the deploy
-key (whose public key derives the `contract_id`) can lock it.
+`lock[contract_id] = true`, making it immutable.
 
 ## State Trees
 
 | Tree | Purpose |
 |------|---------|
-| `info` | Contract metadata — `db_version`, wasm hashes |
+| `info` | Contract version (`db_version`) |
 | `lock` | Contract lock status — `contract_id → locked(bool)` |
-| `singleton` | Singleton name → ContractId (lazy, checked on deploy) |
-
-## Capabilities & Actions
-
-| Capability | Discriminant | Primitives | Note schema |
-|------------|--------------|------------|-------------|
-| `deployment_right` | `0` | `SecretKey, Commitment, ContractId, FuncId` | — (consumable) |
-
-| Action | Requires | Consumes | Produces | Barbs |
-|--------|----------|----------|----------|-------|
-| `deploy` | `all(deployment_right)` | `deployment_right` | — | `Commit, Dispatch, Gate` |
-| `lock` | `all(deployment_right)` | `deployment_right` | — | `Commit, Dispatch, Gate` |
 
 ## Authorization
 
-There are no ZK circuits and no contract-level signature checks — the `deployment_right`
-is modeled in the manifest, but the effective authorization is the **transaction-layer
-signature** bound to the deploy key. `contract_id = derive_public(deploy_pk)` means only
-the holder of that key can redeploy or lock the contract. `required_barbs` here are
-framework-level transaction barbs (commit/dispatch/gate), not contract circuits.
+There is no ZK proof and no manifest. Each endpoint's `get_metadata` publishes
+`signature_pubkeys = vec![params.public_key]`; the host verifies the transaction's
+Schnorr signature over the calls and proofs against that table
+(`Transaction::verify_sigs`). `contract_id = derive_public(deploy_pk)` means only the
+holder of that key can redeploy or lock the contract; an unsigned call or one signed
+by any other key is rejected.
 
 ## References
 
 - [Deployooor Specification](../../../doc/src/contract/deployooor.md)
 - [Contract Deployment Pipeline](../../../doc/src/arch/dwowd_contract_pipeline.md)
-- [Contract Manifest](../../../doc/src/arch/manifest.md)
 - [Genesis Contracts](../../../doc/src/arch/genesis.md)
 - Source: `src/contract/deployooor/`

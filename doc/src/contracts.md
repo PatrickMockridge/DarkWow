@@ -27,7 +27,7 @@ the complete bootstrap sequence.
 
 | Counter | Contract | Crate | Consensus | Maturity | Role |
 |---------|----------|-------|-----------|----------|------|
-| 2 | **Deployooor** | `dwow_deployooor_contract` | Yes | ✅ Proven | WASM contract deployment, singleton enforcement, manifest storage |
+| 2 | **Deployooor** | `dwow_deployooor_contract` | Yes | ✅ Proven | WASM contract deployment and locking (plaintext; no manifest) |
 | 3 | **Promissory Note** | `dwow_promissory_note_contract` | No | ✅ Proven | Universal DeFi primitive — tokens, transfers, swaps, redemption |
 | 4 | **NativeToken** | `dwow_native_token_contract` | Yes | ✅ Proven | Block rewards, fee payment, supply audit |
 | 5 | **Identity** | `dwow_identity_contract` | No | ✅ Proven | Credential issuance, selective disclosure, capability proofs |

@@ -136,9 +136,15 @@ fn tripwire_no_contract_names_in_wallet() -> TestResult<()> {
 }
 
 /// Every ZK contract metadata function SHALL return empty signature pubkeys.
-/// Schnorr signatures are prohibited per contract-standards.md §3.
-/// This tripwire catches any re-addition of non-empty signature_pubkeys before
-/// it reaches the integration test layer.
+/// Schnorr signatures are prohibited for ZK contracts per contract-standards.md §3.
+///
+/// Deployooor is the one sanctioned exception: it is plaintext infrastructure,
+/// not a ZK/capability contract, and the spec
+/// (`doc/src/spec/contract/deploy/scheme.md` §Signatures) requires Deploy/Lock
+/// to be authorized by the deploy key's transaction signature, so both
+/// endpoints declare `signature_pubkeys = vec![params.public_key]`.
+/// This tripwire catches any re-addition of non-empty signature_pubkeys outside
+/// that exception before it reaches the integration test layer.
 #[test]
 fn tripwire_no_schnorr_signature_pubkeys() -> TestResult<()> {
     let contracts_dir = workspace_root().join("src/contract");
@@ -164,6 +170,11 @@ fn tripwire_no_schnorr_signature_pubkeys() -> TestResult<()> {
             .map_err(|e| infra("reading an entry of src/contract", e))?
             .path();
         if !contract_dir.is_dir() { continue; }
+        // Deployooor's DeployV1/LockV1 are the spec-mandated plaintext
+        // transaction-signature endpoints; see this test's doc comment.
+        if contract_dir.file_name().and_then(|n| n.to_str()) == Some("deployooor") {
+            continue;
+        }
         let entrypoint = contract_dir.join("src/entrypoint/mod.rs");
         if !entrypoint.exists() {
             let alt = contract_dir.join("src/entrypoint.rs");

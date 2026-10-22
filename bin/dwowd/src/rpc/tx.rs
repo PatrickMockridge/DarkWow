@@ -147,9 +147,11 @@ impl DwowNode {
                 // relaying node that verifies it sees a value that agrees with itself; this tx is
                 // proofless and L2 rejects it, but the field is no longer a lie about the call set.
                 let tx_commitment = dwow_core::tx::commitment_of_calls(&calls);
+                let signatures = vec![vec![]; calls.len()];
                 let core_tx = dwow_core::tx::Transaction {
                     calls,
                     proofs: vec![],
+                    signatures,
                     tx_commitment,
                     nullifiers: chain_tx.nullifiers.clone(),
                 };

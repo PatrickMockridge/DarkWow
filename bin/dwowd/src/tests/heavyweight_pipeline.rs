@@ -81,6 +81,7 @@ pub(crate) fn build_witness(
     contract_id: ContractId,
     call_data: &[u8],
     proofs: Vec<Proof>,
+    signers: Option<&[dwow_sdk::crypto::SecretKey]>,
 ) -> Vec<u8> {
     let core_call = dwow_sdk::tx::ContractCall { contract_id, data: call_data.to_vec() };
     let calls = vec![dwow_sdk::dark_tree::DarkLeaf {
@@ -99,12 +100,17 @@ pub(crate) fn build_witness(
     // derived from the calls the witness itself carries, through the chain's own derivation, so
     // the fixture cannot declare one thing and prove another.
     let nullifiers = derive_witness_nullifiers(&calls);
-    let core_tx = dwow_core::tx::Transaction {
+    let mut core_tx = dwow_core::tx::Transaction {
         calls,
         proofs: vec![proofs],
+        signatures: vec![vec![]],
         tx_commitment,
         nullifiers,
     };
+    if let Some(secrets) = signers {
+        let sigs = core_tx.create_sigs(secrets).expect("create_witness_signatures");
+        core_tx.signatures = vec![sigs];
+    }
     dwow_serial::serialize(&core_tx)
 }
 
@@ -209,6 +215,9 @@ pub(crate) fn build_witness_tree(
     let core_tx = dwow_core::tx::Transaction {
         calls,
         proofs,
+        // One row per call, in call order. Multi-call test trees carry no
+        // declared signers; Deployooor's plaintext rows are single-call.
+        signatures: vec![vec![]; flat_calls.len()],
         tx_commitment,
         nullifiers,
     };
@@ -1995,7 +2004,12 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
             // `initialize` is a ZK endpoint; the harness returns the proof and it must travel in
             // the witness. The fixture used `vec![]` and the node refused the frame with
             // "0 proofs but metadata declares 1 entries" — the proof was made and dropped.
-            init_tx.witness = build_witness(relayer_id, &init_tx.contract_calls[0].data, vec![init.proof]);
+            init_tx.witness = build_witness(
+                relayer_id,
+                &init_tx.contract_calls[0].data,
+                vec![init.proof],
+                None,
+            );
             let mut block4 = build_test_block(
                 &chain.chain_state, height4,
                 vec![cb.tx, init_tx],

@@ -78,14 +78,20 @@ fn my_get_metadata(cid: ContractId, params: &[u8]) -> Vec<u8> {
 Err(_) => return Ok(()),  // Stale buffer, host sees garbage or empty data
 ```
 
-### Encode ZK Inputs Only — No Schnorr Signatures
+### Encode ZK Inputs Only — No Schnorr Signatures for ZK Contracts
 
 The metadata wire format is: `Encoded(Vec<(String, Vec<Base>)>) ++ Encoded(Vec<PublicKey>)`.
 Both components MUST be encoded. The ZK public inputs component MUST be populated.
-The signature pubkeys component SHALL be empty `vec![]`.
+For a ZK capability contract, the signature pubkeys component SHALL be empty `vec![]`.
 
 - **ZK public inputs**: circuit namespace → instance values. Must match `constrain_instance` order in the `.zk` circuit.
-- **Signature pubkeys**: SHALL be `Vec::new()` (empty). Schnorr signatures are PROHIBITED in contract metadata.
+- **Signature pubkeys**: SHALL be `Vec::new()` (empty) for ZK contracts. Schnorr signatures are PROHIBITED in a ZK contract's metadata.
+
+**One exception, and it is not a capability contract.** Deployooor is plaintext
+infrastructure: `DeployV1` and `LockV1` have no circuits and are authorized by the
+deploy key's transaction signature, which the deploy spec requires
+(`doc/src/spec/contract/deploy/scheme.md` §Signatures). Both endpoints therefore
+declare `signature_pubkeys = vec![params.public_key]`. No other contract may.
 
 DarkWow contracts authorize via ZK proofs + nullifiers (o-cap model). Every ZK circuit
 proves secret key knowledge, and the proof binds the nullifier — this IS the authorization. The
@@ -344,7 +350,8 @@ serialized and stored in the chain transaction's `witness` field
 (`type-system.md §8.2`). This witness is:
 
 - **ZK-proven**: Each call's ZK proofs bind to the call's public inputs. Schnorr
-  signatures are prohibited (see §3).
+  signatures are prohibited for ZK contracts (see §3); the plaintext Deployooor
+  endpoints are the spec-mandated exception and carry one transaction signature.
 - **Reconciled**: `decode_and_reconcile()` verifies that chain-level `ContractCall`
   fields match the witness-embedded core transaction
 

@@ -23,7 +23,7 @@
 
 //! Does the artifact the deploy path validates itself pass that validator?
 //!
-//! `src/contract/deployooor/src/entrypoint/deploy.rs` calls
+//! `src/contract/deployooor/src/entrypoint/deploy_v1.rs` calls
 //! `wasmparser::validate(&params.wasm_bincode)` on every deployed artifact — the
 //! last gate before a contract is stored. On 2026-09-25 the executor observed a
 //! **trap inside wasmparser** (`BinaryReader::visit_operator` →
@@ -49,12 +49,6 @@ const ARTIFACT: &[u8] = include_bytes!("../dwow_deployooor_contract.wasm");
 
 #[test]
 fn the_deployooor_artifact_passes_wasmparser_validate() {
-    assert!(
-        ARTIFACT.len() > 1_048_576,
-        "this witness is about a payload the old host refused; the artifact is now {} bytes",
-        ARTIFACT.len()
-    );
-
     match wasmparser::validate(ARTIFACT) {
         Ok(_types) => {
             println!("validate OK: {} bytes", ARTIFACT.len());

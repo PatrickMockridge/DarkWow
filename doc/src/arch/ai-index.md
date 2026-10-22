@@ -190,7 +190,7 @@ The theoretical basis. Read in this order.
   L1 complexity ceilings.*
 - **[Contract Standards](../dev/contracts/contract-standards.md)** — minimum standards and
   best practices.
-- **[Contract Catalog](../contracts.md)** — all 32 contracts with manifests.
+- **[Contract Catalog](../contracts.md)** — all 32 contracts; 31 carry manifests (deployooor is plaintext infrastructure with none).
 
 ---
 

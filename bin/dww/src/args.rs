@@ -78,7 +78,7 @@ pub enum WalletSubcmd {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ContractSubcmd {
-    Deploy { deploy_auth: String, wasm_path: String, deploy_ix: Option<String>, manifest: Option<String> },
+    Deploy { deploy_auth: String, wasm_path: String, deploy_ix: Option<String> },
     Show { contract_id: String },
     Lock { deploy_auth: String },
     Invoke { contract_id: String, function: String, params: Option<String>, recipient: Option<String> },
@@ -392,7 +392,6 @@ fn parse_contract_subcmd(tokens: &[&str]) -> Result<ContractSubcmd, Error> {
             Ok(ContractSubcmd::Deploy {
                 deploy_auth: tokens[1].to_string(), wasm_path: tokens[2].to_string(),
                 deploy_ix: tokens.get(3).map(|s| s.to_string()),
-                manifest: extract_flag_value(tokens, "--manifest"),
             })
         }
         "show" => {

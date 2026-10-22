@@ -2,15 +2,15 @@
 
 > **Scope**: **32** zkVM opcodes (**31** excluding the internal `Noop` — a scope difference, not a
 > disagreement), **10** gadget files in `src/zk/gadget/` (9 implementations + `mod.rs`), and the
-> circuit set the Orchard-class gate walks — **178 circuits**: 166 contract + `proofs/core/` 10 +
-> `bin/darkirc/proof/` 2. Re-measured **2026-10-18**, and 166/178 after attestation's
-> `check_not_revoked.zk` was removed on 2026-10-22; it was 120 before the gate existed as a gate.
+> circuit set the Orchard-class gate walks — **177 circuits**: 165 contract + `proofs/core/` 10 +
+> `bin/darkirc/proof/` 2. Re-measured **2026-10-22**, after attestation's `check_not_revoked.zk`
+> and deployooor's `lock.zk` were removed; it was 120 before the gate existed as a gate.
 > The count moves: re-run `scripts/check-circuit-instance-derivation.sh` rather than quoting it.
 > The single canonical table for all of these is in [`proofs/README.md`](../../../../proofs/README.md).
 > **Correction (2026-09-24) to the contract count.** The parenthetical that stood here read
 > "(across 26 contracts + core proofs)", and it was left dangling when the line above was rewritten.
-> The tree holds **34 contract directories**, **32 of them carrying a `proof/` directory**, and
-> **166 `.zk` circuits** under `src/contract/*/proof/`. Those have been **manually audited** for the Orchard-class
+> The tree holds **34 contract directories**, **31 of them carrying a `proof/` directory**, and
+> **165 `.zk` circuits** under `src/contract/*/proof/`. Those have been **manually audited** for the Orchard-class
 > instance-derivation pattern. The audit is documented at
 > `proofs/lean/src/DarkFi/Circuits/`, which is **comment-only**: it contains no Lean
 > declarations, and the names it refers to are comments of the form

@@ -319,11 +319,12 @@ pub fn accept_block_with_mempool(
 
     // 2.5 L2 transaction verification — for every non-coinbase tx, decode the
     // witness (L1 carried it; L1 barrier #1 keeps it out of the block hash),
-    // reconcile it against the chain tx, and verify ZK proofs + signatures.
+    // reconcile it against the chain tx, and check proof presence.
     // Per mempool.md §1/§4, verified at both admission and block accept.
     // Failure here means a fabricated/unauthenticated tx — reject the block.
     // Coinbase is exempt (soundness = transparent WASM re-execution).
-    // Full metadata-based VK verification is done inside execute_block.
+    // Full metadata-based VK + signature verification is done inside
+    // execute_block, where the contract's metadata tables are available.
     for tx in &block.transactions {
         // P2-6: coinbase classification lives in dwow_chain::Transaction.
         // UNVERIFIED(P2-6): needs cargo test -p dwowd --lib -- daemon_sync_integration

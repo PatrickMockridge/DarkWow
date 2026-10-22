@@ -382,7 +382,8 @@ mod tests {
         assert!(!v.ok, "a module with no exports must not pass");
     }
 
-    /// The nine genesis `(name, wasm, manifest)` pairs, embedded at compile time.
+    /// The eight manifest-bearing genesis `(name, wasm, manifest)` pairs, embedded at compile
+    /// time. Deployooor is plaintext infrastructure and has no manifest.
     const GENESIS: &[(&str, &[u8], &str)] = &[
         ("native_token", include_bytes!("../../../src/contract/native_token/dwow_native_token_contract.wasm"),
          include_str!("../../../src/contract/native_token/manifest.toml")),
@@ -400,11 +401,9 @@ mod tests {
          include_str!("../../../src/contract/multisig/manifest.toml")),
         ("oracle", include_bytes!("../../../src/contract/oracle/dwow_oracle_contract.wasm"),
          include_str!("../../../src/contract/oracle/manifest.toml")),
-        ("deployooor", include_bytes!("../../../src/contract/deployooor/dwow_deployooor_contract.wasm"),
-         include_str!("../../../src/contract/deployooor/manifest.toml")),
     ];
 
-    /// `OBL-C249` exit (a): all nine genesis manifests pass Layer 2 against their own WASM, and
+    /// `OBL-C249` exit (a): all eight embedded genesis manifests pass Layer 2 against their own WASM, and
     /// each manifest's namespace equals its circuit name — the property the wallet's
     /// `(namespace, circuit)` lookup depends on.
     #[test]
@@ -470,7 +469,7 @@ mod tests {
 
     /// `OBL-C249` exit (c): the generic prover's load path — the key is
     /// `(contract, manifest namespace, circuit name)`. Storing the embedded binaries under the
-    /// namespace they carry and looking them up by the manifest must succeed for all nine.
+    /// namespace they carry and looking them up by the manifest must succeed for all eight.
     #[test]
     fn every_genesis_circuit_loads_by_its_manifest_namespace() {
         let db = std::env::temp_dir().join(format!("dwow-c249-{}.db", std::process::id()));

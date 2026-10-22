@@ -84,7 +84,7 @@ pub mod native_token {
 pub mod deployooor {
     pub use dwow_deployooor_contract::DeployFunction;
     pub use dwow_deployooor_contract::client::deploy_v1::DeployCallBuilder;
-    pub use dwow_deployooor_contract::client::lock_v1::{build_lock_call, LockCallDebris, LockPlan};
+    pub use dwow_deployooor_contract::client::lock_v1::{LockCallBuilder, LockCallDebris};
     pub use dwow_deployooor_contract::model::*;
     pub use dwow_deployooor_contract::DEPLOY_CONTRACT_INFO_TREE;
     pub use dwow_deployooor_contract::DEPLOY_CONTRACT_LOCK_TREE;

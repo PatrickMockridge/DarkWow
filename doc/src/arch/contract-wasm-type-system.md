@@ -2639,8 +2639,9 @@ across contracts is
 
 and it stays a product under o-cap isolation, because a transaction touching several contracts
 chooses one operation per contract *simultaneously*. **Isolating contract state does not divide the
-number of ways to combine contracts.** For the 31 contracts / 166 circuits in the tree this is
-`615 192 791 076 863 999 999 999` combinations against a `Σ nᵢ = 166` additive reading — the two
+number of ways to combine contracts.** For the 31 proof-bearing contracts / 165 circuits in the
+tree, ∏(nᵢ + 1) − 1 over each contract's `.zk` count is
+`503 339 556 335 615 999 999 999` combinations against a `Σ nᵢ = 165` additive reading — the two
 readings differ by twenty-one orders of magnitude, and the product is the correct one
 (`Combinations.contractOps_combinationCount`, `norm_num`-checked).
 

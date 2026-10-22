@@ -280,7 +280,8 @@ fn tx_binding_mismatch(
 ///
 /// For each call in core_tx: load the zkbin from the contracts store,
 /// feed it to the stateless `verify_zkp` along with the proof and public
-/// inputs. Schnorr signature verification removed per contract-standards.md §3.
+/// inputs. The metadata's signature-pubkey table is verified separately by
+/// the caller (`Transaction::verify_sigs` in `execute_block`'s L2 pass).
 ///
 /// This is the function that closes HAZOP C1 (counterfeiting) — a
 /// fabricated transaction has no valid proof and is rejected here.
@@ -355,8 +356,8 @@ pub fn verify_core_tx_with_tables(
         }
     }
 
-    // Schnorr signature verification removed per contract-standards.md §3.
-    // Authorization is via ZK proof + nullifier exclusively.
+    // Signature pubkeys declared by each call's metadata are verified by the
+    // caller (`Transaction::verify_sigs`) against the core tx's signature rows.
 
     Ok(())
 }
@@ -412,9 +413,9 @@ pub fn verify_single_tx(chain_tx: &ChainTransaction) -> Result<(), VerifyError> 
     // possession of the SecretKey (the capability name) — this IS the
     // authority evidence per type-system.md §5.
     //
-    // Schnorr signatures removed per contract-standards.md §3.
-    // ocap.md §6.2 defines Exercise = ZK Proof, Verify =
-    // Proof::verify, Consume = Nullifier. No per-call Schnorr signature.
+    // The plaintext infrastructure endpoints (Deployooor DeployV1/LockV1)
+    // declare their signer in metadata instead; that table is checked at
+    // block accept by `Transaction::verify_sigs`.
 
     Ok(())
 }
@@ -471,7 +472,14 @@ mod tests {
     /// fixture that zeroes it is refused before the structure checks these tests are about ever run.
     fn core_tx_of(calls: Vec<Leaf>) -> dwow_core::tx::Transaction {
         let tx_commitment = dwow_core::tx::commitment_of_calls(&calls);
-        dwow_core::tx::Transaction { calls, proofs: vec![], tx_commitment, nullifiers: vec![] }
+        let signatures = vec![vec![]; calls.len()];
+        dwow_core::tx::Transaction {
+            calls,
+            proofs: vec![],
+            signatures,
+            tx_commitment,
+            nullifiers: vec![],
+        }
     }
 
     /// F10's witness, with its acceptance control.
@@ -543,6 +551,7 @@ mod tests {
                 parent_index: None,
             }],
             proofs: vec![],
+            signatures: vec![vec![]],
             tx_commitment: [0u8; 32],
             nullifiers: vec![],
         };
@@ -582,6 +591,7 @@ mod tests {
         let core_tx = dwow_core::tx::Transaction {
             calls,
             proofs: vec![],
+            signatures: vec![vec![]],
             tx_commitment: expected_commitment,
             nullifiers: vec![],
         };
@@ -676,6 +686,7 @@ mod tests {
                 parent_index: None,
             }],
             proofs: vec![], // EMPTY — should trigger the outer length guard
+            signatures: vec![vec![]],
             tx_commitment: [0u8; 32],
             nullifiers: vec![],
         };

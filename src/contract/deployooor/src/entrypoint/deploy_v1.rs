@@ -22,7 +22,7 @@
  */
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, ContractId, PublicKey},
+    crypto::{ContractId, PublicKey},
     dark_tree::DarkLeaf,
     deploy::DeployParamsV1,
     error::{ContractError, ContractResult},
@@ -30,19 +30,13 @@ use dwow_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
-use dwow_serial::{deserialize, Encodable};
+use dwow_serial::{deserialize, serialize, Encodable};
 use wasmparser::{
     ExternalKind::{Func, Memory},
-    Payload::{ExportSection, ImportSection},
+    Payload::ExportSection,
 };
 
-use crate::{
-    error::DeployError,
-    model::{wasm_content_commitment, DeployUpdateV1},
-    DEPLOY_CONTRACT_INFO_TREE, DEPLOY_CONTRACT_LOCK_TREE,
-    DEPLOY_CONTRACT_SINGLETON_TREE, DEPLOY_CONTRACT_WASM_HASH_KEY,
-    DISALLOWED_WASM_IMPORTS,
-};
+use crate::{error::DeployError, model::DeployUpdateV1, DEPLOY_CONTRACT_LOCK_TREE};
 
 /// `get_metadata` function for `Deploy::DeployV1`
 pub(crate) fn deploy_get_metadata_v1(
@@ -54,15 +48,14 @@ pub(crate) fn deploy_get_metadata_v1(
     let self_ = calls.get(call_idx).ok_or_else(|| {
         ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
     })?;
-    let _params: DeployParamsV1 = deserialize(self_.data.data.get(1..).ok_or_else(|| {
+    let params: DeployParamsV1 = deserialize(self_.data.data.get(1..).ok_or_else(|| {
         ContractError::IoError("empty call data: no payload after selector".to_string())
     })?)?;
 
     // Public inputs for the ZK proofs we have to verify
     let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Public keys for the transaction signatures we have to verify
-    // Schnorr signatures prohibited (contract-standards.md §3). Deployooor is pure WASM, no ZK circuits.
-    let signature_pubkeys: Vec<PublicKey> = vec![];
+    let signature_pubkeys: Vec<PublicKey> = vec![params.public_key];
 
     // Serialize everything gathered and return it
     let mut metadata = vec![];
@@ -89,8 +82,8 @@ pub(crate) fn deploy_process_instruction_v1(
     let lock_db = wasm::db::db_lookup(cid, DEPLOY_CONTRACT_LOCK_TREE)?;
     let contract_id = ContractId::derive_public(params.public_key);
 
-    if let Some(v) = wasm::db::db_get(lock_db, &contract_id.to_bytes())? {
-        let locked: bool = v.first().is_some_and(|b| *b != 0);
+    if let Some(v) = wasm::db::db_get(lock_db, &serialize(&contract_id))? {
+        let locked: bool = deserialize(&v)?;
         if locked {
             msg!("[DeployV1] Error: Contract is locked. Cannot redeploy.");
             return Err(DeployError::ContractLocked.into())
@@ -152,12 +145,6 @@ pub(crate) fn deploy_process_instruction_v1(
 
                 if element.name == "__metadata" && element.kind == Func {
                     found_metadata = true;
-                    continue
-                }
-
-                if element.name == "__spend_hook" && element.kind == Func {
-                    // optional export — backward compatible
-                    continue
                 }
             }
         }
@@ -168,68 +155,16 @@ pub(crate) fn deploy_process_instruction_v1(
         return Err(DeployError::WasmBincodeInvalid.into())
     }
 
-    // Validate WASM imports — reject dangerous internal functions
-    let parser = wasmparser::Parser::new(0);
-    for payload in parser.parse_all(&params.wasm_bincode) {
-        let payload = match payload {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-        if let ImportSection(v) = payload {
-            for import in v.into_iter_with_offsets() {
-                let (_, import) = match import {
-                    Ok(v) => v,
-                    Err(_) => continue,
-                };
-                if DISALLOWED_WASM_IMPORTS.contains(&import.name) {
-                    msg!(
-                        "[DeployV1] Error: Contract imports disallowed function: {}",
-                        import.name
-                    );
-                    return Err(DeployError::WasmBincodeInvalid.into());
-                }
-            }
-        }
-    }
-
-    // Singleton enforcement — reject if name already claimed
-    if params.singleton && !params.singleton_name.is_empty() {
-        let singleton_db = wasm::db::db_lookup(cid, DEPLOY_CONTRACT_SINGLETON_TREE)?;
-        let singleton_key = params.singleton_name.as_bytes();
-        if let Some(existing) = wasm::db::db_get(singleton_db, singleton_key)? {
-            let existing_cid = ContractId::from_bytes(existing.try_into().map_err(|_| {
-                ContractError::IoError("Corrupt state: singleton ContractId wrong size".into())
-            })?)?;
-            msg!(
-                "[DeployV1] Error: Singleton '{}' already claimed by contract {}",
-                params.singleton_name, existing_cid
-            );
-            return Err(DeployError::WasmBincodeInvalid.into());
-        }
-    }
-
-    // Commit to the WASM bytes, not its length (`OBL-C250`). A reader recomputes this from the
-    // module it fetched and compares it to the stored value; the deployooor spec does exactly that.
-    let wasm_hash = wasm_content_commitment(&params.wasm_bincode);
-
-    let update = DeployUpdateV1 { contract_id, wasm_hash };
-    Ok(update.encode())
+    let update = DeployUpdateV1 { contract_id };
+    Ok(serialize(&update))
 }
 
 /// `process_update` function for `Deploy::DeployV1`
 pub(crate) fn deploy_process_update_v1(cid: ContractId, update: DeployUpdateV1) -> ContractResult {
+    // We add the contract to the list
     msg!("[DeployV1] Adding ContractID to deployed list");
     let lock_db = wasm::db::db_lookup(cid, DEPLOY_CONTRACT_LOCK_TREE)?;
-    wasm::db::db_set(lock_db, &update.contract_id.to_bytes(), &[0u8])?;
-
-    // Store WASM content hash for integrity verification
-    msg!("[DeployV1] Storing WASM hash for contract");
-    let info_db = wasm::db::db_lookup(cid, DEPLOY_CONTRACT_INFO_TREE)?;
-    wasm::db::db_set(
-        info_db,
-        &[DEPLOY_CONTRACT_WASM_HASH_KEY, &update.contract_id.to_bytes()].concat(),
-        &update.wasm_hash.to_repr(),
-    )?;
+    wasm::db::db_set(lock_db, &serialize(&update.contract_id), &serialize(&false))?;
 
     Ok(())
 }

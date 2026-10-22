@@ -3,17 +3,23 @@
 The Deployooor contract is DarkWow's non-native smart contract deployment system.
 It is the production path for deploying custom WASM smart contracts on-chain.
 
+Deployooor is **plaintext infrastructure**: it is not a capability contract and it is
+not on the ZK path. It has two endpoints, no circuits, no manifest, and no state
+beyond the set of deployed-and-locked contract ids.
+
 ## Architecture
 
 ```
 src/contract/deployooor/
 ├── src/
-│   ├── entrypoint.rs      # init, process_instruction, apply, get_metadata
-│   ├── lib.rs             # DeployFunction enum (DeployV1=0x00, LockV1=0x01)
-│   ├── error.rs           # DeployError
-│   ├── model.rs           # DeployParamsV1, DeployUpdateV1, LockUpdateV1
-│   ├── deploy_v1.rs       # DeployV1 entrypoint logic
-│   └── lock_v1.rs         # LockV1 entrypoint logic
+│   ├── entrypoint.rs          # init, metadata/exec/apply dispatch
+│   ├── lib.rs                 # DeployFunction (DeployV1=0x00, LockV1=0x01)
+│   ├── error.rs               # DeployError
+│   ├── model.rs               # DeployUpdateV1, LockParamsV1, LockUpdateV1
+│   ├── entrypoint/
+│   │   ├── deploy_v1.rs       # DeployV1 logic
+│   │   └── lock_v1.rs         # LockV1 logic
+│   └── client/                # DeployCallBuilder, LockCallBuilder
 ├── tests/
 ├── Cargo.toml
 └── README.md
@@ -26,6 +32,14 @@ src/contract/deployooor/
 | `DeployV1` | 0x00 | Deploy a new WASM contract on-chain |
 | `LockV1` | 0x01 | Lock the contract so its code becomes immutable |
 
+Both functions are `is_zk: false` and are authorized by a **transaction signature**,
+not a ZK proof. Each endpoint's `get_metadata` publishes exactly one signer,
+`signature_pubkeys = vec![params.public_key]`; the host verifies the transaction's
+Schnorr signature over the calls and proofs against that table
+(`Transaction::verify_sigs`). A call carrying no signature, or a signature from any
+other key, is rejected. This is the rule in
+[the deploy spec](../spec/contract/deploy/scheme.md#signatures).
+
 ## DeployV1 (0x00)
 
 Deploys a WASM contract using `DeployParamsV1`:
@@ -33,18 +47,19 @@ Deploys a WASM contract using `DeployParamsV1`:
 ```rust
 struct DeployParamsV1 {
     wasm_bincode: Vec<u8>,    // The WASM binary
-    public_key: PublicKey,    // Deployer's public key
-    ix: Vec<u8>,              // Deployment payload (init params or ContractMetadata)
-    singleton: bool,          // Reject if another contract claims `singleton_name`
-    singleton_name: String,   // Logical name for the singleton check
+    public_key: PublicKey,    // Deployer's public key; also the signature key
+    ix: Vec<u8>,              // The new contract's `__initialize` payload
 }
 ```
 
-`singleton` and `singleton_name` carry the genesis singleton rule — see the `singleton`
-tree under [Database Trees](#database-trees) below, and [Genesis](../arch/genesis.md).
-
 The `ContractId` is derived from the deployer's public key via Poseidon hash:
-`ContractId = derive_public(public_key)`.
+`ContractId = derive_public(public_key)`. `ix` is passed verbatim to the new
+contract's `__initialize`; Deployooor assigns it no other meaning.
+
+`DeployV1` checks that the contract is not locked, runs `wasmparser::validate` on the
+module, and requires the five exports `memory`, `__initialize`, `__entrypoint`,
+`__update` and `__metadata`. On success it returns `DeployUpdateV1 { contract_id }`,
+and `apply` writes `lock[contract_id] = false` (deployed, mutable).
 
 Deployments are detected by `dwowd` during block application via the
 `apply_block_with_uncles()` post-processing hook, which scans for `DeployV1`
@@ -58,22 +73,18 @@ ContractId derivation).
 Once locked, a contract's WASM code becomes **permanently immutable** — no further
 code updates can be deployed. The lock state is stored in the `lock` sled tree.
 
-**Who can lock:** Only the original deployer, and it is a proof that enforces this. `LockV1`
-carries a `LockV2` ZK proof that the caller knows the secret behind `params.public_key`: the
-circuit derives the public key from the witnessed secret with `ec_mul_base` and constrains it
-equal to the pair the call publishes, so a prover can only produce it for a key it holds. The
-proof is bound to the transaction carrying it — it commits to `tx_commitment` and to a
-per-call `tx_nonce` — so one cannot be lifted from another transaction and replayed here.
+**Who can lock:** Only the original deployer. `LockV1` publishes the deployer's
+`params.public_key` as its signature key, so the transaction must be signed by the
+secret behind that key. No other key can lock the contract.
 
 **Irrevocable:** Locking is a one-way transition. The lock tree entry goes from
 `false` (deployed, mutable) → `true` (locked, immutable). Once locked:
 - `DeployV1` is rejected with `DeployError::ContractLocked`
 - A second `LockV1` is rejected with `DeployError::ContractLocked`
 
-**Params:** `LockParamsV1` carries `public_key: PublicKey` and `tx_nonce: pallas::Base`
-(64 bytes encoded). `build_lock_call` in `client/lock_v1.rs` builds the witnesses from the
-deployer's `Keypair` and secret and returns a `LockPlan`; `LockPlan::prove(tx_commitment)`
-produces the proof, because the frame commitment is not known until the call exists.
+**Params:** `LockParamsV1` carries only `public_key: PublicKey`. `LockV1` checks
+that the contract id exists in the `lock` tree and is not already locked, then
+returns `LockUpdateV1 { contract_id }`; `apply` writes `lock[contract_id] = true`.
 
 **Wallet CLI:**
 ```
@@ -81,62 +92,47 @@ dwow_wallet contract lock <deploy_auth>
 ```
 Where `<deploy_auth>` is the hex-encoded secret key of the original deployer.
 The wallet derives the public key, builds a LockV1 transaction targeting the
-Deployooor contract, attaches a Native Token fee, and broadcasts via P2P.
+Deployooor contract, signs the lock call's signature row with that key, attaches a
+Native Token fee, and broadcasts via P2P.
 
 ## ZK Circuits
 
-| Circuit | Used by | What it proves |
-|---------|---------|----------------|
-| `lock.zk` | `LockV1` (0x01) | The caller knows the secret behind `params.public_key`, and the proof belongs to the transaction carrying it |
+None. Deployooor has no proof directory, no `manifest.toml`, and no circuits: it is
+not a capability contract, and both endpoints are authorized by the deploy key's
+transaction signature.
 
-`DeployV1` (0x00) carries no proof (`manifest.toml` declares `requires_proof = false`).
-Circuits are registered by the contract's `init_contract` into the `_zkas` tree, which is
-where the host reads them back from by namespace.
+## Genesis
 
-## The WASM content commitment
+Deployooor is one of the nine genesis contracts and is deployed by the genesis block
+at its well-known `ContractId`. Its genesis entry passes `&[]` as `ix`: like
+`native_token`, it is a bespoke citizen whose wallet paths are embedded, so a
+deployed manifest would be a second declaration nothing reads. The other seven
+genesis contracts deploy their `manifest.toml` in `ix`, which the host writes under
+`contract_id ‖ b"_manifest"` (`apply_genesis_deployments`).
 
-`DeployV1` stores `wasm_content_commitment(wasm)` under `info ‖ b"wasm_hash" ‖ contract_id`. The
-commitment folds 64-byte chunks of the module with `poseidon`, each with its length, and folds the
-module's total length last; before 2026-10-22 it was `poseidon([0, len])` — a commitment to the
-module's **size**, so two equal-length modules stored the same value. The deployooor spec now reads
-the stored value back and compares it with the module it deployed: that read is what makes the field
-an integrity check rather than a number nothing consumed (`OBL-C250`).
-
-The genesis deployment table carries a manifest in `ix` for eight of the nine contracts and the
-host writes it under `contract_id ‖ b"_manifest"` (`apply_genesis_deployments`). `native_token` is
-the exception: it is the bespoke citizen, its wallet paths are embedded, and its genesis entry
-passes `&[]`; its on-disk `manifest.toml` documents the interface but is not a deployment input.
-`deployooor` was the other empty entry until its manifest existed; it now carries its own.
+The genesis deployment's `public_key` is a fixed deterministic value because it is
+part of the transaction preimage; binding is by the canonical table position and the
+pinned genesis hash, not by `derive_public`.
 
 ## Database Trees
 
 | Tree | Purpose |
 |------|---------|
-| `info` | Contract version and state |
-| `lock` | Per-contract lock flags |
-| `singleton` | Singleton enforcement — prevents duplicate deployments |
-
-`singleton` is real — `DEPLOY_CONTRACT_SINGLETON_TREE = "singleton"` in `lib.rs` — but
-**`manifest.toml` declares only `info` and `lock`** (`F-543`). No gate reads a manifest's
-`[[trees]]` block, so nothing notices either way; the disagreement is recorded rather than
-repaired here, because a contract's `manifest.toml` is a build input and deployooor is a genesis
-contract, so editing it stales the artifact and re-rolls the pin.
+| `info` | Contract version (`db_version`) |
+| `lock` | Per-contract lock flags, `contract_id → bool` |
 
 ## Integration with Wallet
 
 The `dwow_wallet` wallet integrates with Deployooor via:
 - `apply_tx_deploy_data()` — scanning for new deployments
-- `deploy_contract()` — creating new deployment transactions
+- `deploy_contract()` — creating new deployment transactions, signed by the deploy key
+- `lock_contract()` — creating the lock transaction, signed by the deploy key
 
 Contract deployment requires fee payment via NativeToken::FeeV3.
 
 ## See Also
-- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
 - [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
 - [Contract Safety](../dev/contracts/safety.md) — Capability safety analysis
-
-
-- [Contract Metadata](../arch/contract-metadata.md) — On-chain metadata carried in `ix`
 - [Deployooor Spec](../spec/contract/deploy/deploy.md) — Full specification
 - [Contract Development Guide](../dev/contracts.md)
 - [Testing Overview](../dev/testing/overview.md) — Deployooor-based Level 1 tests

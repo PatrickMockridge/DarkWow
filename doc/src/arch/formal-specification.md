@@ -53,15 +53,16 @@ See [Contract Trust Model](contract-trust-model.md) for the full specification.
 
 ## Contract Ecosystem — 32 Contracts with Manifests
 
-Every contract has an on-chain **manifest** — a TOML document describing its
-functions, capability types, actions, state trees, and ZK circuits. The manifest
-enables any wallet to interact with any contract without hardcoded Rust knowledge.
-See [Contract Manifest](manifest.md) for the full specification.
+Most contracts have a **manifest** — a TOML document describing their functions,
+capability types, actions, state trees, and ZK circuits. The manifest enables a
+wallet to interact with a contract without hardcoded Rust knowledge.
+See [Contract Manifest](manifest.md) for the full specification. Deployooor is the
+exception: it is plaintext infrastructure with no manifest.
 
-The wallet discovers contracts by scanning `DeployV1` transactions. When a
-manifest is found (magic byte `0x4D` prefix), it's parsed, stored in SQLite,
-and used for capability resolution. Contracts without manifests fall back to
-generic AEAD discovery.
+The wallet discovers contracts by scanning `DeployV1` transactions, keying each at
+`derive_public(public_key)`. Genesis manifests are embedded in the wallet and seeded
+at startup; `DeployParamsV1::ix` is the new contract's `__initialize` payload, not a
+manifest envelope. Contracts without manifests fall back to generic AEAD discovery.
 
 ### Genesis (9)
 
@@ -131,8 +132,8 @@ cargo build --release -p dwowd -p dwow_wallet
 # Initialise the wallet database (there is no `wallet keygen` — identity is declared)
 ./target/release/dwow_wallet -c dww_config.toml wallet initialize
 
-# Deploy a contract with a manifest
-./target/release/dwow_wallet -c dww_config.toml contract deploy <auth> <wasm> --manifest manifest.toml
+# Deploy a contract (optional trailing argument is the __initialize payload)
+./target/release/dwow_wallet -c dww_config.toml contract deploy <auth> <wasm> [ix]
 
 # Show a contract's interface from its manifest
 ./target/release/dwow_wallet -c dww_config.toml contract show <contract_id>

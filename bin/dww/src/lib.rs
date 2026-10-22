@@ -49,6 +49,7 @@ use dwow_sdk::{
     tx::ContractCall,
 };
 use crate::contract_imports::NATIVE_TOKEN_CONTRACT_ID;
+use dwow_serial::Encodable;
 // AssetId type alias REMOVED — pallas::Base is used inline.
 use crate::walletdb::CapRecord;
 
@@ -603,7 +604,6 @@ impl Dww {
 
             let genesis_manifests: &[(&str, &str)] = &[
                 ("native_token", include_str!("../../../src/contract/native_token/manifest.toml")),
-                ("deployooor", include_str!("../../../src/contract/deployooor/manifest.toml")),
                 ("promissory_note", include_str!("../../../src/contract/promissory_note/manifest.toml")),
                 ("attestation", include_str!("../../../src/contract/attestation/manifest.toml")),
                 ("box", include_str!("../../../src/contract/box/manifest.toml")),
@@ -635,8 +635,8 @@ impl Dww {
                     deployer_pubkey: String::new(),
                     deploy_height: BlockHeight::new(1),
                     attestations_json: String::new(),
-                    // Seeded before any deploy is scanned; the scan records the Layer-2 verdict
-                    // when it reads the genesis deployment.
+                    // The manifest is the wallet's embedded declaration; it is not read
+                    // out of a deployment (`ix` is an init payload).
                     manifest_wasm_verdict: String::new(),
                     lock_status: "unlocked".into(),
                 };
@@ -1705,16 +1705,39 @@ impl Dww {
         let deploy_key = dwow_sdk::crypto::SecretKey::from_bytes(key_bytes)
             .map_err(|e| Error::Custom(format!("Invalid deploy key: {}", e)))?;
         let keypair = dwow_sdk::crypto::Keypair::new(deploy_key.clone());
-        let public_key_bs58 = bs58::encode(keypair.public.to_bytes()).into_string();
 
-        // Build LockV1 params — just the deployer's public key
-        let params = format!(r#"{{"public_key":"{}"}}"#, public_key_bs58);
+        let lock = crate::contract_imports::deployooor::LockCallBuilder {
+            deploy_keypair: keypair,
+        }
+        .build()
+        .map_err(|e| Error::Custom(format!("Failed to build lock call: {e:?}")))?;
+        let mut call_data = vec![0x01u8];
+        lock.params
+            .encode(&mut call_data)
+            .map_err(|e| Error::Custom(format!("Failed to encode LockParamsV1: {e:?}")))?;
 
-        // Route through generic invoke — uses Deployooor's ContractClient.
-        // LockV1 metadata declares [params.public_key] as its signature pubkey
-        // (deployooor entrypoint/lock_v1.rs) — the deploy authority signs the
-        // lock call's row.
-        self.invoke_contract("deployooor", "LockV1", Some(&params), vec![], vec![deploy_key], None).await
+        let deployooor_id = *dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID;
+        let lock_call = ContractCall { contract_id: deployooor_id, data: call_data };
+
+        let mut seed = [0u8; 32];
+        rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
+        let fee = crate::fee_builder::prepare_fee_call(
+            &self.wallet, &self.account_mgr, None, seed, &[],
+            self.contract_risk_factor(&deployooor_id, false), WasmKb::ZERO,
+            self.latest_fee_window_flags(), FeeTier::LOW,
+        )?;
+        let tx_commitment =
+            dwow_sdk::crypto::util::tx_commitment([&lock_call, &fee.contract_call()]);
+        let leaf = ContractCallLeaf { call: lock_call, proofs: vec![] };
+        let mut tx = fee.finish(leaf, tx_commitment)?;
+        declare_l1_nullifiers(&mut tx)?;
+        // LockV1's metadata publishes [params.public_key]; the deploy authority
+        // signs the lock call's row. The fee row stays empty.
+        let lock_sigs = tx.create_sigs(&[deploy_key])
+            .map_err(|e| Error::Custom(format!("lock signature: {e}")))?;
+        tx.signatures[0] = lock_sigs;
+
+        Ok(tx)
     }
 
 
@@ -1740,7 +1763,7 @@ impl Dww {
         function: &str,
         params: Option<&str>,
         proofs: Vec<Vec<u8>>,
-        _signing_secrets: Vec<SecretKey>,
+        signing_secrets: Vec<SecretKey>,
         recipient: Option<dwow_sdk::crypto::PublicKey>,
     ) -> Result<Transaction> {
         // Manifest-driven fallback storage — lives outside the or_else chain so
@@ -1878,12 +1901,14 @@ impl Dww {
                     dwow_sdk::crypto::util::tx_commitment([&leaf.call, &fee_call]);
                 let mut tx = fee.finish(leaf, tx_commitment)?;
                 declare_l1_nullifiers(&mut tx)?;
-                // §6.3 step 7 / mempool admission: ONE signature row per call,
-                // in call order — calls[0] = main (signed by the caller-supplied
-                // secrets matching the call's metadata pubkeys, empty row when
-                // the metadata declares none), calls[1] = fee (signed by the
-                // fee ephemeral, fee metadata: signature_public = ephemeral).
-                // Schnorr signatures removed per contract-standards.md §3.
+                // ONE signature row per call, in call order — calls[0] = main
+                // (signed by the caller-supplied secrets matching the call's
+                // metadata pubkeys, empty row when the metadata declares none),
+                // calls[1] = fee (whose metadata declares no signature key, so
+                // its row stays empty).
+                if !signing_secrets.is_empty() {
+                    tx.signatures[0] = tx.create_sigs(&signing_secrets)?;
+                }
                 return Ok(tx);
             }
             // P4 Step 4: if a stored manifest exists, construct a
@@ -1952,7 +1977,9 @@ impl Dww {
                 let mut tx = fee.finish(leaf, tx_commitment)?;
                 declare_l1_nullifiers(&mut tx)?;
                 // Per-call signature rows (see the Path A exit above).
-                // Schnorr signatures removed per contract-standards.md §3.
+                if !signing_secrets.is_empty() {
+                    tx.signatures[0] = tx.create_sigs(&signing_secrets)?;
+                }
                 return Ok(tx);
             }
         }

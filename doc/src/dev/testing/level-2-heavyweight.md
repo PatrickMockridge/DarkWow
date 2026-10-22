@@ -281,7 +281,6 @@ use trait defaults — a documented gap tracked for future standardization.
 | dao_escrow | 5 | `src/contract/dao_escrow/src/client/` |
 | darkbet_exchange | 10 | `src/contract/darkbet_exchange/src/client/` |
 | darktoshi_dice | 4 | `src/contract/darktoshi_dice/src/client/` |
-| deployooor | 1 | `lock.zk` (the contract also carries no ZK on `DeployV1`) |
 | dex | 8 | `src/contract/dex/src/client/` |
 | drain_protection | 9 | `src/contract/drain_protection/src/client/` |
 | escrow | 5 | `src/contract/escrow/src/client/` |
@@ -307,7 +306,8 @@ use trait defaults — a documented gap tracked for future standardization.
 **Every figure in this column was wrong** (`F-628`). Twenty-one of the twenty-two rows had drifted —
 some by one or two, and several by a lot: `identity` claimed 8 against 2, `oracle` 1 against 6,
 `drain_protection` 1 against 9, `attestation` 5 against 12, `darkbet_exchange` 4 against 10, and
-`deployooor` was listed as having no circuits at all when it has `lock.zk`. The counts above are
+`deployooor` was listed as having no circuits at all when it had `lock.zk` (that circuit was
+removed with the upstream plaintext port on 2026-10-22; deployooor now has none). The counts above are
 `ls src/contract/<name>/proof/*.zk | wc -l`; re-run that rather than editing this column by hand,
 and prefer `scripts/check-doc-canonical-counts.sh`, which derives the whole-corpus figures from the
 tree.

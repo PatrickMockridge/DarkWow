@@ -52,7 +52,7 @@ use dwow_chain::{CChainState, FinalityConfig, PoWConfig};
 use dwow_core::zk::Proof;
 use dwow_core::Result;
 use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, FeeAmount};
-use dwow_sdk::crypto::{ContractId, NATIVE_TOKEN_CONTRACT_ID};
+use dwow_sdk::crypto::{ContractId, DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
 use dwow_sdk::pasta::pallas;
 use dwow_sdk::pasta::group::{Group, GroupEncoding};
 use dwow_contract_test_harness::harness::ContractHarness;
@@ -628,8 +628,18 @@ impl<'c> HeavyweightBlock<'c> {
         // (execution.rs) extracts the DarkLeaf call tree from the witness
         // and passes it to WASM — no client-side wrapping needed.
         let mut tx = super::harness::build_contract_tx(contract_id, call_data.to_vec());
+        // Deployooor's plaintext endpoints authorize with the deploy key's
+        // transaction signature. The fixture uses the same [9u8; 32] key the
+        // deployooor spec and harness use.
+        let deploy_key =
+            dwow_sdk::crypto::SecretKey::from_bytes([9u8; 32]).expect("deploy key");
+        let signers = if contract_id == *DEPLOYOOOR_CONTRACT_ID {
+            Some(std::slice::from_ref(&deploy_key))
+        } else {
+            None
+        };
         tx.witness = super::heavyweight_pipeline::build_witness(
-            contract_id, call_data, proofs,
+            contract_id, call_data, proofs, signers,
         );
 
         self.contract_txs.push(tx);

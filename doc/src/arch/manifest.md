@@ -7,21 +7,22 @@
 | Specification | Complete | This document |
 | Python model | Complete | `contrib/model/wallet_model.py` |
 | Rust data types | Complete | `src/sdk/src/manifest.rs` |
-| TOML manifests | Complete (32 contracts) | `src/contract/*/manifest.toml` |
+| TOML manifests | Complete (31 contracts) | `src/contract/*/manifest.toml` |
 | Wallet resolver | Complete | `bin/dww/src/manifest_resolver.rs` |
 | CLI `contract show` | Complete | `bin/dww/src/dispatch.rs` |
-| Deploy `--manifest` flag | Complete | `bin/dww/src/dispatch.rs` (build_deploy_ix) |
-| Scan-side integration | Complete | `bin/dww/src/scan.rs` (DeployV1 handler) |
+| Deploy `--manifest` flag | Removed | `DeployV1` `ix` is the new contract's `__initialize` payload, not a manifest envelope |
+| Scan-side integration | Genesis seeding only | `bin/dww/src/lib.rs` embeds the genesis manifests; the scan does not parse `ix` |
 | CapabilityResolver fallback | Complete | `bin/dww/src/capability.rs` (resolve()) |
-| On-chain manifest hash | Pending | Deployooor hardening |
+| On-chain manifest hash | Not applicable | Deployooor is plaintext infrastructure and stores no manifest or hash |
 
 The Python and Rust test counts are not restated here — they drift. Count them:
 `grep -c 'def test' contrib/model/wallet_model.py` and
 `grep -c '#\[test\]' src/sdk/src/manifest.rs`. This row said "13 tests" and "6/6 unit tests"
 until 2026-10-12 (`F-369`).
 
-32 contracts have manifests: 9 genesis (see [Genesis Contracts](genesis.md)), plus
-23 user-deployed contracts. All 32 round-trip through the Python parser.
+31 contracts have manifests: 8 of the 9 genesis (see [Genesis Contracts](genesis.md)) —
+Deployooor is plaintext infrastructure and has none — plus 23 post-genesis contracts.
+All 31 round-trip through the Python parser.
 
 The full data pipeline is wired: authoring → deployment → scanning → storage →
 resolution → query. This document describes the complete system as implemented.
@@ -59,18 +60,20 @@ The manifest is the **schema**, not the **data**.
 
 ### Location
 
-The manifest is a TOML document embedded in the `ix` (deployment instruction)
-field of `DeployParamsV1`. It is stored **unencrypted** so that any wallet
-scanning the deploy transaction can read it.
+A manifest is a TOML document that lives in the contract's source directory. It is
+**not** part of a user deployment: `DeployParamsV1::ix` is the new contract's
+`__initialize` payload, and Deployooor assigns it no manifest semantics (upstream
+`DeployV1` has none).
 
-The `ix` field currently holds opaque bytes. When the first byte is `0x4D`
-(ASCII `M`, for "manifest"), the remaining bytes are a TOML document. When the
-first byte is anything else, the `ix` is interpreted as legacy opaque data.
+The manifest reaches a wallet by one of two routes:
 
-**Encoding constraint**: The TOML bytes after the `0x4D` prefix SHALL be valid
-UTF-8. The wallet's `from_deploy_ix()` uses `std::str::from_utf8()` to decode
-the bytes. Non-UTF-8 bytes cause the manifest to be silently treated as absent
-(functionally equivalent to no `0x4D` prefix).
+- **Genesis:** seven of the nine genesis contracts deploy their `manifest.toml` as
+  the genesis deployment's `ix`; the host stores those bytes under
+  `contract_id ‖ b"_manifest"`. The wallet also embeds the same TOML at compile
+  time and seeds it at startup. `native_token` and `deployooor` pass `&[]` (the two
+  bespoke citizens; deployooor has no manifest at all).
+- **Post-genesis:** the manifest is a wallet-side declaration for a contract the
+  wallet already knows; it is not recovered from the deployment payload.
 
 ### Format
 
@@ -542,40 +545,33 @@ The manifest flows through the system in six stages:
 
 The contract developer writes a `manifest.toml` in their contract's source directory.
 This file lives alongside the contract's Rust source and is committed to the repo.
-For genesis contracts (Promissory Note, Identity, Oracle, Attestation, Native Token,
-Deployooor), the manifest travels in the genesis `DeployV1` payload (the genesis
-deployment transactions) and is extracted when the wallet scans the genesis block —
-the same rail as user-deployed contracts (see Circuit Binary Delivery below). For
-user-deployed contracts, it's provided at deploy time via `--manifest`.
+For genesis contracts (Promissory Note, Identity, Oracle, Attestation, Purse, Box,
+MultiSig), the manifest travels in the genesis `DeployV1` payload and the host writes
+it under `contract_id ‖ b"_manifest"`; the wallet seeds the same TOML at startup.
+`native_token` and `deployooor` deploy `&[]`.
 
 ### 2. Deployment
 
-The deployer passes the manifest to the wallet via the `--manifest` flag:
+A user deployment carries the new contract's `__initialize` payload in
+`DeployParamsV1::ix`:
 
 ```
-dwow_wallet contract deploy <auth> <wasm> --manifest manifest.toml
+dwow_wallet contract deploy <auth> <wasm> [ix]
 ```
 
-Implementation: `bin/dww/src/dispatch.rs` — `build_deploy_ix()` reads the TOML file
-via `std::fs::read_to_string`, parses it with `ContractManifest::from_toml()`, and
-encodes it with `to_deploy_ix()` (0x4D magic byte + TOML bytes). The resulting bytes
-are placed in `DeployParamsV1::ix`. If the TOML is invalid, the error is returned
-to the user before any deploy transaction is built.
+There is no `--manifest` flag. `DeployV1` assigns `ix` no manifest semantics, and a
+user contract's manifest is not recovered from the chain; it is a wallet-side
+declaration for a contract the wallet already knows.
 
 ### 3. Scanning
 
-When the wallet scans a block and encounters a `DeployV1` call:
+When the wallet scans a block and encounters a `DeployV1` call,
+`bin/dww/src/scan.rs`'s DeployV1 handler:
 
-Implementation: `bin/dww/src/scan.rs` — `scan_block_linear()`, DeployV1 handler.
-
-1. Extract `ix` from `DeployParamsV1` (already decoded from contract call data)
-2. Call `ContractManifest::from_deploy_ix(&params.ix)` — returns `None` if no
-   `0x4D` prefix, `Some(Err(...))` if malformed, `Some(Ok(manifest))` on success
-3. On success: call `manifest.to_toml()` to serialize, store via
-   `wallet.store_manifest(&contract_id_str, &manifest_json)`
-4. On malformed: log the error, continue — the contract is still usable via
-   generic AEAD discovery
-5. On absent: skip silently — may still have legacy `ContractMetadata`
+1. Discovers the deployment at `ContractId::derive_public(params.public_key)`
+2. Extracts the zkas circuit binaries embedded in `params.wasm_bincode`
+3. Does **not** parse `params.ix`: it is the init payload, not a manifest
+   (the wallet may additionally recognise its own display metadata there)
 
 All operations are synchronous local SQLite writes. No async, no network.
 
@@ -689,13 +685,13 @@ wallet in six stages. Each stage is a single function call into existing
 modules — no new async, no new dependencies. The data pipeline is:
 
 ```
-DeployV1 tx on chain
-  → scan_block_linear() detects 0x4D prefix        [scan.rs]
-  → ContractManifest::from_deploy_ix() parses TOML  [sdk/src/manifest.rs]
-  → wallet.store_manifest() stores in SQLite        [walletdb.rs]
-  → CapabilityResolver reads manifest               [capability.rs]
-  → ManifestResolver answers queries                [manifest_resolver.rs]
-  → CLI: contract show / contract invoke            [dispatch.rs]
+Genesis: wallet embeds manifest.toml, host stores genesis ix
+  → wallet seeds manifest + metadata at startup      [lib.rs]
+Post-genesis: manifest is a wallet-side declaration for a known contract
+  → wallet.store_manifest() stores in SQLite         [walletdb.rs]
+  → CapabilityResolver reads manifest                [capability.rs]
+  → ManifestResolver answers queries                 [manifest_resolver.rs]
+  → CLI: contract show / contract invoke             [dispatch.rs]
 ```
 
 ## What Stays in Rust
@@ -726,10 +722,10 @@ builders for its own tests and tools.
 
 ## Backwards Compatibility
 
-- Contracts deployed WITHOUT a manifest continue to work exactly as before.
-  The `ix` field without the `0x4D` prefix is interpreted as legacy opaque data.
-- Wallets that don't understand manifests continue to work — they skip the
-  manifest parsing and fall back to existing behavior.
+- A deployed contract whose wallet has no manifest continues to work through
+  generic AEAD note discovery; the manifest is not read from the deployment.
+- Genesis manifests keep their historical `_manifest` host write; that is a
+  genesis-only rail and does not give `ix` manifest semantics for user deploys.
 - The manifest format is versioned via the `version` field in `[contract]`.
   Wallets can check the version before parsing.
 

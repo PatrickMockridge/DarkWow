@@ -580,8 +580,9 @@ Each genesis contract has a specific role in the risk architecture:
   with slashable economic stake. A contract that lies about its costs can
   lose its endowment.
 
-- **`deployooor`**: Contract deployment binds the manifest to the contract
-  at birth — the cost declaration is inseparable from the contract itself.
+- **`deployooor`**: Plaintext infrastructure for deployment and locking. It
+  carries no manifest and no cost declaration; cost declarations live in the
+  wallet-side manifest, not in the deployment payload.
 
 - **Fee window system**: Miners track observed-vs-declared cost accuracy
   across windows. Contracts that systematically under-declare see their risk

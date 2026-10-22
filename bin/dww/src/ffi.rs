@@ -1558,6 +1558,7 @@ pub extern "C" fn dwow_wallet_mark_exercise(
     let tx = dwow_core::tx::Transaction {
         calls: vec![],
         proofs: vec![],
+        signatures: vec![],
         tx_commitment: [0u8; 32],
         nullifiers,
     };

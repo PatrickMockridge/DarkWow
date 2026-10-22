@@ -949,7 +949,7 @@ def test_deploy_v1_manifest_discovery():
     print("  DeployV1: manifest discovery...", end=" ")
 
     # Simulate a manifest for a purse-like contract
-    manifest_toml = b'\x4D' + b"""
+    manifest_toml = b"""
 [manifest]
 name = "test_purse"
 version = "1.0.0"
@@ -968,7 +968,7 @@ required_barbs = ["Nullify", "Prove", "Dispatch", "Gate", "Denominate"]
     # Wallet scan: detect DeployV1 call → extract manifest
     stored_manifest = manifest_store.get(contract_id)
     assert stored_manifest is not None, "Manifest should be stored after deploy"
-    assert stored_manifest[0] == 0x4D, "Manifest should have magic byte 0x4D prefix"
+    assert b'name = "test_purse"' in stored_manifest, "Stored manifest is the TOML itself"
 
     # Parse the manifest and verify wallet_construct coverage
     # The manifest declares primitives + required_barbs for the "transfer" action

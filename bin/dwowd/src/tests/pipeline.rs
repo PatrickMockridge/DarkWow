@@ -134,14 +134,17 @@ impl ContractTestingPipeline {
             wasm_bincode: wasm,
             public_key: deploy_keypair.public,
             ix,
-            singleton: false,
-            singleton_name: String::new(),
         };
         let mut call_data = vec![0x00u8];
         deploy_params.encode(&mut call_data)?;
 
         let mut contract_tx = build_contract_tx(*DEPLOYOOOR_CONTRACT_ID, call_data);
-        contract_tx.witness = build_witness(*DEPLOYOOOR_CONTRACT_ID, &contract_tx.contract_calls[0].data, vec![]);
+        contract_tx.witness = build_witness(
+            *DEPLOYOOOR_CONTRACT_ID,
+            &contract_tx.contract_calls[0].data,
+            vec![],
+            Some(std::slice::from_ref(&deploy_keypair.secret)),
+        );
 
         let height = self.genesis.block_height();
         let next_height = height.succ();
@@ -190,13 +193,17 @@ impl ContractTestingPipeline {
         let ix = metadata.to_ix_bytes();
         let deploy_params = DeployParamsV1 {
             wasm_bincode: wasm, public_key: deploy_keypair.public, ix,
-            singleton: false, singleton_name: String::new(),
         };
         let mut call_data = vec![0x00u8];
         deploy_params.encode(&mut call_data)?;
 
         let mut contract_tx = build_contract_tx(*DEPLOYOOOR_CONTRACT_ID, call_data);
-        contract_tx.witness = build_witness(*DEPLOYOOOR_CONTRACT_ID, &contract_tx.contract_calls[0].data, vec![]);
+        contract_tx.witness = build_witness(
+            *DEPLOYOOOR_CONTRACT_ID,
+            &contract_tx.contract_calls[0].data,
+            vec![],
+            Some(std::slice::from_ref(&deploy_keypair.secret)),
+        );
 
         let height = self.genesis.block_height();
         let next_height = height.succ();

@@ -21,144 +21,31 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use dwow_sdk::crypto::{pasta_prelude::{FromUniformBytes, PrimeField}, poseidon_hash, ContractId, PublicKey};
-use dwow_sdk::error::ContractError;
-use dwow_sdk::pasta::pallas;
+#[cfg(feature = "client")]
+use dwow_serial::async_trait;
 
-/// Read exactly `N` bytes at `offset` — total: `get` + `try_into`, no index and no unwrap.
-///
-/// The `decode` functions below validate their buffer length before slicing, which makes each
-/// `data[a..b]` *provably* in-bounds. But provable is not free: the bounds check still compiles, and
-/// its panic location — `Location { file: &'static str, line: u32 }` — is a string and an integer in
-/// the contract artifact's data section, which neither `strip` nor `--release` removes. Copied from
-/// native_token's model, which holds the same family.
-fn read_field<const N: usize>(data: &[u8], offset: usize) -> Result<[u8; N], ContractError> {
-    data.get(offset..offset.saturating_add(N))
-        .and_then(|s| s.try_into().ok())
-        .ok_or_else(|| {
-            ContractError::IoError(format!(
-                "truncated field: need {N} bytes at offset {offset}, buffer has {}",
-                data.len()
-            ))
-        })
-}
-
-#[allow(dead_code)]
-fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 0)?)).ok_or_else(|| ContractError::IoError("invalid base".into())) }
-
-/// Content commitment over a WASM module, used by `DeployV1` and by any reader that compares a
-/// fetched module to the stored value.
-///
-/// `poseidon([0, len])` stood here and committed to the module's **length**: two modules of the
-/// same size produced the same stored value and nothing noticed (`OBL-C250`). This commits to the
-/// bytes: each 64-byte chunk is widened to a field element and folded with the chunk's length,
-/// and the module's total length is folded last so trailing zero bytes are not free.
-pub fn wasm_content_commitment(wasm: &[u8]) -> pallas::Base {
-    let mut acc = pallas::Base::zero();
-    for chunk in wasm.chunks(64) {
-        let mut wide = [0u8; 64];
-        for (slot, b) in wide.iter_mut().zip(chunk.iter()) {
-            *slot = *b;
-        }
-        acc = poseidon_hash([
-            acc,
-            pallas::Base::from_uniform_bytes(&wide),
-            pallas::Base::from(chunk.len() as u64),
-        ]);
-    }
-    poseidon_hash([acc, pallas::Base::from(wasm.len() as u64)])
-}
+use dwow_sdk::crypto::{ContractId, PublicKey};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// State update for `Deploy::Deploy`
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, SerialEncodable, SerialDecodable)]
 pub struct DeployUpdateV1 {
     /// The `ContractId` to deploy
     pub contract_id: ContractId,
-    /// Content commitment of the WASM bincode (`wasm_content_commitment`)
-    pub wasm_hash: pallas::Base,
 }
 
-impl dwow_serial::Encodable for DeployUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
-impl dwow_serial::Decodable for DeployUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-
-impl DeployUpdateV1 {
-    /// Fixed canonical byte size: contract_id(32) + wasm_hash(32)
-    pub const ENCODED_SIZE: usize = 64;
-
-    /// Encode to canonical bytes (ρ-calculus: quote).
-    pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
-        buf.extend_from_slice(&self.contract_id.to_bytes());
-        buf.extend_from_slice(&self.wasm_hash.to_repr());
-        buf
-    }
-
-    /// Decode from canonical bytes (ρ-calculus: eval).
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
-            return Err(ContractError::IoError(format!(
-                "DeployUpdateV1: expected {} bytes, got {}",
-                Self::ENCODED_SIZE, data.len()
-            )));
-        }
-        let contract_id = ContractId::from_bytes(read_field::<32>(data, 0)?)
-            .map_err(|e| ContractError::IoError(format!("DeployUpdateV1: invalid contract_id: {}", e)))?;
-        let wasm_hash = Option::<pallas::Base>::from(
-            pallas::Base::from_repr(read_field::<32>(data, 32)?),
-        )
-        .ok_or_else(|| ContractError::IoError("DeployUpdateV1: invalid wasm_hash".into()))?;
-        Ok(DeployUpdateV1 { contract_id, wasm_hash })
-    }
-}
-
-/// Parameters for `Deploy::Lock`
 // ANCHOR: deploy-lock-params
-#[derive(Clone, Debug)]
+/// Parameters for `Deploy::Lock`
+#[derive(Clone, Debug, SerialEncodable, SerialDecodable)]
 pub struct LockParamsV1 {
-    /// Public key whose secret opens it; the host derives the `ContractId` from it, and `LockV2`
-    /// proves the caller knows the secret behind it (docs-review F-511 — the gate the doc promised).
+    /// Public key used to sign the transaction and derive the `ContractId`
     pub public_key: PublicKey,
-    /// Transaction nonce, so the `LockV2` proof binds to this transaction (`OBL-C198`).
-    pub tx_nonce: pallas::Base,
 }
-
-impl dwow_serial::Encodable for LockParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
-impl dwow_serial::Decodable for LockParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-
-impl LockParamsV1 { pub const ENCODED_SIZE: usize = 64; pub fn encode(&self) -> Vec<u8> { let mut b = self.public_key.to_bytes().to_vec(); b.extend_from_slice(&self.tx_nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("LockParamsV1: expected 64 bytes, got {}", data.len()))); } let public_key = PublicKey::from_bytes(read_field::<32>(data, 0)?).map_err(|e| ContractError::IoError(format!("LockParamsV1: invalid public_key: {}", e)))?; let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 32)?)).ok_or_else(|| ContractError::IoError("LockParamsV1: invalid tx_nonce".into()))?; Ok(LockParamsV1 { public_key, tx_nonce }) } }
 // ANCHOR_END: deploy-lock-params
 
 /// State update for `Deploy::Lock`
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, SerialEncodable, SerialDecodable)]
 pub struct LockUpdateV1 {
     /// The `ContractId` to lock
     pub contract_id: ContractId,
-}
-
-impl dwow_serial::Encodable for LockUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
-impl dwow_serial::Decodable for LockUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-
-impl LockUpdateV1 {
-    /// Fixed canonical byte size: contract_id(32)
-    pub const ENCODED_SIZE: usize = 32;
-
-    /// Encode to canonical bytes (ρ-calculus: quote).
-    pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
-        buf.extend_from_slice(&self.contract_id.to_bytes());
-        buf
-    }
-
-    /// Decode from canonical bytes (ρ-calculus: eval).
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
-            return Err(ContractError::IoError(format!(
-                "LockUpdateV1: expected {} bytes, got {}",
-                Self::ENCODED_SIZE, data.len()
-            )));
-        }
-        let contract_id = ContractId::from_bytes(read_field::<32>(data, 0)?)
-            .map_err(|e| ContractError::IoError(format!("LockUpdateV1: invalid contract_id: {}", e)))?;
-        Ok(LockUpdateV1 { contract_id })
-    }
 }

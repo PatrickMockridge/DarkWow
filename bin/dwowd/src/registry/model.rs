@@ -500,7 +500,9 @@ pub fn build_fee_collect_tx(
     let core_tx = dwow_core::tx::Transaction {
         calls,
         proofs: vec![vec![]],
-        // Schnorr signatures removed per contract-standards.md §3.
+        // One row per call, in call order. FeeCollectV1 declares no signature
+        // pubkeys, so its row is empty; only Deploy/Lock declare signers.
+        signatures: vec![vec![]],
         tx_commitment,
         nullifiers: vec![nullifier],
     };
@@ -573,6 +575,9 @@ pub fn build_uncle_mint_tx(
         // `verify_single_tx` requires proofs.len() == calls.len() and
         // `verify_core_tx_with_tables` requires proofs.len() == zkp_table.len().
         proofs: vec![vec![]],
+        // One row per call, in call order; this mint declares no signers, so
+        // its single row is empty.
+        signatures: vec![vec![]],
         tx_commitment,
         // No nullifier: the canonical miner does not know the uncle miner's spend
         // key, so it cannot compute the note's nullifier. It is revealed at spend

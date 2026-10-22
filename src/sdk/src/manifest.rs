@@ -1011,9 +1011,6 @@ impl ContractManifest {
     }
 }
 
-/// Magic byte prefix for manifest detection in deploy ix.
-pub const MANIFEST_MAGIC_BYTE: u8 = 0x4D;
-
 /// Trust tier for a contract manifest. Additive — can only upgrade, never downgrade.
 /// The wallet uses this to inform users whether a manifest can be trusted.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1090,14 +1087,6 @@ impl ContractManifest {
         toml::to_string_pretty(&wrapper).map_err(|e| format!("TOML serialization failed: {e}"))
     }
 
-    /// Encode for deploy ix — magic byte + TOML.
-    pub fn to_deploy_ix(&self) -> Result<Vec<u8>, String> {
-        let toml_str = self.to_toml()?;
-        let mut bytes = vec![MANIFEST_MAGIC_BYTE];
-        bytes.extend_from_slice(toml_str.as_bytes());
-        Ok(bytes)
-    }
-
     /// Validate cross-references between sections.
     pub fn validate(&self) -> Result<(), String> {
         let func_names: Vec<&str> = self.functions.iter().map(|f| f.name.as_str()).collect();
@@ -1167,29 +1156,6 @@ impl ContractManifest {
         }
 
         Ok(())
-    }
-
-    /// Check if deploy ix contains a manifest (starts with magic byte).
-    pub fn is_manifest(ix: &[u8]) -> bool {
-        ix.first() == Some(&MANIFEST_MAGIC_BYTE)
-    }
-
-    /// Parse manifest from deploy ix bytes. Returns None if no manifest.
-    pub fn from_deploy_ix(ix: &[u8]) -> Option<Result<Self, String>> {
-        if !Self::is_manifest(ix) {
-            return None;
-        }
-        let toml_bytes = &ix[1..];
-        let toml_str = std::str::from_utf8(toml_bytes).ok()?;
-        Some(Self::from_toml(toml_str))
-    }
-
-    /// Create deploy ix from manifest. None means legacy (empty ix).
-    pub fn create_deploy_ix(manifest: Option<&Self>) -> Result<Vec<u8>, String> {
-        match manifest {
-            Some(m) => m.to_deploy_ix(),
-            None => Ok(vec![]),
-        }
     }
 }
 
@@ -1310,38 +1276,6 @@ requires = { type = "none" }
         let result = ContractManifest::from_toml(toml);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("nonexistent"));
-    }
-
-    #[test]
-    fn test_magic_byte_detection() {
-        let manifest_bytes = vec![0x4D, b'[', b'c'];  // simplified
-        assert!(ContractManifest::is_manifest(&manifest_bytes));
-
-        let legacy_bytes = vec![0x00, 0x01];
-        assert!(!ContractManifest::is_manifest(&legacy_bytes));
-
-        let empty: Vec<u8> = vec![];
-        assert!(!ContractManifest::is_manifest(&empty));
-    }
-
-    #[test]
-    fn test_deploy_ix_roundtrip() {
-        let m = ContractManifest::from_toml(DAO_ESCROW_TOML).unwrap();
-        let ix = m.to_deploy_ix().unwrap();
-        assert_eq!(ix[0], MANIFEST_MAGIC_BYTE);
-
-        let parsed = ContractManifest::from_deploy_ix(&ix).unwrap().unwrap();
-        assert_eq!(parsed.name, "dao_escrow");
-        assert_eq!(parsed.functions.len(), 2);
-    }
-
-    #[test]
-    fn test_opt_out() {
-        // No manifest — legacy ix
-        let ix = ContractManifest::create_deploy_ix(None).unwrap();
-        assert!(ix.is_empty());
-        assert!(!ContractManifest::is_manifest(&ix));
-        assert!(ContractManifest::from_deploy_ix(&ix).is_none());
     }
 
     // ========================================================================

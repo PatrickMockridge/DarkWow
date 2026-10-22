@@ -22,14 +22,14 @@
  */
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, ContractId, PublicKey},
+    crypto::{ContractId, PublicKey},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg,
     pasta::pallas,
     wasm, ContractCall,
 };
-use dwow_serial::Encodable;
+use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     error::DeployError,
@@ -47,27 +47,14 @@ pub(crate) fn lock_get_metadata_v1(
     let self_ = calls.get(call_idx).ok_or_else(|| {
         ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
     })?;
-    let params = LockParamsV1::decode(self_.data.data.get(1..).ok_or_else(|| {
+    let params: LockParamsV1 = deserialize(self_.data.data.get(1..).ok_or_else(|| {
         ContractError::IoError("empty call data: no payload after selector".to_string())
     })?)?;
 
-    // Public inputs for the `LockV2` proof: the deployer's public-key coordinates (the circuit
-    // derive-and-exposes them from the secret) and the tx pair, last (`OBL-C198`). The host derives
-    // the same `ContractId` from these coordinates that `DeployV1` stored, so the lock applies only
-    // to the deployer's own contract — and only a caller who can open the key can prove it.
-    let (pub_x, pub_y) = params
-        .public_key
-        .xy()
-        .ok_or_else(|| ContractError::IoError("LockV1: identity public key".to_string()))?;
-    let tx_commitment = wasm::util::get_tx_commitment()?;
-    let tx_binding = poseidon_hash([pallas::Base::from(3u64), tx_commitment, params.tx_nonce]);
-    let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
-        crate::DEPLOY_CONTRACT_ZKAS_LOCK_NS_V2.to_string(),
-        vec![pub_x, pub_y, tx_binding, params.tx_nonce],
-    )];
+    // Public inputs for the ZK proofs we have to verify
+    let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Public keys for the transaction signatures we have to verify
-    // Schnorr signatures prohibited (contract-standards.md §3).
-    let signature_pubkeys: Vec<PublicKey> = vec![];
+    let signature_pubkeys: Vec<PublicKey> = vec![params.public_key];
 
     // Serialize everything gathered and return it
     let mut metadata = vec![];
@@ -86,7 +73,7 @@ pub(crate) fn lock_process_instruction_v1(
     let self_ = calls.get(call_idx).ok_or_else(|| {
         ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
     })?;
-    let params= LockParamsV1::decode(self_.data.data.get(1..).ok_or_else(|| {
+    let params: LockParamsV1 = deserialize(self_.data.data.get(1..).ok_or_else(|| {
         ContractError::IoError("empty call data: no payload after selector".to_string())
     })?)?;
 
@@ -95,20 +82,21 @@ pub(crate) fn lock_process_instruction_v1(
     let lock_db = wasm::db::db_lookup(cid, DEPLOY_CONTRACT_LOCK_TREE)?;
     let contract_id = ContractId::derive_public(params.public_key);
 
-    if !wasm::db::db_contains_key(lock_db, &contract_id.to_bytes())? {
+    if !wasm::db::db_contains_key(lock_db, &serialize(&contract_id))? {
         msg!("[LockV1] Error: Contract ID doesn't exist.");
         return Err(DeployError::ContractNonExistent.into())
     }
 
-    let v = wasm::db::db_get(lock_db, &contract_id.to_bytes())?.ok_or(ContractError::DbGetEmpty)?;
-    let locked: bool = v.first().is_some_and(|b| *b != 0);
+    let v = wasm::db::db_get(lock_db, &serialize(&contract_id))?
+        .ok_or(ContractError::DbGetEmpty)?;
+    let locked: bool = deserialize(&v)?;
     if locked {
         msg!("[LockV1] Error: Contract already locked.");
         return Err(DeployError::ContractLocked.into())
     }
 
     let update = LockUpdateV1 { contract_id };
-    Ok(update.encode())
+    Ok(serialize(&update))
 }
 
 /// `process_update` function for `Deploy::LockV1`
@@ -116,7 +104,7 @@ pub(crate) fn lock_process_update_v1(cid: ContractId, update: LockUpdateV1) -> C
     // We make the contract immutable
     msg!("[LockV1] Making ContractID immutable");
     let lock_db = wasm::db::db_lookup(cid, DEPLOY_CONTRACT_LOCK_TREE)?;
-    wasm::db::db_set(lock_db, &update.contract_id.to_bytes(), &[1u8])?;
+    wasm::db::db_set(lock_db, &serialize(&update.contract_id), &serialize(&true))?;
 
     Ok(())
 }

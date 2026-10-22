@@ -13,7 +13,8 @@
 # five genesis-building function bodies; this checks the primitive surface of the nine crates.
 #
 # WHAT IT CHECKS.
-#   1. Set closure: the nine crates/manifests exist and their package names match.
+#   1. Set closure: the nine crates exist and their package names match. Seven carry a
+#      manifest; deployooor is plaintext infrastructure with none, and class_a = [].
 #   2. No foreign code or manifest dependency: no `dwow_*_contract` dependency other than the
 #      crate itself, no `[contract].dependencies`, no foreign `dwow_*_contract` token, and no
 #      foreign `*_CONTRACT_ID`. `ContractId::from_bytes` is a decode, not a naming, and is not
@@ -171,7 +172,10 @@ def run_checks(root):
     for name, crate, counter, tier in GENESIS:
         d = root / "src" / "contract" / name
         cargo, man = d / "Cargo.toml", d / "manifest.toml"
-        if not cargo.exists() or not man.exists() or not (d / "src" / "lib.rs").exists():
+        # Deployooor is plaintext infrastructure, not a capability contract: it
+        # has no manifest. Every other genesis primitive still does.
+        if not cargo.exists() or (name != "deployooor" and not man.exists()) \
+                or not (d / "src" / "lib.rs").exists():
             errors.append(f"{name}: missing Cargo.toml, manifest.toml or src/lib.rs")
             continue
         try:

@@ -442,33 +442,31 @@ pub struct Dwowd {
 /// one `ContractCall` to Deployooor with the DeployV1 selector (`0x00`)
 /// followed by `DeployParamsV1`:
 /// - `wasm_bincode`: the contract WASM
-/// - `ix`: the manifest.toml bytes (wallet-facing metadata). Eight of the nine
+/// - `ix`: the manifest.toml bytes (wallet-facing metadata). Seven of the nine
 ///   genesis contracts deploy their manifest here; `apply_genesis_deployments`
-///   writes it to `contract_id || b"_manifest"`. `native_token` passes `&[]`
-///   because it is the one bespoke citizen: the wallet embeds its scan and write
-///   paths (wallet.md §6.4) and never reads a deployed manifest for it. The
-///   manifest file on disk is documentation, not a deployment input. The bytes
-///   that are deployed are part of the genesis transaction preimage, so changing
-///   a deployed manifest moves the genesis hash.
+///   writes it to `contract_id || b"_manifest"`. `native_token` and `deployooor`
+///   pass `&[]` because they are the two bespoke citizens: the wallet embeds
+///   their scan and write paths and never reads a deployed manifest for them.
+///   The bytes that are deployed are part of the genesis transaction preimage,
+///   so changing a deployed manifest moves the genesis hash.
 /// - `public_key`: a fixed deterministic key — the consensus rule binds
 ///   deployments to the well-known ContractIds by table position, NOT by
 ///   `derive_public`; the key only needs to be deterministic because it is
 ///   part of the hash preimage
-/// - `singleton`/`singleton_name`: position binding verified by the rule
 fn build_genesis_deployment_txs() -> Vec<dwow_chain::Transaction> {
     use dwow_sdk::deploy::DeployParamsV1;
 
     // WASM + manifest table, in genesis_contracts() order.
-    let contracts: Vec<(&[u8], &[u8], &str)> = vec![
-        (include_bytes!("../../../src/contract/deployooor/dwow_deployooor_contract.wasm"), include_bytes!("../../../src/contract/deployooor/manifest.toml"), "Deployooor"),
-        (include_bytes!("../../../src/contract/native_token/dwow_native_token_contract.wasm"), &[], "NativeToken"),
-        (include_bytes!("../../../src/contract/promissory_note/dwow_promissory_note_contract.wasm"), include_bytes!("../../../src/contract/promissory_note/manifest.toml"), "PromissoryNote"),
-        (include_bytes!("../../../src/contract/identity/dwow_identity_contract.wasm"), include_bytes!("../../../src/contract/identity/manifest.toml"), "Identity"),
-        (include_bytes!("../../../src/contract/oracle/dwow_oracle_contract.wasm"), include_bytes!("../../../src/contract/oracle/manifest.toml"), "Oracle"),
-        (include_bytes!("../../../src/contract/attestation/dwow_attestation_contract.wasm"), include_bytes!("../../../src/contract/attestation/manifest.toml"), "Attestation"),
-        (include_bytes!("../../../src/contract/purse/dwow_purse_contract.wasm"), include_bytes!("../../../src/contract/purse/manifest.toml"), "Purse"),
-        (include_bytes!("../../../src/contract/box/dwow_box_contract.wasm"), include_bytes!("../../../src/contract/box/manifest.toml"), "Box"),
-        (include_bytes!("../../../src/contract/multisig/dwow_multisig_contract.wasm"), include_bytes!("../../../src/contract/multisig/manifest.toml"), "MultiSig"),
+    let contracts: Vec<(&[u8], &[u8])> = vec![
+        (include_bytes!("../../../src/contract/deployooor/dwow_deployooor_contract.wasm"), &[]),
+        (include_bytes!("../../../src/contract/native_token/dwow_native_token_contract.wasm"), &[]),
+        (include_bytes!("../../../src/contract/promissory_note/dwow_promissory_note_contract.wasm"), include_bytes!("../../../src/contract/promissory_note/manifest.toml")),
+        (include_bytes!("../../../src/contract/identity/dwow_identity_contract.wasm"), include_bytes!("../../../src/contract/identity/manifest.toml")),
+        (include_bytes!("../../../src/contract/oracle/dwow_oracle_contract.wasm"), include_bytes!("../../../src/contract/oracle/manifest.toml")),
+        (include_bytes!("../../../src/contract/attestation/dwow_attestation_contract.wasm"), include_bytes!("../../../src/contract/attestation/manifest.toml")),
+        (include_bytes!("../../../src/contract/purse/dwow_purse_contract.wasm"), include_bytes!("../../../src/contract/purse/manifest.toml")),
+        (include_bytes!("../../../src/contract/box/dwow_box_contract.wasm"), include_bytes!("../../../src/contract/box/manifest.toml")),
+        (include_bytes!("../../../src/contract/multisig/dwow_multisig_contract.wasm"), include_bytes!("../../../src/contract/multisig/manifest.toml")),
     ];
 
     // Fixed deterministic key — the genesis rule ignores it (binding is by
@@ -480,13 +478,11 @@ fn build_genesis_deployment_txs() -> Vec<dwow_chain::Transaction> {
 
     contracts
         .into_iter()
-        .map(|(wasm, manifest, name)| {
+        .map(|(wasm, manifest)| {
             let params = DeployParamsV1 {
                 wasm_bincode: wasm.to_vec(),
                 public_key,
                 ix: manifest.to_vec(),
-                singleton: true,
-                singleton_name: name.to_string(),
             };
             // DeployV1 selector convention: data[0] == 0x00, then params.
             let mut data = vec![0x00u8];

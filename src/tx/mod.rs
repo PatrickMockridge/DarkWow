@@ -25,6 +25,10 @@ use std::collections::HashMap;
 
 pub use dwow_sdk::dark_tree::DarkLeaf;
 use dwow_sdk::{
+    crypto::{
+        schnorr::{SchnorrPublic, SchnorrSecret, Signature},
+        PublicKey, SecretKey,
+    },
     dark_tree::{dark_forest_leaf_vec_integrity_check, DarkForest, DarkTree},
     error::DarkTreeResult,
     tx::{ContractCall, TransactionHash},
@@ -58,6 +62,8 @@ pub struct Transaction {
     pub calls: Vec<DarkLeaf<ContractCall>>,
     /// Attached ZK proofs
     pub proofs: Vec<Vec<Proof>>,
+    /// Attached Schnorr signatures, one row per call, in call order.
+    pub signatures: Vec<Vec<Signature>>,
     /// Transaction commitment: hash of all call data (excluding proofs).
     /// Binds every ZK proof in this transaction to the same call set.
     pub tx_commitment: [u8; 32],
@@ -70,6 +76,52 @@ pub struct Transaction {
 // ANCHOR_END: transaction
 
 impl Transaction {
+    /// Verify Schnorr signatures for the entire transaction.
+    pub fn verify_sigs(&self, pub_table: Vec<Vec<PublicKey>>) -> Result<()> {
+        // Hash the transaction without the signatures.
+        let mut hasher = blake3::Hasher::new();
+        self.calls.encode(&mut hasher)?;
+        self.proofs.encode(&mut hasher)?;
+        let data_hash = hasher.finalize();
+
+        if self.signatures.len() != pub_table.len() {
+            error!(target: "tx::verify_sigs", "[TX] Signatures length {} doesn't match public keys table one {}", self.signatures.len(), pub_table.len());
+            return Err(Error::InvalidInputLengths)
+        }
+
+        for (i, (sigs, pubkeys)) in self.signatures.iter().zip(pub_table.iter()).enumerate() {
+            if sigs.len() != pubkeys.len() {
+                error!(target: "tx::verify_sigs", "[TX] Signatures {i} length {} doesn't match public keys one {}", sigs.len(), pubkeys.len());
+                return Err(Error::InvalidInputLengths)
+            }
+
+            for (pubkey, signature) in pubkeys.iter().zip(sigs) {
+                if !pubkey.verify(data_hash.as_bytes(), signature) {
+                    error!(target: "tx::verify_sigs", "[TX] tx::verify_sigs[{i}] failed to verify signature");
+                    return Err(Error::InvalidSignature)
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Create Schnorr signatures for the entire transaction.
+    pub fn create_sigs(&self, secret_keys: &[SecretKey]) -> Result<Vec<Signature>> {
+        // Hash the transaction without the signatures.
+        let mut hasher = blake3::Hasher::new();
+        self.calls.encode(&mut hasher)?;
+        self.proofs.encode(&mut hasher)?;
+        let data_hash = hasher.finalize();
+
+        let mut sigs = vec![];
+        for secret in secret_keys {
+            sigs.push(secret.sign(data_hash.as_bytes()));
+        }
+
+        Ok(sigs)
+    }
+
     /// Get the transaction hash
     pub fn hash(&self) -> TransactionHash {
         let mut hasher = blake3::Hasher::new();
@@ -257,7 +309,14 @@ impl TransactionBuilder {
         // them would be circular.
         let tx_commitment = commitment_of_calls(&calls);
 
-        Ok(Transaction { calls, proofs, tx_commitment, nullifiers: self.nullifiers.clone() })
+        let signatures = vec![vec![]; calls.len()];
+        Ok(Transaction {
+            calls,
+            proofs,
+            signatures,
+            tx_commitment,
+            nullifiers: self.nullifiers.clone(),
+        })
     }
 }
 
@@ -270,4 +329,86 @@ impl TransactionBuilder {
 /// same derivation `build` uses, exposed so a prover can bind to the real value first.
 pub fn commitment_of_calls(calls: &[DarkLeaf<ContractCall>]) -> [u8; 32] {
     dwow_sdk::crypto::util::tx_commitment(calls.iter().map(|c| &c.data)).to_repr()
+}
+
+#[cfg(test)]
+mod signature_tests {
+    use super::*;
+    use dwow_sdk::pasta::pallas;
+
+    fn key(seed: u64) -> (SecretKey, PublicKey) {
+        let secret = SecretKey::from_base(pallas::Base::from(seed));
+        let public = PublicKey::from_secret(secret.clone());
+        (secret, public)
+    }
+
+    fn one_call_tx() -> Transaction {
+        let calls = vec![DarkLeaf {
+            data: ContractCall {
+                contract_id: dwow_sdk::crypto::ContractId::from_bytes([1u8; 32])
+                    .expect("canonical contract id"),
+                data: vec![0x00, 0x01],
+            },
+            children_indexes: vec![],
+            parent_index: None,
+        }];
+        let tx_commitment = commitment_of_calls(&calls);
+        Transaction {
+            calls,
+            proofs: vec![vec![]],
+            signatures: vec![vec![]],
+            tx_commitment,
+            nullifiers: vec![],
+        }
+    }
+
+    /// The Deployooor rule: the key named by metadata verifies, any other key does not.
+    #[test]
+    fn deploy_key_signature_verifies_and_a_stranger_is_rejected() {
+        let (owner_secret, owner_public) = key(9);
+        let (_, stranger_public) = key(10);
+        let mut tx = one_call_tx();
+
+        tx.signatures[0] = tx.create_sigs(&[owner_secret]).expect("sign");
+        assert!(tx.verify_sigs(vec![vec![owner_public]]).is_ok());
+
+        assert!(matches!(
+            tx.verify_sigs(vec![vec![stranger_public]]),
+            Err(Error::InvalidSignature)
+        ));
+    }
+
+    /// An unsigned call and a row-count mismatch are both rejected, not skipped.
+    #[test]
+    fn missing_or_mismatched_rows_are_rejected() {
+        let (owner_secret, owner_public) = key(9);
+        let tx = one_call_tx();
+
+        assert!(matches!(
+            tx.verify_sigs(vec![vec![owner_public.clone()]]),
+            Err(Error::InvalidInputLengths)
+        ));
+
+        let mut signed = tx;
+        signed.signatures[0] = signed.create_sigs(&[owner_secret]).expect("sign");
+        signed.signatures.push(vec![]);
+        assert!(matches!(
+            signed.verify_sigs(vec![vec![owner_public]]),
+            Err(Error::InvalidInputLengths)
+        ));
+    }
+
+    /// The signature covers the call set: changing a call after signing invalidates it.
+    #[test]
+    fn signature_is_bound_to_the_call_set() {
+        let (owner_secret, owner_public) = key(9);
+        let mut tx = one_call_tx();
+        tx.signatures[0] = tx.create_sigs(&[owner_secret]).expect("sign");
+
+        tx.calls[0].data.data.push(0x02);
+        assert!(matches!(
+            tx.verify_sigs(vec![vec![owner_public]]),
+            Err(Error::InvalidSignature)
+        ));
+    }
 }

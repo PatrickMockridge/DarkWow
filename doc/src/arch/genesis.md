@@ -8,7 +8,7 @@ document that references genesis contracts links here rather than repeating the 
 
 | Counter | Name | Crate | Consensus | Role |
 |---------|------|-------|-----------|------|
-| 2 | **Deployooor** | `dwow_deployooor_contract` | Yes (infrastructure) | WASM contract deployment, singleton enforcement, manifest storage |
+| 2 | **Deployooor** | `dwow_deployooor_contract` | Yes (infrastructure) | WASM contract deployment and locking (plaintext; no manifest, no circuits) |
 | 3 | **Promissory Note** | `dwow_promissory_note_contract` | No | Universal DeFi primitive — tokens, transfers, swaps, redemption |
 | 4 | **NativeToken** | `dwow_native_token_contract` | Yes | Block rewards, fee payment, supply audit |
 | 5 | **Identity** | `dwow_identity_contract` | No | Credential issuance, selective disclosure, capability proofs |
@@ -96,9 +96,10 @@ The full sequence is:
    NativeToken are deployed with EMPTY manifest bytes by design — the wallet handles
    those two natively (Path 1, wallet.md §6.4) rather than through manifest-declared
    capability discovery, so deploying their manifests would make the wallet scan them
-   twice. The seven ecosystem contracts carry their `manifest.toml`. Both Deployooor
-   and NativeToken do have a `manifest.toml` in-tree; those are interface documentation,
-   not consensus artefacts, and are not deployed.
+   twice. The seven ecosystem contracts carry their `manifest.toml`. Deployooor is
+   plaintext infrastructure and has no `manifest.toml` at all; NativeToken's in-tree
+   `manifest.toml` is interface documentation, not a consensus artefact, and is not
+   deployed.
 3. The genesis block is committed through the standard acceptance path (`accept_block`),
    which executes WASM — the deployment rule materializes each contract and calls
    `__initialize` (empty init params), and `pow_reward_v1` writes the cumulative supply
@@ -115,7 +116,7 @@ be updated:
 |------|--------|
 | `src/sdk/src/crypto/contract_id.rs` | Add `lazy_static!` for new ContractId, update `GENESIS_CONTRACT_IDS_BYTES` array size |
 | `src/sdk/src/crypto/mod.rs` | Add new ContractId to `pub use` re-exports |
-| `bin/dwowd/src/lib.rs` | Add the contract's `(include_bytes!(wasm), include_bytes!(manifest), "Name")` entry to the genesis table, in `genesis_contracts()`'s order. The bytes are written through the DeployV1 path (`execution.rs`), not by a block in `init_linear()` — see below |
+| `bin/dwowd/src/lib.rs` | Add the contract's `(include_bytes!(wasm), include_bytes!(manifest))` entry to the genesis table, in `genesis_contracts()`'s order (`&[]` for a manifest-less contract). The bytes are written through the DeployV1 path (`execution.rs`), not by a block in `init_linear()` — see below |
 | `bin/dwowd/src/tests/genesis.rs` | Add to `GenesisHarness::new()` |
 | `contrib/docker/darkwow-testnet/Dockerfile` | Add `zkas rebuild` + WASM `cargo build` + `cp` lines |
 | `Cargo.toml` | Add contract to workspace members |

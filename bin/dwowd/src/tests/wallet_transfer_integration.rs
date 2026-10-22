@@ -894,7 +894,7 @@ async fn box_owner_scenario(tag: &str) -> TestResult<BoxOwnerScenario> {
         *BOX_CONTRACT_ID, box_put_call_data.clone(),
     );
     box_put_tx.witness = crate::tests::heavyweight_pipeline::build_witness(
-        *BOX_CONTRACT_ID, &box_put_call_data, vec![put.proof],
+        *BOX_CONTRACT_ID, &box_put_call_data, vec![put.proof], None,
     );
     submit_block(&har, box_put_height, vec![coinbase_tx_for_spend, box_put_tx])
         .expect("accept_block (seed box put)");

@@ -413,6 +413,7 @@ pub fn execute_block(
     // share a canonical tx's hash (see the accumulation site below).
     struct TxVeriTables {
         zkp: Vec<Vec<(String, Vec<dwow_sdk::pasta::pallas::Base>)>>,
+        sigs: Vec<Vec<dwow_sdk::crypto::PublicKey>>,
     }
     let mut veri_state: HashMap<Blake3Hash, TxVeriTables> = HashMap::new();
 
@@ -489,6 +490,7 @@ pub fn execute_block(
         match runtime.metadata(&job.call_data) {
             Ok(m) => {
                 let mut c = Cursor::new(&m);
+                let mut zkp_ok = true;
                 let zkp: Vec<(String, Vec<dwow_sdk::pasta::pallas::Base>)> =
                     match dwow_serial::Decodable::decode(&mut c) {
                         Ok(v) => v,
@@ -513,12 +515,30 @@ pub fn execute_block(
                                 job.contract_id, job.tx_hash, detail, m.len());
                             fail_reason = detail;
                             success = false; fail_stage = "metadata-decode-zkp";
+                            zkp_ok = false;
                             Vec::new()
                         }
                     };
-                // Schnorr signature pubkeys removed per contract-standards.md §3.
-                // Metadata format still encodes an empty Vec<PublicKey> for backward
-                // compatibility, but the host no longer decodes or verifies it.
+                // The signature pubkeys the contract's metadata declares for this
+                // call. Deploy/Lock are the plaintext endpoints that use them.
+                // Only read past the ZK component when it decoded: an empty
+                // metadata buffer is the documented rejection signal and must
+                // keep `metadata-decode-zkp` as the reported reason.
+                let sigs: Vec<dwow_sdk::crypto::PublicKey> = if zkp_ok {
+                    match dwow_serial::Decodable::decode(&mut c) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            tracing::error!(target: "dwow_chain::execution",
+                                "metadata signature decode failed for contract {} (tx {}): {:?}",
+                                job.contract_id, job.tx_hash, e);
+                            fail_reason = format!("metadata signature decode: {e:?}");
+                            success = false; fail_stage = "metadata-decode-signatures";
+                            Vec::new()
+                        }
+                    }
+                } else {
+                    Vec::new()
+                };
                 //
                 // Canonical jobs only. Uncle calls execute on isolated overlays and
                 // their txs are not in `block.transactions`, so they are never
@@ -530,9 +550,10 @@ pub fn execute_block(
                 // `verify_core_tx_with_tables` correctly rejects.
                 if is_canonical {
                     let entry = veri_state.entry(job.tx_hash).or_insert_with(|| {
-                        TxVeriTables { zkp: vec![] }
+                        TxVeriTables { zkp: vec![], sigs: vec![] }
                     });
                     entry.zkp.push(zkp);
+                    entry.sigs.push(sigs);
                 }
             }
             Err(e) => {
@@ -709,6 +730,13 @@ pub fn execute_block(
             .map_err(|e| {
                 dwow_core::Error::Custom(format!(
                     "L2 proof verify tx {}: {}",
+                    hex::encode(tx_hash.as_bytes()),
+                    e,
+                ))
+            })?;
+            core_tx.verify_sigs(tables.sigs.clone()).map_err(|e| {
+                dwow_core::Error::Custom(format!(
+                    "L2 signature verify tx {}: {}",
                     hex::encode(tx_hash.as_bytes()),
                     e,
                 ))
@@ -948,8 +976,7 @@ fn deploy_contract_in_overlay(
 ///
 /// The genesis block carries these deployments as transactions at positions
 /// 1..=9 (position 0 is the PoWRewardV1 coinbase). ORDER IS CONSENSUS:
-/// position i of the genesis block MUST deploy to `genesis_contracts()[i].0`
-/// and declare `singleton_name == genesis_contracts()[i].1`.
+/// position i of the genesis block MUST deploy to `genesis_contracts()[i].0`.
 pub fn genesis_contracts() -> [(ContractId, &'static str); 9] {
     [
         (*DEPLOYOOOR_CONTRACT_ID, "Deployooor"),
@@ -995,8 +1022,8 @@ pub fn is_genesis_deployment_tx(tx: &crate::Transaction) -> bool {
 /// Validation — ALL failures reject the block:
 /// 1. Exactly 1 coinbase + 9 deployment txs, nothing else.
 /// 2. Each deployment tx at position i decodes `DeployParamsV1` with
-///    `singleton == true` and `singleton_name == genesis_contracts()[i].1`
-///    (position binding — order is consensus) and non-empty WASM.
+///    non-empty WASM; its position binds it to the canonical table (order is
+///    consensus).
 /// 3. Deployment lands at the WELL-KNOWN ContractId from the hard-coded
 ///    table, NOT `derive_public` — native contracts live at fixed IDs.
 /// 4. `__initialize` runs via `deploy_contract_in_overlay` with `ix = &[]`,
@@ -1032,12 +1059,9 @@ pub fn apply_genesis_deployments(
             .map_err(|e| Error::Custom(format!(
                 "genesis deployment {} ({}): DeployParamsV1 decode: {}", i + 1, name, e,
             )))?;
-        if !params.singleton || params.singleton_name != *name {
-            return Err(Error::Custom(format!(
-                "genesis deployment {} order violation: declared '{}', expected '{}'",
-                i + 1, params.singleton_name, name,
-            )));
-        }
+        // Position is the genesis rule: `genesis_contracts()` order binds the
+        // n-th deployment transaction to the n-th well-known ContractId. The
+        // parameters carry no singleton/name; the table is the authority.
         if params.wasm_bincode.is_empty() {
             return Err(Error::Custom(format!(
                 "genesis deployment {} ({}): empty WASM", i + 1, name,
@@ -1055,11 +1079,10 @@ pub fn apply_genesis_deployments(
 
         // Manifest bytes ride in params.ix (host-side metadata write, keyed
         // contract_id || b"_manifest" — same key as store.set_contract_data
-        // used before). Eight genesis contracts carry one. NativeToken's is
-        // empty by design: it is the bespoke citizen, the wallet embeds its
-        // paths, and a deployed manifest would be a second declaration nothing
-        // reads. Deployooor's was empty by an oversight (`OBL-C250`'s batch); it
-        // now carries its own.
+        // used before). Seven genesis contracts carry one. NativeToken and
+        // Deployooor are empty by design: they are the two bespoke citizens,
+        // the wallet embeds their paths, and a deployed manifest would be a
+        // second declaration nothing reads.
         if !params.ix.is_empty() {
             let mut manifest_key = Vec::from(contract_id.to_bytes().as_slice());
             manifest_key.extend_from_slice(b"_manifest");

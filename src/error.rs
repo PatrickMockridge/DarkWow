@@ -395,6 +395,9 @@ pub enum Error {
     #[error("Input vectors have different length")]
     InvalidInputLengths,
 
+    #[error("Invalid signature")]
+    InvalidSignature,
+
     #[error("Header {0} not found in database")]
     HeaderNotFound(String),
 

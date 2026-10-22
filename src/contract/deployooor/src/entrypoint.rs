@@ -22,12 +22,9 @@
  */
 
 use dwow_sdk::{
-    crypto::ContractId,
-    dark_tree::DarkLeaf,
-    error::{ContractError, ContractResult},
-    wasm, ContractCall,
+    crypto::ContractId, dark_tree::DarkLeaf, error::ContractResult, wasm, ContractCall,
 };
-use dwow_serial::deserialize;
+use dwow_serial::{deserialize, serialize};
 
 use crate::{
     model::{DeployUpdateV1, LockUpdateV1},
@@ -36,12 +33,12 @@ use crate::{
 };
 
 /// `Deployooor::Deploy` functions
-mod deploy;
-use deploy::{deploy_get_metadata_v1, deploy_process_instruction_v1, deploy_process_update_v1};
+mod deploy_v1;
+use deploy_v1::{deploy_get_metadata_v1, deploy_process_instruction_v1, deploy_process_update_v1};
 
 /// `Deployooor::Lock` functions
-mod lock;
-use lock::{lock_get_metadata_v1, lock_process_instruction_v1, lock_process_update_v1};
+mod lock_v1;
+use lock_v1::{lock_get_metadata_v1, lock_process_instruction_v1, lock_process_update_v1};
 
 dwow_sdk::define_contract!(
     init: init_contract,
@@ -54,13 +51,6 @@ dwow_sdk::define_contract!(
 /// We use this function to initialize all the necessary databases and prepare them
 /// with initial data if necessary.
 fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
-    // Register this contract's circuits before anything can ask the chain to verify one. The host
-    // reads them back out of the `_zkas` tree by namespace, so a circuit that is not written here is
-    // a proof nothing can ever verify: `load_zkbin` finds the key absent, `get_contract_data`
-    // returns an empty slice rather than an error, and the deserialize fails as "failed to fill
-    // whole buffer". `LockV1` is the only endpoint carrying a proof, so `LockV2` is the only entry.
-    wasm::db::zkas_db_set(include_bytes!("../proof/lock.zk.bin"))?;
-
     // Set up a database tree for arbitrary data
     let info_db = match wasm::db::db_lookup(cid, DEPLOY_CONTRACT_INFO_TREE) {
         Ok(v) => v,
@@ -74,7 +64,11 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     }
 
     // Update db version
-    wasm::db::db_set(info_db, DEPLOY_CONTRACT_DB_VERSION, env!("CARGO_PKG_VERSION").as_bytes())?;
+    wasm::db::db_set(
+        info_db,
+        DEPLOY_CONTRACT_DB_VERSION,
+        &serialize(&env!("CARGO_PKG_VERSION")),
+    )?;
 
     Ok(())
 }
@@ -87,11 +81,14 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
     // `call_idx` is host-supplied and the call data is attacker-supplied, so the lookup and the
     // selector byte are read rather than indexed-into.
-    let self_ = &calls.get(call_idx).ok_or_else(|| {
-        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
-    })?.data;
+    let self_ = calls.get(call_idx).ok_or_else(|| {
+        dwow_sdk::error::ContractError::IoError(format!(
+            "call_index {call_idx} out of range ({} calls)",
+            calls.len()
+        ))
+    })?;
     let func = DeployFunction::try_from(*self_.data.first().ok_or_else(|| {
-        ContractError::IoError("empty call data: no selector byte".to_string())
+        dwow_sdk::error::ContractError::IoError("empty call data: no selector byte".to_string())
     })?)?;
 
     let metadata = match func {
@@ -107,11 +104,14 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
 fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
-    let self_ = &calls.get(call_idx).ok_or_else(|| {
-        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
-    })?.data;
+    let self_ = calls.get(call_idx).ok_or_else(|| {
+        dwow_sdk::error::ContractError::IoError(format!(
+            "call_index {call_idx} out of range ({} calls)",
+            calls.len()
+        ))
+    })?;
     let func_byte = *self_.data.first().ok_or_else(|| {
-        ContractError::IoError("empty call data: no selector byte".to_string())
+        dwow_sdk::error::ContractError::IoError("empty call data: no selector byte".to_string())
     })?;
     let func = DeployFunction::try_from(func_byte)?;
 
@@ -130,19 +130,21 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 /// prefixed with the contract function.
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
     let update_func = *update_data.first().ok_or_else(|| {
-        ContractError::IoError("empty update data: no selector byte".to_string())
+        dwow_sdk::error::ContractError::IoError("empty update data: no selector byte".to_string())
     })?;
     let update_payload = update_data.get(1..).ok_or_else(|| {
-        ContractError::IoError("empty update data: no payload after selector".to_string())
+        dwow_sdk::error::ContractError::IoError(
+            "empty update data: no payload after selector".to_string(),
+        )
     })?;
     match DeployFunction::try_from(update_func)? {
         DeployFunction::DeployV1 => {
-            let update = DeployUpdateV1::decode(update_payload)?;
+            let update: DeployUpdateV1 = deserialize(update_payload)?;
             Ok(deploy_process_update_v1(cid, update)?)
         }
 
         DeployFunction::LockV1 => {
-            let update = LockUpdateV1::decode(update_payload)?;
+            let update: LockUpdateV1 = deserialize(update_payload)?;
             Ok(lock_process_update_v1(cid, update)?)
         }
     }
