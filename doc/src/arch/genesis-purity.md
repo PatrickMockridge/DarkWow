@@ -342,18 +342,19 @@ debug test binary rather than `make test`'s release profile. The earlier batch a
 `OBL-C256` (the `no-entrypoint` feature was dead in four contract crates, so host links exported
 duplicate WASM symbols).
 
-**2026-10-22: code-complete, not yet built or pinned.** An adversarial review of the nine primitives
-then landed code changes in `deployooor` (WASM content commitment and the two missing genesis
-manifests), `identity` (capability-id derivation, issuer schema authorization, issuance validation,
+**2026-10-22: code-complete, then built and pinned.** An adversarial review of the nine primitives
+then landed code changes in `deployooor` (WASM content commitment and its genesis manifest),
+`identity` (capability-id derivation, issuer schema authorization, issuance validation,
 manifest declarations), `attestation` (the vacuous `check_not_revoked` endpoint, circuit, client and
 manifest entry removed), `multisig` (`create_group.zk` binds the group id to the first member and
-counts), `purse` (the leaf commits to `asset_id`), `promissory_note` and `native_token` manifests
-(`proof_circuits` lists), plus `src/sdk` (`ManifestFunction::proof_circuits`, the optional asset
-operand in the wallet's leaf rule). **None of it has been built by the agent, and the pin has not
-moved.** `src/sdk` is in all 32 contracts' `SOURCE_MANIFEST`, so **all 32 artifacts are stale** and
-`bin/dwowd/genesis_hash.txt` is stale by construction. The build, the byte-identical rebuild, the
-pin re-record and the nine heavyweight specs are the pipeline's steps; this document must not be
-read as claiming them for this tree.
+counts), `purse` (the leaf commits to `asset_id`, and the harness's fixture leaves now carry it too),
+`promissory_note` and `native_token` manifests (`proof_circuits` lists; `native_token`'s file is
+documentation, not a deployment input — its genesis entry passes `&[]` for the bespoke citizen),
+plus `src/sdk` (`ManifestFunction::proof_circuits`, the optional asset operand in the wallet's leaf
+rule). **The build has since been performed:** 32 artifacts built from clean and fresh, the nine
+genesis wasms built from clean twice and byte-identical, 9/9 CLEAN, and the pin re-recorded once
+from the computed line; the genesis module reports 10/10. The nine heavyweight specs and the devnet
+pipeline remain the pipeline's steps; this document must not be read as claiming them for this tree.
 
 **What it cannot establish.**
 

@@ -67,11 +67,13 @@ Cross-contract dependencies verified from entrypoint code (not assumed):
 **Consensus-Critical (native_token):** The single bespoke citizen ([wallet.md §0.1](../../arch/wallet.md)).
 The only contract crate the wallet depends on directly. Handles block rewards, fee payment,
 value transfer. Deliberately rock-dumb: no multi-token, no auth, no freezing, no business logic.
-No manifest — it IS the consensus. A bug here halts the chain.
+No deployed manifest — it is the bespoke citizen and its wallet paths are embedded; the on-disk
+`manifest.toml` is documentation. It IS the consensus. A bug here halts the chain.
 
 **Infrastructure (deployooor):** The second sanctioned citizen. Deploys WASM contracts,
-marks them immutable. Pure WASM, zero ZK circuits. No manifest. Without deployooor,
-manifest discovery is impossible.
+marks them immutable. Pure WASM, zero ZK circuits. It carries a manifest deployed at genesis
+(`deployooor/manifest.toml`), which the generic client reads. Without deployooor, manifest
+discovery is impossible.
 
 **L1 O-Cap Primitives (box, purse):** Minimal capability containers. Depend on nothing.
 Other contracts compose from them. Box: linear delegation (Put/Take). Purse: fungible
@@ -97,10 +99,13 @@ May compose from genesis contracts via spend_hook or child calls.
 ### 1.3 Key Architectural Facts
 
 - **All 9 genesis contracts are standalone.** Zero cross-contract child calls in any entrypoint.
-- **native_token** is a normal manifest-bearing contract (`src/contract/native_token/manifest.toml`:
-  eight functions, three circuits — `Mint_V2`, `Burn_V2`, `Fee_V3`). Every block depends on it
-  structurally via coinbase + FeeCollect.
-- **deployooor** has no manifest, no ZK. All WASM contracts start here.
+- **native_token** is the one bespoke citizen. Its on-disk
+  `src/contract/native_token/manifest.toml` documents eight functions and three circuits
+  (`Mint_V2`, `Burn_V2`, `Fee_V3`) but is not deployed at genesis and is not read for capability
+  construction; the wallet embeds its scan and write paths. Every block depends on it structurally
+  via coinbase + FeeCollect.
+- **deployooor** carries a genesis-deployed manifest and zero ZK circuits. All WASM contracts
+  start here.
 - **promissory_note** is a DeFi capability, not a token. Completely separate from native_token.
   PN has nothing to do with fee payment. Fee payment is exclusively native_token's domain.
 - **box** and **purse** depend on nothing. Other contracts depend on THEM.

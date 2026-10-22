@@ -129,13 +129,13 @@ const MULTISIG_MANIFEST: &str = include_str!("../../multisig/manifest.toml");
 /// The genesis contracts whose manifests are **deployed**, i.e. the ones whose bytes ride in the
 /// genesis transaction and are read back by a wallet through `contract_client.rs`.
 ///
-/// All nine. Until G1 (2026-10-22) the genesis table passed `&[]` for `deployooor` and
-/// `native_token`; this list excluded them for that reason, and the exclusion then hid
-/// `native_token::spend` declaring no circuit while its arm published two. The list must match
-/// `bin/dwowd/src/lib.rs`'s table.
+/// Eight of the nine. `native_token` is excluded because it is the one bespoke citizen: the wallet
+/// embeds its scan and write paths (wallet.md §6.4), the genesis table passes `&[]` for it, and
+/// its on-disk `manifest.toml` is documentation rather than a deployment input. `deployooor` is
+/// deployed (G1's other half); its manifest is read through the generic client. The list must
+/// match `bin/dwowd/src/lib.rs`'s table.
 const DEPLOYED_GENESIS_MANIFESTS: &[(&str, &str)] = &[
     ("deployooor", include_str!("../../deployooor/manifest.toml")),
-    ("native_token", include_str!("../../native_token/manifest.toml")),
     ("promissory_note", include_str!("../../promissory_note/manifest.toml")),
     ("identity", include_str!("../../identity/manifest.toml")),
     ("oracle", ORACLE_MANIFEST),
@@ -248,22 +248,22 @@ fn every_deployed_genesis_manifest_resolves_its_own_proof_circuits() {
         }
     }
 
-    // The control: the count is the number of ZK functions in the nine deployed manifests, so a
+    // The control: the count is the number of ZK functions in the eight deployed manifests, so a
     // parser that silently stopped finding functions would be caught rather than pass vacuously.
     //
-    // **Re-measured 2026-10-22: 34 → 38, and the movement has two causes.** G1 deployed the two
-    // previously excluded manifests: `deployooor` contributes `LockV1`, `native_token` contributes
-    // `fee`, `burn`, `transfer` and `spend` (+5). G8 removed attestation's `check_not_revoked`
-    // endpoint and circuit (−1). 34 − 1 + 5 = 38. The earlier seven-manifest count was 34
-    // (2026-10-05), 32 before that. A different count means either the parser stopped finding
-    // functions or a genesis manifest's declarations moved — both are reasons to read, not to
-    // adjust the number.
+    // **Re-measured 2026-10-22: 34, the same number with a different composition.** G8 removed
+    // attestation's `check_not_revoked` endpoint and circuit (−1) from the seven manifest-bearing
+    // contracts, and G1 deployed `deployooor` (+1, `LockV1`). `native_token` remains excluded: it
+    // is natively embedded, the genesis table passes `&[]`, and its manifest is documentation.
+    // 34 − 1 + 1 = 34. The earlier seven-manifest count was 34 (2026-10-05), 32 before that. A
+    // different count means either the parser stopped finding functions or a genesis manifest's
+    // declarations moved — both are reasons to read, not to adjust the number.
     assert_eq!(
-        checked, 38,
-        "the nine deployed genesis manifests declare 38 proof-bearing functions (re-measured \
-         2026-10-22; 34 over seven manifests on 2026-10-05). A different count means either the \
-         parser stopped finding functions or a genesis manifest's declarations moved — the latter \
-         is legitimate, so re-measure before assuming the former"
+        checked, 34,
+        "the eight deployed genesis manifests declare 34 proof-bearing functions (re-measured \
+         2026-10-22; 34 over seven manifests on 2026-10-05, before G8 and deployooor). A different \
+         count means either the parser stopped finding functions or a genesis manifest's \
+         declarations moved — the latter is legitimate, so re-measure before assuming the former"
     );
 }
 
@@ -541,9 +541,9 @@ fn every_contract_manifest_agrees_with_its_own_circuits() {
     //
     // **Re-measured 2026-10-22: 671 → 667, and the movement is G8's removal.** Attestation's
     // `check_not_revoked` endpoint and circuit left one (A) function, one (B) declared circuit,
-    // one (C) built circuit and one (D) entry: −4. The nine-manifest deployed list and the
+    // one (C) built circuit and one (D) entry: −4. The deployed-manifest list and the
     // `proof_circuits` parsing do not move the walk (one site per proof-bearing function, one per
-    // declared or built circuit).
+    // declared or built circuit); the second test still scans every manifest, deployed or not.
     assert_eq!(
         sites, 667,
         "the four checks walk 667 sites over those manifests (re-measured 2026-10-22 after G8 \

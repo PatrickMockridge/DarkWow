@@ -442,10 +442,14 @@ pub struct Dwowd {
 /// one `ContractCall` to Deployooor with the DeployV1 selector (`0x00`)
 /// followed by `DeployParamsV1`:
 /// - `wasm_bincode`: the contract WASM
-/// - `ix`: the manifest.toml bytes (wallet-facing metadata). All nine genesis
-///   contracts deploy their manifest here; `apply_genesis_deployments` writes it
-///   to `contract_id || b"_manifest"`. The bytes are part of the genesis
-///   transaction preimage, so changing a manifest moves the genesis hash.
+/// - `ix`: the manifest.toml bytes (wallet-facing metadata). Eight of the nine
+///   genesis contracts deploy their manifest here; `apply_genesis_deployments`
+///   writes it to `contract_id || b"_manifest"`. `native_token` passes `&[]`
+///   because it is the one bespoke citizen: the wallet embeds its scan and write
+///   paths (wallet.md §6.4) and never reads a deployed manifest for it. The
+///   manifest file on disk is documentation, not a deployment input. The bytes
+///   that are deployed are part of the genesis transaction preimage, so changing
+///   a deployed manifest moves the genesis hash.
 /// - `public_key`: a fixed deterministic key — the consensus rule binds
 ///   deployments to the well-known ContractIds by table position, NOT by
 ///   `derive_public`; the key only needs to be deterministic because it is
@@ -457,7 +461,7 @@ fn build_genesis_deployment_txs() -> Vec<dwow_chain::Transaction> {
     // WASM + manifest table, in genesis_contracts() order.
     let contracts: Vec<(&[u8], &[u8], &str)> = vec![
         (include_bytes!("../../../src/contract/deployooor/dwow_deployooor_contract.wasm"), include_bytes!("../../../src/contract/deployooor/manifest.toml"), "Deployooor"),
-        (include_bytes!("../../../src/contract/native_token/dwow_native_token_contract.wasm"), include_bytes!("../../../src/contract/native_token/manifest.toml"), "NativeToken"),
+        (include_bytes!("../../../src/contract/native_token/dwow_native_token_contract.wasm"), &[], "NativeToken"),
         (include_bytes!("../../../src/contract/promissory_note/dwow_promissory_note_contract.wasm"), include_bytes!("../../../src/contract/promissory_note/manifest.toml"), "PromissoryNote"),
         (include_bytes!("../../../src/contract/identity/dwow_identity_contract.wasm"), include_bytes!("../../../src/contract/identity/manifest.toml"), "Identity"),
         (include_bytes!("../../../src/contract/oracle/dwow_oracle_contract.wasm"), include_bytes!("../../../src/contract/oracle/manifest.toml"), "Oracle"),

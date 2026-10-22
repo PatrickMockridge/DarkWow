@@ -102,9 +102,11 @@ module's **size**, so two equal-length modules stored the same value. The deploy
 the stored value back and compares it with the module it deployed: that read is what makes the field
 an integrity check rather than a number nothing consumed (`OBL-C250`).
 
-The genesis deployment table carries a manifest in `ix` for each of the nine contracts and the host
-writes it under `contract_id ‖ b"_manifest"` (`apply_genesis_deployments`). `native_token` and
-`deployooor` were the two empty entries until their manifests existed; they now carry theirs.
+The genesis deployment table carries a manifest in `ix` for eight of the nine contracts and the
+host writes it under `contract_id ‖ b"_manifest"` (`apply_genesis_deployments`). `native_token` is
+the exception: it is the bespoke citizen, its wallet paths are embedded, and its genesis entry
+passes `&[]`; its on-disk `manifest.toml` documents the interface but is not a deployment input.
+`deployooor` was the other empty entry until its manifest existed; it now carries its own.
 
 ## Database Trees
 
