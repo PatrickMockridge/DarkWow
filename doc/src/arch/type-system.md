@@ -421,6 +421,17 @@ so a value that does not fit is an error with field context; there SHALL be no
 `From<usize>` or `From<u64>`. `SerializedLen` SHALL NOT be treated as `u8`,
 `u16`, `u32` or `usize`.
 
+The generic `Vec<T>` codec in `dwow_serial` does not use this type: its wire
+prefix is a VarInt (a length of one byte below 128, wider above), and that is
+the established format every stored and transmitted vector already uses. The
+nominal type remains the rule for contract parameter and state encodings
+(§A.3.1.1); it has not been retrofitted onto the generic codec, and this entry
+records the gap rather than claiming a wire change. Independently of the
+prefix width, a *decode* now refuses a wire length whose projected allocation
+exceeds `MAX_VEC_BYTES` (32 MiB). That is an allocation policy, not a
+consensus validity rule: it bounds what a corrupt length can ask the decoder
+to allocate, and it never rewrites or rejects an encoding a producer wrote.
+
 **EstimatedFee(FeeAmount)** — a fee value that is an ESTIMATE, not a
 cryptographically verified amount. Distinguished from `FeeAmount` because
 an estimate SHALL NOT participate in consensus-critical computation (block

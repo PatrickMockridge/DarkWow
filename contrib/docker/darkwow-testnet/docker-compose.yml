@@ -148,7 +148,7 @@ services:
       resources:
         limits:
           cpus: '2'
-          memory: 4g
+          memory: 6g
 
     hostname: node1
     entrypoint: ["/app/entrypoint.sh"]

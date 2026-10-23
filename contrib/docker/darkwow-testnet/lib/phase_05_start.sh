@@ -140,7 +140,7 @@ phase_start() {
                 --hostname "wallet-$i" \
                 --restart no \
                 --network ${COMPOSE_PROJECT_NAME}_dwow-local \
-                --memory 4g --memory-swap 4g \
+                --memory 2g --memory-swap 2g \
                 -e RUST_MIN_STACK=67108864 \
                 -e WALLET_MODE=interactive \
                 -e WALLET_NAME="wallet-$i" \
