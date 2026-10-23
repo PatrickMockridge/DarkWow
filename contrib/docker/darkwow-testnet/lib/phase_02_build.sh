@@ -77,13 +77,16 @@ phase_build() {
         BUILD_ARGS="--no-cache"
     fi
     # Forward host resource-control env vars into the Docker build.
-    # The Dockerfile converts these ARGs to ENVs, and all cargo build commands
-    # use -j ${CARGO_BUILD_JOBS} so the override takes full effect.
+    # CARGO_BUILD_JOBS bounds the WASM/contract compiles; CARGO_NATIVE_JOBS bounds the
+    # native (LTO) builds — the two are deliberately different numbers in the resource
+    # model (build-resource-tuning.md: ~1.2 GB per WASM job, ~4 GB per native link).
     local cargo_jobs="${CARGO_BUILD_JOBS:-1}"
+    local native_jobs="${CARGO_NATIVE_JOBS:-1}"
     local rayon_threads="${RAYON_NUM_THREADS:-2}"
     BUILD_ARGS="$BUILD_ARGS --build-arg CARGO_BUILD_JOBS=${cargo_jobs}"
+    BUILD_ARGS="$BUILD_ARGS --build-arg CARGO_NATIVE_JOBS=${native_jobs}"
     BUILD_ARGS="$BUILD_ARGS --build-arg RAYON_NUM_THREADS=${rayon_threads}"
-    info "  Build parallelism: JOBS=${cargo_jobs}, RAYON=${rayon_threads}"
+    info "  Build parallelism: JOBS=${cargo_jobs}, NATIVE_JOBS=${native_jobs}, RAYON=${rayon_threads}"
 
     # Build the main testnet image ONCE. Previously docker compose --profile native
     # triggered 6 separate docker build invocations (one per service: observer,

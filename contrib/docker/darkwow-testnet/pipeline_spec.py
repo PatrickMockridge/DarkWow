@@ -191,10 +191,16 @@ GLOBALS: Dict[str, dict] = {
     # back to ENV so all cargo build -j ${CARGO_BUILD_JOBS} commands use them.
     # Without phase_02 forwarding, setting these on the host has zero effect.
     "CARGO_BUILD_JOBS":  {"value": 1,  "module": "phase_02_build.sh",
-                          "desc": "Limits concurrent rustc processes per cargo invocation. "
+                          "desc": "Limits concurrent rustc processes for the WASM/contract compiles. "
                                   "Forwarded to Docker as --build-arg. Dockerfile default=1. "
-                                  "The -j flag on cargo CLI takes precedence over this env var — "
-                                  "all Dockerfiles use -j ${CARGO_BUILD_JOBS} to respect the override."},
+                                  "The contract Makefiles read it from the environment; the native "
+                                  "builds use CARGO_NATIVE_JOBS instead (build-resource-tuning.md "
+                                  "budgets ~1.2 GB per WASM job and ~4 GB per native link)."},
+    "CARGO_NATIVE_JOBS": {"value": 1,  "module": "phase_02_build.sh",
+                          "desc": "The 'Final native -j': bounds concurrent LTO links for dwowd, "
+                                  "darkwow and the dwowd lib-test binary. Forwarded to Docker as "
+                                  "--build-arg. Dockerfile default=1. Formula: "
+                                  "min(available_RAM_GB / 4, CARGO_BUILD_JOBS)."},
     "RAYON_NUM_THREADS": {"value": 2,  "module": "phase_02_build.sh",
                           "desc": "Limits Rayon thread pool inside each rustc process. "
                                   "Forwarded to Docker as --build-arg. Dockerfile default=2."},

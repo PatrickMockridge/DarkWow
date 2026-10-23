@@ -9,13 +9,15 @@ to a 64-core server.
 
 ## Quick Reference
 
-| Tier | Hardware | RAM | Cores | `CARGO_BUILD_JOBS` | `RAYON_NUM_THREADS` | Peak RAM | Fresh Build |
-|------|----------|-----|-------|---------------------|----------------------|----------|-------------|
-| **Minimum** | Low-end VPS, RPi | 4 GB | 2–4 | 1 | 2 | 1.2 GB | 50–70 min |
-| **Recommended** | Dev laptop/desktop | 16 GB | 8–12 | 4 | 4 | ~4.8 GB | 30–45 min |
-| **Pro/Server** | Threadripper, CI runner | 64 GB+ | 16–64 | 8 | 8 | ~9.6 GB | 15–25 min |
+| Tier | Hardware | RAM | Cores | `CARGO_BUILD_JOBS` | `CARGO_NATIVE_JOBS` | `RAYON_NUM_THREADS` | Peak compile RAM | Fresh Build |
+|------|----------|-----|-------|---------------------|----------------------|----------------------|------------------|-------------|
+| **Minimum** | Low-end VPS, RPi | 4 GB | 2–4 | 1 | 1 | 2 | 1.2 GB (native 4 GB) | 50–70 min |
+| **Recommended** | Dev laptop/desktop | 16 GB | 8–12 | 4 | 2 | 4 | ~4.8 GB (native 8 GB) | 30–45 min |
+| **Pro/Server** | Threadripper, CI runner | 64 GB+ | 16–64 | 8 | 4 | 8 | ~9.6 GB (native 16 GB) | 15–25 min |
 
-The committed defaults (`JOBS=1`, `RAYON=2`) match the Minimum tier and work universally.
+The committed defaults (`JOBS=1`, `NATIVE_JOBS=1`, `RAYON=2`) match the Minimum tier and work
+universally. The two job counts are separate on purpose: the WASM/contract jobs and the native LTO
+links have very different per-job costs (below).
 
 ## The Memory Model
 
@@ -24,11 +26,14 @@ Each Rayon codegen thread consumes approximately 600 MB. The LTO linking step fo
 native daemon uses approximately 4 GB per job.
 
 ```
-Peak_RAM ≈ (CARGO_BUILD_JOBS × 1.2 GB) + (RAYON_NUM_THREADS × 0.6 GB) + 0.5 GB
+Peak_compile_RAM ≈ (CARGO_BUILD_JOBS × 1.2 GB) + (RAYON_NUM_THREADS × 0.6 GB) + 0.5 GB
+Peak_native_RAM  ≈  CARGO_NATIVE_JOBS × 4 GB
 ```
 
-This must stay below available RAM or Docker will OOM-kill the build. Running `docker stats`
-in another terminal during a build will show live memory usage.
+Both phases must stay below available RAM or the build is killed. Using one job count for
+both is what made eight concurrent LTO links (~32 GB) exhaust a 48 GiB host while the WASM
+phase alone would have been ~10 GB. Running `docker stats` in another terminal during a
+build will show live memory usage.
 
 ## The Formula
 
@@ -36,28 +41,30 @@ in another terminal during a build will show live memory usage.
 
 **RAYON_NUM_THREADS**: `min(floor(available_RAM_GB / 0.6), physical_cores)`.
 
-**Final native `-j` flag**: `min(floor(available_RAM_GB / 4), CARGO_BUILD_JOBS)`. The native
-daemon build uses LTO linking which is significantly more memory-intensive per job.
+**Final native `-j` flag (`CARGO_NATIVE_JOBS`)**: `min(floor(available_RAM_GB / 4),
+CARGO_BUILD_JOBS)`. The native daemon build uses LTO linking which is significantly more
+memory-intensive per job.
 
 ### Worked Example — 16 GB, 8-core machine
 
 ```
 CARGO_BUILD_JOBS      = floor(16 / 1.2) = 4
 RAYON_NUM_THREADS     = min(floor(16 / 0.6), 8) = 4
-Final -j              = min(floor(16 / 4), 4) = 2
-Peak_RAM              = (4 × 1.2) + (4 × 0.6) + 0.5 = ~7.7 GB  ✓
+CARGO_NATIVE_JOBS     = min(floor(16 / 4), 4) = 2
+Peak_compile_RAM      = (4 × 1.2) + (4 × 0.6) + 0.5 = ~7.7 GB
+Peak_native_RAM       = 2 × 4 = 8 GB  ✓ (the larger of the two phases)
 ```
 
 ### Common Configurations
 
-| Cores | RAM | JOBS | RAYON | Final -j | Peak RAM |
-|-------|-----|------|-------|----------|----------|
-| 2 | 4 GB | 1 | 2 | 1 | 1.2 GB |
-| 4 | 8 GB | 3 | 4 | 1 | 3.6 GB |
-| 8 | 16 GB | 4 | 8 | 2 | 4.8 GB |
-| 16 | 32 GB | 8 | 16 | 4 | 9.6 GB |
-| 32 | 64 GB | 8 | 32 | 4 | 9.6 GB |
-| 64 | 128 GB | 8 | 64 | 4 | 9.6 GB |
+| Cores | RAM | JOBS | RAYON | `CARGO_NATIVE_JOBS` | Peak compile RAM |
+|-------|-----|------|-------|---------------------|------------------|
+| 2 | 4 GB | 1 | 2 | 1 | 1.2 GB (native 4 GB) |
+| 4 | 8 GB | 3 | 4 | 1 | 3.6 GB (native 4 GB) |
+| 8 | 16 GB | 4 | 8 | 2 | 4.8 GB (native 8 GB) |
+| 16 | 32 GB | 8 | 16 | 4 | 9.6 GB (native 16 GB) |
+| 32 | 64 GB | 8 | 32 | 4 | 9.6 GB (native 16 GB) |
+| 64 | 128 GB | 8 | 64 | 4 | 9.6 GB (native 16 GB) |
 
 Note the cap at JOBS=8 — beyond this, the target directory lock becomes the bottleneck,
 not CPU or RAM.
@@ -90,6 +97,7 @@ editing the file.
 ```bash
 docker build \
   --build-arg CARGO_BUILD_JOBS=4 \
+  --build-arg CARGO_NATIVE_JOBS=2 \
   --build-arg RAYON_NUM_THREADS=4 \
   -t darkwow-testnet . \
   -f contrib/docker/darkwow-testnet/Dockerfile
@@ -105,16 +113,19 @@ services:
     build:
       args:
         CARGO_BUILD_JOBS: "4"
+        CARGO_NATIVE_JOBS: "2"
         RAYON_NUM_THREADS: "4"
   node0:
     build:
       args:
         CARGO_BUILD_JOBS: "4"
+        CARGO_NATIVE_JOBS: "2"
         RAYON_NUM_THREADS: "4"
   node1:
     build:
       args:
         CARGO_BUILD_JOBS: "4"
+        CARGO_NATIVE_JOBS: "2"
         RAYON_NUM_THREADS: "4"
 ```
 
@@ -125,6 +136,7 @@ does not have a global build-arg injection.
 
 ```bash
 export CARGO_BUILD_JOBS=4
+export CARGO_NATIVE_JOBS=2
 export RAYON_NUM_THREADS=4
 ./test_pipeline.sh --mode native --fresh
 ```
@@ -135,9 +147,10 @@ env vars on the host had zero effect on the Docker build. This is now the
 recommended method for persistent overrides.
 
 **Important:** `-j` on the `cargo build` command line takes precedence over the
-`CARGO_BUILD_JOBS` environment variable. All Dockerfiles now use `-j ${CARGO_BUILD_JOBS}`
-(not a hardcoded number) so the env var controls the actual job count. If you ever
-add a new `cargo build` to a Dockerfile, use `-j ${CARGO_BUILD_JOBS}`, never a
+`CARGO_BUILD_JOBS` environment variable. The Dockerfile passes `-j ${CARGO_BUILD_JOBS}`
+to the contract/WASM builds and `-j ${CARGO_NATIVE_JOBS}` to the native builds (dwowd,
+darkwow, and the dwowd lib-test binary), so each phase honours its own bound. If you
+ever add a new `cargo build` to a Dockerfile, use the matching variable — never a
 hardcoded `-j N`.
 
 For a deeper analysis of how these valves interact and why small loosenings cascade, see the

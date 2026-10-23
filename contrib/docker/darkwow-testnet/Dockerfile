@@ -17,6 +17,11 @@ RUN test -n "$BUILD_COMMIT" || (echo "FATAL: BUILD_COMMIT is required" && exit 1
 
 ARG CARGO_BUILD_JOBS=1
 ENV CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS}
+# Native (LTO) builds get their own, lower job count. The resource model in
+# doc/src/dev/testing/build-resource-tuning.md budgets ~4 GB per native link and
+# defines the "Final native -j" as min(available_RAM_GB / 4, CARGO_BUILD_JOBS);
+# using the WASM job count here is how eight concurrent linkers exhausted the host.
+ARG CARGO_NATIVE_JOBS=1
 ARG RAYON_NUM_THREADS=2
 ENV RAYON_NUM_THREADS=${RAYON_NUM_THREADS}
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
@@ -92,7 +97,7 @@ RUN bash /app/contrib/wasm_artifact_check.sh --memory-max && \
     echo "artifact gates: $BUILD_COMMIT"
 
 # Build dwowd — single RUN layer
-RUN cargo build --locked -p dwowd --release --features fee-window -j ${CARGO_BUILD_JOBS} && \
+RUN cargo build --locked -p dwowd --release --features fee-window -j ${CARGO_NATIVE_JOBS} && \
     cp target/release/dwowd /app/dwowd && \
     echo "build: $BUILD_COMMIT"
 
@@ -104,7 +109,7 @@ RUN cargo build --locked -p dwowd --release --features fee-window -j ${CARGO_BUI
 # The old `find target/release/deps -name 'dwowd-*'` also matched the daemon binary
 # (cargo build -p dwowd also emits a dwowd-<hash> executable) and the last `cp` won
 # non-deterministically — installing the clap daemon as dwowd_lib_tests.
-RUN cargo test --locked --release -p dwowd --lib --no-run --features fee-window -j ${CARGO_BUILD_JOBS} \
+RUN cargo test --locked --release -p dwowd --lib --no-run --features fee-window -j ${CARGO_NATIVE_JOBS} \
       --message-format=json-render-diagnostics 2>/dev/null \
     | grep -o '"executable":"[^"]*dwowd-[^"]*"' | head -1 \
     | sed 's/"executable":"\([^"]*\)"/\1/' > /tmp/dwowd_test_bin_path && \
@@ -112,7 +117,7 @@ RUN cargo test --locked --release -p dwowd --lib --no-run --features fee-window 
     echo "build-tests: $BUILD_COMMIT"
 
 # Build the darkwow top-level launcher (node/wallet/account front-end)
-RUN cargo build --locked -p darkwow --release -j ${CARGO_BUILD_JOBS} && \
+RUN cargo build --locked -p darkwow --release -j ${CARGO_NATIVE_JOBS} && \
     cp target/release/darkwow /app/darkwow && \
     echo "build: $BUILD_COMMIT"
 
