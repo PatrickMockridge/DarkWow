@@ -583,17 +583,26 @@ impl CChainState {
     /// Returns Arc<Mutex<RandomXVM>> — caller MUST lock before hashing.
     /// Prefer `hash_block_with_cached_vm` for async contexts to avoid Send issues.
     /// Maximum number of RandomX VMs to cache. Each VM holds ~258 MB of
-    /// memory (256 MB cache + 2 MB scratchpad). Old blocks are never re-hashed
-    /// with their original key, so only the most recent heights are accessed.
-    /// Set to 6 to accommodate 2 mining nodes × 3 recent keys each.
+    /// memory (256 MB cache + 2 MB scratchpad).
+    ///
+    /// The key rotates every height (`Miner::derive_key_from_height` is
+    /// `blake3(height)`), so the live set is the height being validated, its
+    /// parent height (the parent hash and uncle PoW are verified with their own
+    /// keys — `block.rs:505-513`), and one adoption-window slot. Three is the
+    /// bound the call sites justify; a miss rebuilds the cache (slow, correct),
+    /// and eviction never changes a verdict.
     #[cfg(feature = "pow")]
-    const MAX_CACHED_VMS: usize = 6;
+    const MAX_CACHED_VMS: usize = 3;
 
     /// Maximum number of RandomXCache entries to pool for external callers.
     /// Each cache is 256 MB. Caches are internally Arc-wrapped — cloning for
     /// external VM creation is O(1). Same eviction policy as vm_cache.
+    ///
+    /// The pool serves the mining key and the current execution key, which are
+    /// the same height's key; a second slot covers a height boundary while a
+    /// mining VM is still held. A miss rebuilds (slow, correct).
     #[cfg(feature = "pow")]
-    const MAX_CACHED_CACHES: usize = 6;
+    const MAX_CACHED_CACHES: usize = 2;
 
     #[cfg(feature = "pow")]
     pub fn get_vm(&self, key: [u8; 32]) -> Result<Arc<std::sync::Mutex<RandomXVM>>> {
@@ -609,11 +618,13 @@ impl CChainState {
                 .map_err(|e| LinearError::RandomXError(format!("Failed to create RandomX VM: {e}")))?,
         ));
         cache.insert(key, vm.clone());
-        // Evict oldest entry when cache exceeds capacity.
-        // Old blocks are never re-hashed — only recent heights need cached VMs.
+        // Eviction picks the lexicographically smallest key, not the oldest insertion —
+        // the keys are `blake3(height)`, so their order carries no recency. A needed key
+        // that was dropped is rebuilt on the next request; which entry is evicted never
+        // affects a verdict.
         if cache.len() > Self::MAX_CACHED_VMS {
-            if let Some(oldest) = cache.keys().min().cloned() {
-                cache.remove(&oldest);
+            if let Some(evicted) = cache.keys().min().cloned() {
+                cache.remove(&evicted);
             }
         }
         Ok(vm)
@@ -640,10 +651,11 @@ impl CChainState {
         let cache = randomx::RandomXCache::new(flags, &key)
             .map_err(|e| LinearError::RandomXError(format!("Failed to create RandomX cache: {e}")))?;
         pool.insert(key, cache.clone());
-        // Evict oldest entry when pool exceeds capacity
+        // Same key-order eviction as `vm_cache` (keys are hashes, not sequence numbers).
+        // A dropped cache is rebuilt on demand; correctness does not depend on the choice.
         if pool.len() > Self::MAX_CACHED_CACHES {
-            if let Some(oldest) = pool.keys().min().cloned() {
-                pool.remove(&oldest);
+            if let Some(evicted) = pool.keys().min().cloned() {
+                pool.remove(&evicted);
             }
         }
         Ok(cache)
@@ -2130,6 +2142,67 @@ mod tests {
         let competing = cs.take_competing_blocks(h1);
         assert!(!competing.is_empty(), "competing_blocks must contain the second block");
         assert_eq!(competing[0].header.nonce, 1, "retrieved competing block must match");
+    }
+
+    /// The VM cache honours its bound, and an evicted key rebuilds to a VM that hashes
+    /// identically. The key rotates every height, so this is the steady-state path: more
+    /// distinct heights than slots, with correctness independent of what was evicted.
+    #[test]
+    fn test_vm_cache_is_bounded_and_rebuilds() {
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let cs = CChainState::new(Arc::new(db), 120, BlockTarget::MAX, BlockTarget::new(1),
+            BlockTarget::MAX, FinalityConfig::default()).unwrap();
+
+        let heights = CChainState::MAX_CACHED_VMS as u64 + 3;
+        for h in 1..=heights {
+            let key = Miner::derive_key_from_height(BlockHeight::new(h));
+            cs.get_vm(key).expect("vm for a distinct height");
+            assert!(
+                cs.vm_cache_size() <= CChainState::MAX_CACHED_VMS,
+                "vm_cache exceeded its bound at height {h}"
+            );
+        }
+
+        let key = Miner::derive_key_from_height(BlockHeight::new(1));
+        let rebuilt = cs.get_vm(key).expect("evicted key rebuilds");
+        assert!(
+            cs.vm_cache_size() <= CChainState::MAX_CACHED_VMS,
+            "vm_cache exceeded its bound after a rebuild"
+        );
+
+        let header = BlockHeader {
+            version: BlockVersion::CURRENT,
+            previous: blake3::hash(b"cache-bound"),
+            merkle_root: compute_merkle_root(&[]),
+            timestamp: BlockTimestamp::new(1),
+            target: BlockTarget::MAX,
+            nonce: 0,
+            height: BlockHeight::new(1),
+            uncle_merkle_root: [0u8; 32],
+            total_reward: dwow_sdk::blockchain::expected_reward(BlockHeight::new(1)),
+            randomx_key: key,
+            miner: [0u8; 32],
+            commitment_merkle_root: [0u8; 32],
+            nullifier_root: [0u8; 32],
+            anchor_tx_id: [0u8; 32],
+            anchor_monero_height: MoneroBlockHeight::new(0),
+            anchor_monero_hash: [0u8; 32],
+            finality_flags: 0,
+            pow_source: PowSource::Native,
+            anchor_owner: [0u8; 32],
+            caribina_anchor: None,
+            fee_window_flags: FeeWindowFlags::default(),
+        };
+        let block = Block { header, transactions: vec![] };
+        let rebuilt_guard = rebuilt.lock().unwrap_or_else(|e| e.into_inner());
+        let rebuilt_hash = block.hash_with_vm(&*rebuilt_guard).expect("hash with rebuilt VM");
+        drop(rebuilt_guard);
+        let fresh = Miner::create_vm(&key).expect("fresh VM");
+        assert_eq!(
+            rebuilt_hash,
+            block.hash_with_vm(&fresh).expect("hash with fresh VM"),
+            "a rebuilt cache must hash exactly as a freshly created one"
+        );
     }
 
     /// The sync responder reads tip/genesis hashes from a cache, not re-hashing

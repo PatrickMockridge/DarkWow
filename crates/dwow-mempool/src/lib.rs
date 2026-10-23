@@ -71,6 +71,15 @@ pub struct MempoolConfig {
     pub max_size: usize,
     pub max_age_secs: u64,
     pub max_tx_size: usize,
+    /// Total serialized bytes retained across all entries.
+    ///
+    /// `max_size` counts transactions and `max_tx_size` bounds one transaction, so without
+    /// this the pool's worst case is `max_size × max_tx_size` — 10 000 × 1 MiB ≈ 10 GiB,
+    /// larger than any node's container ceiling. The default is 4× the 32 MiB transport rail
+    /// (`MAX_FRAME_PAYLOAD`), the system's stated largest payload: big enough for normal
+    /// traffic, small enough that retention can never dominate a node's memory. This is a
+    /// node-local resource policy (R10), not a validity rule.
+    pub max_bytes: usize,
     /// Minimum fee for admission. `FeeAmount` per §2.3.1 — cannot be confused with
     /// supply or reward amounts.
     pub min_fee: FeeAmount,
@@ -89,6 +98,7 @@ impl Default for MempoolConfig {
             max_size: 10_000,
             max_age_secs: 3600,
             max_tx_size: 1024 * 1024,
+            max_bytes: 128 * 1024 * 1024,
             min_fee: FeeAmount::ZERO,
             price_high: FeeAmount::new(4 * CongestionFactor::SCALE as u64),
             price_medium: FeeAmount::new(2 * CongestionFactor::SCALE as u64),
@@ -142,6 +152,9 @@ struct MempoolEntry {
     added_at: u64,
     fee: FeeAmount,
     declared_charge: BlockCharge,
+    /// `serde_json::to_vec(&tx).len()` at admission — the same measure `max_tx_size` uses,
+    /// kept so the byte budget does not re-serialize the pool on every admission.
+    serialized_len: usize,
 }
 
 /// Fee-index entry for BTreeSet ordering.
@@ -268,7 +281,13 @@ impl Mempool {
 
             fee_index.insert(FeeIndexEntry { fee_rate, tx_hash: hash });
             nullifiers.extend(extract_nullifiers(&tx));
-            txs.insert(hash, MempoolEntry { tx, added_at, fee, declared_charge: gas });
+            txs.insert(hash, MempoolEntry {
+                tx,
+                added_at,
+                fee,
+                declared_charge: gas,
+                serialized_len: value.len(),
+            });
             // Remove old key format if present (clean migration)
             let _ = tree.remove(key);
         }
@@ -454,6 +473,43 @@ impl Mempool {
             }
         }
 
+        // Byte budget with eviction. The count bound says nothing about how much is
+        // retained; this is the sum of the measures kept at admission. Evict only entries
+        // that are cheaper than the incoming one, so the budget can never displace a
+        // higher-fee transaction for a lower-fee one.
+        //
+        // The victim is chosen from `txs`, not from `fee_idx`: a FeeV3 transaction is
+        // dropped from the legacy fee index after insertion (queue ordering), so a
+        // FeeV3-only pool would have no eviction candidate there and every admission over
+        // the budget would be refused instead.
+        let entry_rate = |e: &MempoolEntry| -> u64 {
+            let gas = e.declared_charge.get();
+            if gas > 0 { e.fee.saturating_mul(1_000_000) / gas } else { 0 }
+        };
+        let mut total_bytes: usize = txs.values().map(|e| e.serialized_len).sum();
+        while total_bytes.saturating_add(serialized.len()) > self.config.max_bytes {
+            let victim = txs.iter()
+                .map(|(h, e)| (*h, entry_rate(e)))
+                .min_by_key(|(_, rate)| *rate);
+            let Some((victim_hash, victim_rate)) = victim else { break };
+            if victim_rate >= fee_rate {
+                break;
+            }
+            let Some(evicted) = txs.remove(&victim_hash) else { break };
+            fee_idx.remove(&FeeIndexEntry { fee_rate: victim_rate, tx_hash: victim_hash });
+            total_bytes = total_bytes.saturating_sub(evicted.serialized_len);
+            let evict_nulls = extract_nullifiers(&evicted.tx);
+            for n in &evict_nulls { nulls.remove(n); }
+        }
+        if total_bytes.saturating_add(serialized.len()) > self.config.max_bytes {
+            return Err(dwow_core::Error::Custom(format!(
+                "Mempool byte budget exceeded: {} + {} bytes (max: {})",
+                total_bytes,
+                serialized.len(),
+                self.config.max_bytes
+            )));
+        }
+
         // Three-tier admission gate per fee-spec.md §12.8.1 (plaintext fee —
         // no threshold proof, no encrypted-fee channel).
         // `any`, not `first`. The wallet's order is `[main, fee]` —
@@ -468,7 +524,13 @@ impl Mempool {
         // Insert
         for n in &tx_nullifiers { nulls.insert(*n); }
         fee_idx.insert(FeeIndexEntry { fee_rate, tx_hash });
-        txs.insert(tx_hash, MempoolEntry { tx, added_at: now, fee, declared_charge: gas });
+        txs.insert(tx_hash, MempoolEntry {
+            tx,
+            added_at: now,
+            fee,
+            declared_charge: gas,
+            serialized_len: serialized.len(),
+        });
 
         if is_fee_v3 {
             // FeeV3 uses queue-based ordering (drop from the legacy fee_index).
@@ -1098,6 +1160,54 @@ mod tests {
             mempool.mark_mined(&[h1]).await;
             assert_eq!(mempool.len().await, 1);
             assert!(mempool.contains(&h2).await);
+        });
+    }
+
+    /// The byte budget evicts only cheaper entries and refuses an admission it cannot
+    /// fit; the count bound is untouched. FeeV3 entries are not in `fee_index`, so this
+    /// also pins that the victim is found from the pool itself.
+    #[test]
+    fn test_byte_budget_evicts_then_refuses() {
+        smol::block_on(async {
+            let pad = 4096usize;
+            let mut probe = make_fee_v3_tx(3_000_000_000, b"probe");
+            probe.contract_calls.push(make_call(vec![0u8; pad]));
+            let tx_bytes = serde_json::to_vec(&probe).expect("serializable").len();
+
+            let config = MempoolConfig {
+                min_fee: FeeAmount::ZERO,
+                price_high: FeeAmount::new(1),
+                price_medium: FeeAmount::new(1),
+                price_low: FeeAmount::new(1),
+                max_bytes: tx_bytes * 2,
+                ..Default::default()
+            };
+            let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
+
+            let mut t1 = make_fee_v3_tx(3_000_000_000, b"one");
+            t1.contract_calls.push(make_call(vec![0u8; pad]));
+            let mut t2 = make_fee_v3_tx(4_000_000_000, b"two");
+            t2.contract_calls.push(make_call(vec![0u8; pad]));
+            mempool.add(t1).await.unwrap();
+            mempool.add(t2).await.unwrap();
+            assert_eq!(mempool.len().await, 2);
+
+            // Below both retained fees: no cheaper victim exists, so it is refused
+            // rather than displacing a higher-fee transaction.
+            let mut t3 = make_fee_v3_tx(2_000_000_000, b"three");
+            t3.contract_calls.push(make_call(vec![0u8; pad]));
+            let err = mempool.add(t3).await.expect_err("byte budget must refuse");
+            assert!(
+                format!("{err}").contains("byte budget"),
+                "unexpected error: {err}"
+            );
+            assert_eq!(mempool.len().await, 2);
+
+            // Above both: the lowest-fee entry is evicted to make room.
+            let mut t4 = make_fee_v3_tx(5_000_000_000, b"four");
+            t4.contract_calls.push(make_call(vec![0u8; pad]));
+            mempool.add(t4).await.unwrap();
+            assert_eq!(mempool.len().await, 2);
         });
     }
 

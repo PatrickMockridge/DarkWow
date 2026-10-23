@@ -164,6 +164,14 @@ phase_blocks() {
         return
     fi
 
+    # Startup + genesis are complete at the gate above. Record that window's peak per
+    # role, then reset so the remainder of Phase 9 measures the steady-state window on
+    # its own; a single cumulative peak cannot tell genesis keygen from mining.
+    log_role_memory_peaks "startup+genesis"
+    for c in dwow-observer "$NODE0" dwow-node1; do
+        container_memory_peak_reset "$c" || true
+    done
+
     # ── Diagnostic: display current heights ──────────────────────────
     info "node0 height=$n0_height — chain is ready for wallet testing"
 
@@ -273,6 +281,8 @@ phase_blocks() {
             fail "$name: INDEPENDENT GENESIS — block 1 hash differs from node0 (ref=${ref_sum:0:16} got=${cmp_sum:0:16})"
         fi
     done
+
+    log_role_memory_peaks "steady-state (phase 9)"
 }
 
 # ==============================================================================

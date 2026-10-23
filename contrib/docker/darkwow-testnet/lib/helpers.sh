@@ -99,6 +99,11 @@ report() {
     echo "==========================================="
     echo ""
 
+    # Recorded before the failure exit, so a failed run still carries its peaks.
+    log_role_memory_peaks "final"
+    log_host_memory_pressure "final"
+    echo ""
+
     if [ "$FAIL" -gt 0 ]; then
         echo -e "${RED}Some checks failed${NC}"
         echo ""
@@ -236,19 +241,61 @@ _fatal_artifact_logs() {
         | tail -20 || true
 }
 
-# Peak cgroup memory for a container, in bytes, or "n/a" when unreadable.
-# Used to size the wallet ceiling from evidence instead of guessing.
-container_memory_peak() {
+# Path of a container's cgroup v2 memory.peak, or non-zero when unreadable.
+_container_memory_peak_path() {
     local id path
-    id="$(docker inspect -f '{{.Id}}' "$1" 2>/dev/null)" || { echo n/a; return; }
+    id="$(docker inspect -f '{{.Id}}' "$1" 2>/dev/null)" || return 1
     for path in "/sys/fs/cgroup/system.slice/docker-${id}.scope/memory.peak" \
                 "/sys/fs/cgroup/docker/${id}/memory.peak"; do
         if [ -r "$path" ]; then
-            cat "$path"
-            return
+            echo "$path"
+            return 0
         fi
     done
-    echo n/a
+    return 1
+}
+
+# Peak cgroup memory for a container, in bytes, or "n/a" when unreadable.
+# Used to size a role's ceiling from evidence instead of guessing.
+container_memory_peak() {
+    local path
+    path="$(_container_memory_peak_path "$1")" || { echo n/a; return; }
+    cat "$path"
+}
+
+# Reset a container's peak so the next window is measured on its own. cgroup v2
+# accepts `0` for this on the kernels this pipeline runs on; when it does not, the
+# peak stays cumulative and the caller's label says which window it covers.
+container_memory_peak_reset() {
+    local path
+    path="$(_container_memory_peak_path "$1")" || return 1
+    printf '0' > "$path" 2>/dev/null
+}
+
+# Log every started role's cgroup peak in MiB, labelled by the window it covers.
+# Node peaks had no reader at all before this: the helper above was called only
+# for wallets, so a node ceiling could not be set from evidence.
+log_role_memory_peaks() {
+    local window="$1" c peak
+    for c in dwow-observer "${NODE0:-dwow-node0}" dwow-node1 dwow-wallet-1 dwow-wallet-2; do
+        docker inspect "$c" >/dev/null 2>&1 || continue
+        peak="$(container_memory_peak "$c")"
+        [ "$peak" = "n/a" ] && continue
+        info "  ${c} memory peak (${window}): $((peak / 1048576)) MiB"
+    done
+}
+
+# Host-side memory headroom and pressure-stall counters, for the run's record.
+# The pipeline is one of several workloads on the host; a kill under pressure is
+# distinguishable from a role's own ceiling only if this is recorded.
+log_host_memory_pressure() {
+    local label="$1" avail_kb swapfree_kb
+    avail_kb=$(awk '/^MemAvailable:/{print $2}' /proc/meminfo)
+    swapfree_kb=$(awk '/^SwapFree:/{print $2}' /proc/meminfo)
+    info "  host memory (${label}): MemAvailable=$((avail_kb / 1024)) MiB SwapFree=$((swapfree_kb / 1024)) MiB"
+    if [ -r /proc/pressure/memory ]; then
+        info "  host pressure (${label}): $(tr '\n' ' ' < /proc/pressure/memory)"
+    fi
 }
 
 # Print every started node container that is not `running` (restarting/exited/dead).

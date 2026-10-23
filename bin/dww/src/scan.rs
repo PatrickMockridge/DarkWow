@@ -881,25 +881,27 @@ fn scan_block(
             let mut off: usize = 0;
             let mut aead_notes_tried: usize = 0;
 
+            // The trial-decrypt key set is invariant for this call — the contract id and
+            // the call data do not change inside the offset loop. Build it once, as Path 1
+            // does, instead of re-cloning every account secret and re-deriving the
+            // per-instance keys for each note the byte-slide happens to decode.
+            let mut trial_secrets: Vec<SecretKey> = account_mgr.secrets();
+            if let Some(iseed) = try_extract_instance_seed(&cid, &call.data) {
+                let derived = account_mgr.secrets_for_contract(&cid, &iseed)
+                    .unwrap_or_else(|e| {
+                        tracing::warn!(target: "dww::scan",
+                            "per-contract key derivation failed for {:?}: {}", cid, e);
+                        vec![]
+                    });
+                trial_secrets.extend(derived);
+            }
+
             while off < data.len().saturating_sub(32) {
                 // Bounded decode (see discover_native_token_outputs).
                 if let Ok((generic_note, consumed)) =
                     AeadEncryptedNote::decode_bounded(&data[off..])
                 {
                     aead_notes_tried += 1;
-
-                    // Build augmented secret set with per-contract derived keys
-                    let mut trial_secrets: Vec<SecretKey> = account_mgr.secrets();
-                    if let Some(iseed) = try_extract_instance_seed(&cid, &call.data) {
-                        let derived = account_mgr.secrets_for_contract(&cid, &iseed)
-                            .unwrap_or_else(|e| {
-                                tracing::warn!(target: "dww::scan",
-                                    "per-contract key derivation failed for {:?}: {}", cid, e);
-                                vec![]
-                            });
-                        trial_secrets.extend(derived);
-                    }
-
                     let mut path2_decrypted = false;
                     for secret in &trial_secrets {
                         result.diagnostics.path2_decrypt_attempts += 1;
