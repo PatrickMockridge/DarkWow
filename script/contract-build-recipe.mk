@@ -33,10 +33,14 @@ BUILD_RECIPE = $(BUILD_RECIPE_STAMP)
 SOURCE_MANIFEST += Makefile ../../../script/contract-build-recipe.mk $(BUILD_RECIPE_FILE) \
                    ../../../Cargo.lock ../../../rust-toolchain.toml
 
+# `sort`'s collation is locale-dependent: the same tree hashed under en_US.UTF-8
+# and under the container's C locale produces two different hashes. That made a
+# correct artifact fail check-source-hash inside the image while passing on the
+# host. The sort is byte-order only.
 COMPUTE_SOURCE_HASH = $(shell { \
   for f in $(SOURCE_MANIFEST); do echo "$$f $$(sha256sum "$$f" | cut -d' ' -f1)"; done; \
   echo "recipe $(BUILD_RECIPE)"; \
-} | sort | sha256sum | cut -d' ' -f1)
+} | LC_ALL=C sort | sha256sum | cut -d' ' -f1)
 
 # `make -C src/contract/<name> -s recipe` prints the canonical recipe. The tracked
 # script/contract_build_recipe.txt is its output; check-artifact-freshness.sh compares them.
