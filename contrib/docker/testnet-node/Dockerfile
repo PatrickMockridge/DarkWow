@@ -20,28 +20,39 @@ ARG RAYON_NUM_THREADS=2
 ENV RAYON_NUM_THREADS=${RAYON_NUM_THREADS}
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 
+# BUILD_COMMIT: mandatory for deterministic builds from origin.
+ARG BUILD_COMMIT
+RUN test -n "$BUILD_COMMIT" || (echo "FATAL: BUILD_COMMIT is required" && exit 1)
+
 WORKDIR /app
 
-RUN git clone https://github.com/PatrickMockridge/DarkWow.git /app && \
-    git -C /app checkout linear-master
+# The contract Makefiles expand $(HOME); pin it so the image is a function of source.
+ENV HOME=/root
 
-RUN cargo build --release -p zkas
+RUN git clone --single-branch --branch linear-master \
+        https://github.com/PatrickMockridge/DarkWow.git /app && \
+    cd /app && git reset --hard "$BUILD_COMMIT" && \
+    ACTUAL=$(git rev-parse HEAD) && \
+    if [ "$BUILD_COMMIT" != "$ACTUAL" ]; then \
+        echo "FATAL: commit mismatch after clone! Expected $BUILD_COMMIT got $ACTUAL"; exit 1; \
+    fi && \
+    echo "Commit verified at clone: $ACTUAL"
 
-RUN /app/target/release/zkas rebuild /app/src/contract/native_token/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/promissory_note/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/baccarat/proof
+# Build zkas from source and materialize the ./zkas binary the contract Makefiles
+# resolve.
+RUN make -C /app zkas
 
 RUN rustup target add wasm32-unknown-unknown
 
-RUN cargo build --target wasm32-unknown-unknown --release -p dwow_deployooor_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_native_token_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_promissory_note_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_baccarat_contract
+# Build every contract through the shared recipe, exactly as the host does.
+RUN find /app/src/contract -name '*.wasm' -delete && \
+    find /app/src/contract -name '*.zk.bin' -delete && \
+    make -C /app contracts
 
-RUN cp target/wasm32-unknown-unknown/release/dwow_deployooor_contract.wasm /app/src/contract/deployooor/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_native_token_contract.wasm /app/src/contract/native_token/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_promissory_note_contract.wasm /app/src/contract/promissory_note/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_baccarat_contract.wasm /app/src/contract/baccarat/
+# The artifact invariants: bounded memory, genesis purity, recipe/source attestation.
+RUN bash /app/contrib/wasm_artifact_check.sh --memory-max && \
+    bash /app/contrib/wasm_artifact_check.sh --genesis && \
+    bash /app/scripts/check-artifact-freshness.sh
 
 RUN cargo build -p dwowd --release -j ${CARGO_BUILD_JOBS}
 RUN cargo build -p lilith --release -j ${CARGO_BUILD_JOBS}

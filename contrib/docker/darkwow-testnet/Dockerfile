@@ -24,6 +24,11 @@ ENV RUST_MIN_STACK=67108864
 
 WORKDIR /app
 
+# The contract Makefiles expand $(HOME) for the remap flags and the recipe check
+# canonicalizes it to the literal HOME. Pin it so the image build is a function of
+# the source, not of the base image's default home.
+ENV HOME=/root
+
 # Source: clone from origin for deterministic, reproducible builds.
 RUN git clone --single-branch --branch linear-master \
         https://github.com/PatrickMockridge/DarkWow.git /app && \
@@ -34,43 +39,9 @@ RUN git clone --single-branch --branch linear-master \
     fi && \
     echo "Commit verified at clone: $ACTUAL"
 
-# Build zkas tool for host (needed to compile .zk source to .zk.bin)
-RUN cargo build --locked --release -p zkas && echo "build: $BUILD_COMMIT"
-
-# Rebuild .zk.bin files from .zk sources (needed by contracts' include_bytes! macro).
-# Every contract that uses include_bytes! must have its proof directory rebuilt here.
-RUN /app/target/release/zkas rebuild /app/src/contract/native_token/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/promissory_note/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/purse/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/box/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/multisig/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/baccarat/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/bearer_bond/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/bridge/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/dao_escrow/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/dex/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/stablecoin/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/attestation/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/auction/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/betting_stake/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/darkbet_exchange/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/darktoshi_dice/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/drain_protection/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/escrow/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/game_room/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/identity/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/insurance_market/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/labor_market/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/lottery/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/oracle/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/otc_swap/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/pool_stake/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/relayer_endowment/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/roulette/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/slot/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/subscription/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/tender/proof && \
-    echo "build: $BUILD_COMMIT"
+# Build zkas from the pinned source and materialize the gitignored ./zkas binary that
+# the per-contract Makefiles resolve (`ZKAS = $(abspath ../../../zkas)`).
+RUN make -C /app zkas && echo "build: $BUILD_COMMIT"
 
 # Install wasm32 target for WASM contract compilation
 RUN rustup target add wasm32-unknown-unknown
@@ -89,88 +60,36 @@ RUN rustup target add wasm32-unknown-unknown
 # bin/dwowd/genesis_hash.txt could then be satisfied inside this image *or* on a
 # developer machine, never both.
 #
-# The host build applies the same two remaps from the per-contract Makefiles,
-# where $(HOME) can be expanded — cargo cannot expand it in .cargo/config.toml
-# (see the note in that file). Here HOME is /root, so the source prefix differs
-# while the remap target is identical, which is the whole point.
-#
-# This ENV also covers the host-binary builds further down this stage. That is
-# deliberate and inert: the remap only rewrites panic-location path strings, and
-# nothing in the workspace hashes `file!()` or `module_path!()`.
+# The contract build below does NOT use this variable: each contract Makefile
+# invokes cargo with WASM_RUSTFLAGS from script/contract-build-recipe.mk, which
+# carries the remaps, -C link-arg=--max-memory=268435456, -C strip=symbols and
+# -Zlocation-detail=none for the wasm target. This ENV is what the host-binary
+# builds further down this stage use; that is deliberate and inert: the remap only
+# rewrites panic-location path strings, and nothing in the workspace hashes
+# `file!()` or `module_path!()`.
 ENV RUSTFLAGS="--remap-path-prefix=/root/.cargo=/cargo --remap-path-prefix=/root/.rustup=/rustup"
 
-# Build ALL WASM contracts from source (deterministic — git clone ensures clean state).
-# Each contract that compiles to WASM must be listed here so compilation failures
-# are caught at build time, not silently skipped.
-RUN RUSTC_BOOTSTRAP=1 RUSTFLAGS="$RUSTFLAGS -C strip=symbols -Zlocation-detail=none" cargo build --target wasm32-unknown-unknown --release -p dwow_deployooor_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_native_token_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_promissory_note_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_purse_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_box_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_multisig_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_baccarat_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_bearer_bond_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_bridge_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_dao_escrow_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_dex_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_stablecoin_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_attestation_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_auction_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_betting_stake_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_darkbet_exchange_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_darktoshi_dice_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_drain_protection_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_escrow_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_game_room_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_identity_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_insurance_market_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_labor_market_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_lottery_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_oracle_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_otc_swap_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_pool_stake_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_relayer_endowment_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_roulette_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_slot_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_subscription_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_tender_contract && \
+# Build ALL contract WASMs through the shared recipe, exactly as the host does.
+# The per-contract Makefiles apply the recipe to every package, regenerate every
+# .zk.bin, copy the WASM into src/contract/<name>/ for include_bytes!, and write
+# .source_hash. There is no second build recipe here.
+#
+# Delete artifacts that arrived with the clone first: 7 WASM files are tracked and
+# the nine genesis artifacts are untracked, so git-checkout mtimes cannot be trusted
+# to force a rebuild. Deleting makes the image a function of the source.
+RUN find /app/src/contract -name '*.wasm' -delete && \
+    find /app/src/contract -name '*.zk.bin' -delete && \
+    make -C /app contracts && \
     echo "build: $BUILD_COMMIT"
 
-# Copy WASM files to contract directories for include_bytes! macro.
-# Only the contracts referenced by include_bytes! in dwowd/src/lib.rs are
-# strictly required; the rest are built above for smoke-test coverage.
-RUN cp target/wasm32-unknown-unknown/release/dwow_deployooor_contract.wasm /app/src/contract/deployooor/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_native_token_contract.wasm /app/src/contract/native_token/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_promissory_note_contract.wasm /app/src/contract/promissory_note/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_purse_contract.wasm /app/src/contract/purse/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_box_contract.wasm /app/src/contract/box/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_multisig_contract.wasm /app/src/contract/multisig/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_baccarat_contract.wasm /app/src/contract/baccarat/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_bearer_bond_contract.wasm /app/src/contract/bearer_bond/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_bridge_contract.wasm /app/src/contract/bridge/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_dao_escrow_contract.wasm /app/src/contract/dao_escrow/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_dex_contract.wasm /app/src/contract/dex/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_stablecoin_contract.wasm /app/src/contract/stablecoin/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_attestation_contract.wasm /app/src/contract/attestation/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_auction_contract.wasm /app/src/contract/auction/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_betting_stake_contract.wasm /app/src/contract/betting_stake/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_darkbet_exchange_contract.wasm /app/src/contract/darkbet_exchange/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_darktoshi_dice_contract.wasm /app/src/contract/darktoshi_dice/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_drain_protection_contract.wasm /app/src/contract/drain_protection/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_escrow_contract.wasm /app/src/contract/escrow/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_game_room_contract.wasm /app/src/contract/game_room/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_identity_contract.wasm /app/src/contract/identity/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_insurance_market_contract.wasm /app/src/contract/insurance_market/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_labor_market_contract.wasm /app/src/contract/labor_market/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_lottery_contract.wasm /app/src/contract/lottery/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_oracle_contract.wasm /app/src/contract/oracle/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_otc_swap_contract.wasm /app/src/contract/otc_swap/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_pool_stake_contract.wasm /app/src/contract/pool_stake/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_relayer_endowment_contract.wasm /app/src/contract/relayer_endowment/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_roulette_contract.wasm /app/src/contract/roulette/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_slot_contract.wasm /app/src/contract/slot/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_subscription_contract.wasm /app/src/contract/subscription/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_tender_contract.wasm /app/src/contract/tender/
+# Artifact gates that must pass on the artifacts this image will execute:
+#   - every exported memory declares the recipe's maximum (4096 pages);
+#   - the nine genesis artifacts satisfy the artifact-purity invariant;
+#   - every artifact's .source_hash matches its sources and the build recipe.
+RUN bash /app/contrib/wasm_artifact_check.sh --memory-max && \
+    bash /app/contrib/wasm_artifact_check.sh --genesis && \
+    bash /app/scripts/check-artifact-freshness.sh && \
+    echo "artifact gates: $BUILD_COMMIT"
 
 # Build dwowd — single RUN layer
 RUN cargo build --locked -p dwowd --release --features fee-window -j ${CARGO_BUILD_JOBS} && \
@@ -180,7 +99,7 @@ RUN cargo build --locked -p dwowd --release --features fee-window -j ${CARGO_BUI
 # Build the dwowd lib test binary (--no-run: compile all #[test] fns, run none).
 # Needed by the opt-in CAPABILITY_TESTS pipeline phase (L1 capability write-path).
 # The test binary embeds the contract WASM/zkas via include_bytes!, which the
-# WASM-copy step above has already placed under /app/src/contract/<name>/.
+# contract build above has already placed under /app/src/contract/<name>/.
 # Capture the harness executable path DETERMINISTICALLY from cargo's JSON output.
 # The old `find target/release/deps -name 'dwowd-*'` also matched the daemon binary
 # (cargo build -p dwowd also emits a dwowd-<hash> executable) and the last `cp` won

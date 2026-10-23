@@ -39,10 +39,23 @@ phase_verify() {
     fi
 
     for c in "${EXPECTED[@]}"; do
-        if docker ps --format '{{.Names}}' | grep -q "^${c}$"; then
-            pass "$c running"
+        local st health restarts
+        st="$(container_state "$c")"
+        if [ "$st" = "running" ]; then
+            health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$c" 2>/dev/null || echo none)"
+            restarts="$(docker inspect -f '{{.RestartCount}}' "$c" 2>/dev/null || echo 0)"
+            if [ "$health" = "unhealthy" ]; then
+                docker inspect -f 'status={{.State.Status}} restarts={{.RestartCount}} health={{.State.Health.Status}}' "$c" 2>/dev/null || true
+                _fatal_artifact_logs "$c"
+                fail "$c unhealthy"
+            else
+                [ "$restarts" -gt 0 ] 2>/dev/null && warn "$c running after $restarts restart(s)"
+                pass "$c running"
+            fi
         else
-            fail "$c not running"
+            docker inspect -f 'status={{.State.Status}} restarts={{.RestartCount}} exit={{.State.ExitCode}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$c" 2>/dev/null || true
+            _fatal_artifact_logs "$c"
+            fail "$c not running (state=$st)"
         fi
     done
 }

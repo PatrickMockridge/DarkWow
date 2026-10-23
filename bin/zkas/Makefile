@@ -23,7 +23,7 @@ BIN = zkas
 all: $(BIN)
 
 $(BIN): $(SRC)
-	RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) build --target=$(RUST_TARGET) --release --package $@
+	RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) build --target=$(RUST_TARGET) --release --locked --package $@
 	cp -f ../../target/$(RUST_TARGET)/release/$@ $@
 	cp -f ../../target/$(RUST_TARGET)/release/$@ ../../$@
 

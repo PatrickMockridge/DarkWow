@@ -658,6 +658,11 @@ run_gate "Rust tests (make test)"          make test
 # the detector can fail and pass. This line closes the "gate nobody enforces" half of the row.
 run_gate "wasm artifact purity (genesis)" \
     bash "$REPO_ROOT/contrib/wasm_artifact_check.sh" --genesis
+# The recipe's memory bound is an artifact property (F14). A module built outside
+# script/contract-build-recipe.mk declares no maximum and is refused at instantiation;
+# this gate fails at build time on all 32, with the planted fixtures in --self-test.
+run_gate "wasm memory bound (all 32 contracts)" \
+    bash "$REPO_ROOT/contrib/wasm_artifact_check.sh" --memory-max
 
 # Lake requires its own working directory.
 #

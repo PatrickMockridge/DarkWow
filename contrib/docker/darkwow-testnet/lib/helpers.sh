@@ -206,8 +206,47 @@ _check_preconditions() {
 # Shared helpers — Docker
 # ==============================================================================
 
+# A container is "running" only when Docker says so. `docker ps` also lists
+# `Restarting` containers, which is how a genesis crash loop was counted as up.
 container_running() {
-    docker ps --format '{{.Names}}' | grep -q "^${1}$"
+    [ "$(container_state "$1")" = "running" ]
+}
+
+# The container's Docker state: running, restarting, exited, created, dead, or missing.
+container_state() {
+    docker inspect -f '{{.State.Status}}' "$1" 2>/dev/null || echo missing
+}
+
+# Real block-production evidence, never a startup banner. The native branch of the
+# mining diagnostic used to match "built-in miner" from the entrypoint banner and pass
+# on a node that never produced a block.
+mining_log_evidence() {
+    docker logs "$1" 2>&1 | grep -qiE 'mined and applied|block mined|mined block'
+}
+
+# Artifact/genesis faults that must stop the pipeline immediately. These are the lines
+# a restart-looping node emits every ~64s; the old poll loop buried them in a tail-100.
+_fatal_artifact_logs() {
+    # Always return 0: callers run under `set -e` and use the output as a signal.
+    docker logs "$1" 2>&1 | grep -iE \
+        'declares maximum|contract memory export|GENESIS HASH MISMATCH|genesis.*(failed|mismatch)|panicked at|FATAL' \
+        | tail -20 || true
+}
+
+# Print every started node container that is not `running` (restarting/exited/dead).
+# Returns 0 when all are running or absent. The old checks grepped for "Exit", which a
+# `restart: unless-stopped` crash loop never shows.
+nonrunning_dwow_nodes() {
+    local c st bad=0
+    for c in dwow-observer "$NODE0" dwow-node1; do
+        st="$(container_state "$c")"
+        [ "$st" = "missing" ] && continue
+        if [ "$st" != "running" ]; then
+            echo "$c: $st"
+            bad=1
+        fi
+    done
+    return "$bad"
 }
 
 # Run a dwowd container with standard join-mode parameters.
@@ -272,13 +311,13 @@ _join_lilith_run() {
 # (milliseconds), NOT "thing hasn't happened yet" (minutes).
 # Default 3 attempts × 2s sleep = 6s max.
 rpc_retry() {
-    local container="$1" port="$2" method="$3" params="$4" max_attempts="${5:-3}"
+    local container="$1" port="$2" method="$3" params="$4" max_attempts="${5:-3}" rpc_timeout="${6:-30}"
     local attempt=0
     while [ "$attempt" -lt "$max_attempts" ]; do
         attempt=$((attempt + 1))
         local result
         result=$(docker exec "$container" bash -c \
-            "exec 3<>/dev/tcp/127.0.0.1/$port 2>/dev/null || exit 1; echo '{\"jsonrpc\":\"2.0\",\"method\":\"$method\",\"params\":$params,\"id\":1}' >&3; timeout 30 cat <&3" 2>/dev/null)
+            "exec 3<>/dev/tcp/127.0.0.1/$port 2>/dev/null || exit 1; echo '{\"jsonrpc\":\"2.0\",\"method\":\"$method\",\"params\":$params,\"id\":1}' >&3; timeout $rpc_timeout cat <&3" 2>/dev/null)
         if [ -n "$result" ] && echo "$result" | grep -q '"result"'; then
             echo "$result"
             return 0
@@ -290,15 +329,17 @@ rpc_retry() {
 
 jsonrpc_get_block() {
     local container="$1" port="$2" block_num="$3"
-    rpc_retry "$container" "$port" "blockchain.get_block_linear" "[$block_num]" 5 2>/dev/null
+    rpc_retry "$container" "$port" "blockchain.get_block_linear" "[$block_num]" 5 30 2>/dev/null
 }
 
 # Get the current block height from a node via JSON-RPC.
 # Returns the height as a bare integer, or 0 on failure.
+# Two short attempts: a node in a restart loop answers nothing, and stacking
+# 5×30s retries onto every poll stretched a nominal 1200s wait to ~2174s.
 jsonrpc_get_height() {
     local container="$1" port="$2"
     local raw
-    raw=$(rpc_retry "$container" "$port" "blockchain.get_height" "[]" 5 2>/dev/null || echo "")
+    raw=$(rpc_retry "$container" "$port" "blockchain.get_height" "[]" 2 3 2>/dev/null || echo "")
     if [ -n "$raw" ]; then
         echo "$raw" | jq -r '.result.height // 0' 2>/dev/null | head -1 | tr -d '[:space:]' || echo 0
     else
@@ -310,11 +351,18 @@ jsonrpc_get_height() {
 # Replaces fixed `sleep N` between container starts with bounded readiness
 # polling. Uses the same /dev/tcp pattern as jsonrpc().
 # Args: container_name port [max_wait_seconds=30] [sleep_interval=2]
-# Returns: 0 when RPC responds, 1 on timeout
+# Returns: 0 when RPC responds, 1 on timeout, 2 when the container is restarting/exited/dead
 _wait_for_rpc() {
     local container="$1" port="$2" max_wait="${3:-30}" interval="${4:-2}"
     local elapsed=0
     while [ "$elapsed" -lt "$max_wait" ]; do
+        case "$(container_state "$container")" in
+            restarting|exited|dead)
+                warn "  $container is $(container_state "$container") — not waiting for RPC"
+                _fatal_artifact_logs "$container"
+                return 2
+                ;;
+        esac
         if container_running "$container" 2>/dev/null; then
             # Single-shot RPC ping via /dev/tcp — same pattern as jsonrpc()
             if docker exec "$container" bash -c \

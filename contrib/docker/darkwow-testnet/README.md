@@ -644,14 +644,14 @@ Run `python3 pipeline_spec.py` to validate the spec.
 | # | Phase | What It Validates |
 |---|-------|-------------------|
 | 1 | Clean | Container/volume teardown, kill stale cargo/rustc/dwowd/lilith processes, remove wallet secret. With `--fresh`: also prunes all Docker build cache, images, and buildx builders. |
-| 2 | Build | Verify BUILD_COMMIT on origin/linear-master, `docker compose --profile <mode> build` for all services. With `--no-cache`: rebuilds all layers from scratch. With `--with-wallet`: also builds wallet image. With `--skip-build`: verify cached images exist. |
+| 2 | Build | Verify BUILD_COMMIT on origin/linear-master, then `docker build` the testnet image once (all 32 contracts built through `make contracts` / the shared recipe, with the memory-max, genesis-purity and freshness gates run inside the image) and the wallet image when `--with-wallet`. With `--no-cache`: rebuilds all layers from scratch. With `--skip-build`: verify cached images exist. |
 | 3 | Validate prereqs | Check required files (entrypoint, compose, Dockerfile), mode-specific files (Dockerfile.monero, WASM contracts), bridge helper binary, `DWW --version` smoke test |
 | 4 | Generate wallet | Generate N keypairs via `DWW wallet keygen` (one per --with-wallet count), write secrets to `/tmp/dwow_mining_secret_N` |
 | 5 | Start | `docker compose --profile <mode> up -d` with staggered startup (RandomX init serialization). Bridge mode starts native containers first, verifies mesh, then starts bridge-node. With `--with-wallet`: starts wallet containers with per-wallet data volume + secret bind-mount + readiness probe. |
-| 6 | Verify containers | Every expected container is running (varies by mode and --nodes count). With `--with-wallet`: also expects `dwow-wallet-N` containers. |
+| 6 | Verify containers | Every expected container's Docker state is `running` (a `Restarting`/`Exited`/`Dead` container fails, and an `unhealthy` healthcheck fails); varies by mode and --nodes count. With `--with-wallet`: also expects `dwow-wallet-N` containers. |
 | 7 | RPC health | TCP JSON-RPC ping to node0 (port 31345), node1 (31346); plus node2 (31350) and monerod (28081) for merge |
-| 8 | Mining activity | Log inspection for native mining (mine_linear), p2pool sidechain activity, xmrig hashing, mm_rpc aux block polling, merge mining submissions |
-| 9 | Block production | Fetch genesis block via `blockchain.get_block_linear`, wait up to 600s for block height >= 2, cross-node consensus verification, Caribina anchor validation, Monero anchor validation, merge mining cryptographic receipt verification |
+| 8 | Mining activity | Diagnostic log inspection for real block-production lines (native/p2pool/xmrig/mm_rpc). A startup banner is not evidence; the block gate is authoritative. |
+| 9 | Block production | Fetch genesis block via `blockchain.get_block_linear`, wait up to 1200s wall-clock for height >= 2, failing fast if node0 is restarting/exited or its log names a genesis/artifact error; cross-node consensus verification, Caribina anchor validation, Monero anchor validation, merge mining cryptographic receipt verification |
 | 10 | Wallet verify | (--with-wallet only) Sync, scan, balance cross-check, address match, independent height/RPC verification, hostlist check |
 | 11 | Wallet transfer | (--with-wallet >= 2) Wallet-1 sends 1 DRKW to wallet-2, poll for confirmation up to 5 min |
 | 12 | Report | PASS/FAIL summary printed; exit 0 if all pass, exit 1 with debug instructions if any fail |

@@ -24,6 +24,7 @@ IMAGE_NAME="${IMAGE_NAME:-darkwow-node/testnet}"
 REGISTRY="${REGISTRY:-}"
 VERSION="${VERSION:-0.1.0}"
 GIT_SHA=$(git rev-parse --short=8 HEAD 2>/dev/null || echo "unknown")
+BUILD_COMMIT=$(git rev-parse HEAD)
 DOCKERFILE="contrib/docker/testnet-node/Dockerfile"
 
 FULL_IMAGE="${REGISTRY}${IMAGE_NAME}"
@@ -37,6 +38,7 @@ echo "  Dockerfile: ${DOCKERFILE}"
 echo
 
 docker build \
+    --build-arg BUILD_COMMIT="$BUILD_COMMIT" \
     -t "${FULL_IMAGE}:latest" \
     -t "${FULL_IMAGE}:${VERSION}" \
     -t "${FULL_IMAGE}:${GIT_SHA}" \

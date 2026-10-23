@@ -19,32 +19,27 @@ ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 
 WORKDIR /app
 
+# The contract Makefiles expand $(HOME); pin it so the image is a function of source.
+ENV HOME=/root
+
 COPY . /app
 
-# Build zkas (ZK circuit compiler, needed to compile .zk proofs to .zk.bin)
-RUN cargo build --release -p zkas
-
-# Rebuild .zk.bin files from .zk sources
-# native_token: required for genesis (NativeToken contract proofs)
-# promissory_note: DeFi token contract proofs
-# baccarat: additional contract for testing
-RUN /app/target/release/zkas rebuild /app/src/contract/native_token/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/promissory_note/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/baccarat/proof
+# Build zkas from source and materialize the ./zkas binary the contract Makefiles
+# resolve. Remove any host-built binary that came with the copy context first.
+RUN rm -f /app/zkas && make -C /app zkas
 
 RUN rustup target add wasm32-unknown-unknown
 
-# Build WASM contracts (embedded into dwowd via include_bytes!)
-RUN cargo build --target wasm32-unknown-unknown --release -p dwow_deployooor_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_native_token_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_promissory_note_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_baccarat_contract
+# Build every contract through the shared recipe, exactly as the host does. Delete
+# artifacts that arrived with the copy context so the image never ships a stale one.
+RUN find /app/src/contract -name '*.wasm' -delete && \
+    find /app/src/contract -name '*.zk.bin' -delete && \
+    make -C /app contracts
 
-# Copy WASM files to contract source dirs for include_bytes! macro
-RUN cp target/wasm32-unknown-unknown/release/dwow_deployooor_contract.wasm /app/src/contract/deployooor/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_native_token_contract.wasm /app/src/contract/native_token/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_promissory_note_contract.wasm /app/src/contract/promissory_note/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_baccarat_contract.wasm /app/src/contract/baccarat/
+# The artifact invariants: bounded memory, genesis purity, recipe/source attestation.
+RUN bash /app/contrib/wasm_artifact_check.sh --memory-max && \
+    bash /app/contrib/wasm_artifact_check.sh --genesis && \
+    bash /app/scripts/check-artifact-freshness.sh
 
 # Build dwowd (fullnode daemon) with reduced parallelism
 RUN cargo build -p dwowd --release -j ${CARGO_BUILD_JOBS}

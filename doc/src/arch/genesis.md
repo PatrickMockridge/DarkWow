@@ -118,7 +118,7 @@ be updated:
 | `src/sdk/src/crypto/mod.rs` | Add new ContractId to `pub use` re-exports |
 | `bin/dwowd/src/lib.rs` | Add the contract's `(include_bytes!(wasm), include_bytes!(manifest))` entry to the genesis table, in `genesis_contracts()`'s order (`&[]` for a manifest-less contract). The bytes are written through the DeployV1 path (`execution.rs`), not by a block in `init_linear()` — see below |
 | `bin/dwowd/src/tests/genesis.rs` | Add to `GenesisHarness::new()` |
-| `contrib/docker/darkwow-testnet/Dockerfile` | Add `zkas rebuild` + WASM `cargo build` + `cp` lines |
+| `contrib/docker/darkwow-testnet/Dockerfile` | No per-contract lines: `make -C /app contracts` builds every contract through the shared recipe (`script/contract-build-recipe.mk`), and the artifact gates (`wasm_artifact_check.sh --memory-max --genesis`, `check-artifact-freshness.sh`) run inside the image |
 | `Cargo.toml` | Add contract to workspace members |
 | **This page** | Add row to the contract table |
 

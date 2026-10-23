@@ -74,9 +74,13 @@
 #
 # With `strip` + `-Zlocation-detail=none`: oracle 139,532 → 118,699 · multisig 123,786 → 106,450 ·
 # deployooor 1,494,590 → 1,067,405 · native_token 417,500 → 373,496 — all four CLEAN. The profile route
-# and the rustc-flag route produce byte-identical artifacts, and the container builds contracts with
-# bare cargo rather than through the Makefiles, which is why `strip` belongs in the profile (inherited
-# by both) while the location flag has to be added in both places.
+# and the rustc-flag route produce byte-identical artifacts. The container now builds contracts through
+# the same Makefiles as the host, so script/contract-build-recipe.mk is the only place these flags live.
+#
+# `--memory-max` checks a second artifact invariant on the same corpus: every exported memory declares
+# the recipe's maximum (4096 pages, from `-C link-arg=--max-memory=268435456`). A module built outside
+# the recipe declares no maximum; the node refuses it at instantiation, so this gate fails at build
+# time instead of at genesis acceptance.
 #
 # A companion "inventory the locations" script was written on 2026-09-24 and **deleted the same day**:
 # emitting the final crate's LLVM IR cannot see the *dependencies'* locations — the ones that matter
@@ -87,6 +91,7 @@
 # Usage:
 #   contrib/wasm_artifact_check.sh <wasm> [<wasm> ...]     # check named artifacts
 #   contrib/wasm_artifact_check.sh --genesis               # check all nine genesis contracts
+#   contrib/wasm_artifact_check.sh --memory-max            # check every contract's memory maximum
 #   contrib/wasm_artifact_check.sh --genesis --report-only  # print the verdict and exit 0
 #   contrib/wasm_artifact_check.sh --self-test              # planted controls, two-sided
 #
@@ -105,11 +110,13 @@ set -uo pipefail
 # Split the mode flags out before the artifact list is read.
 REPORT_ONLY=0
 SELF_TEST=0
+MEMORY_MAX=0
 ARGS=()
 for a in "$@"; do
     case "$a" in
         --report-only) REPORT_ONLY=1 ;;
         --self-test)   SELF_TEST=1 ;;
+        --memory-max)  MEMORY_MAX=1 ;;
         *)             ARGS+=("$a") ;;
     esac
 done
@@ -131,6 +138,70 @@ PANIC_MARKERS=(
     "rust_begin_unwind"
     "core::panicking"
 )
+
+# The recipe's `-C link-arg=--max-memory=268435456` is 4096 pages of 64 KiB.
+MEMORY_MAX_PAGES=4096
+
+# `--memory-max`: every declared memory must carry the recipe's maximum. A module
+# built outside script/contract-build-recipe.mk declares none, which the node
+# refuses at instantiation; this gate fails at build time instead.
+memory_max_check() {
+    local -a artifacts=()
+    local fail=0 count=0 w
+
+    if [ $# -gt 0 ]; then
+        artifacts=("$@")
+    else
+        local d n
+        for d in src/contract/*/; do
+            [ -f "$d/Makefile" ] || continue
+            n="$(basename "$d")"
+            artifacts+=("${d%/}/dwow_${n}_contract.wasm")
+        done
+    fi
+
+    if [ "${#artifacts[@]}" -eq 0 ]; then
+        echo "FAIL: --memory-max: no contract artifacts found under $ROOT/src/contract"
+        return 1
+    fi
+    if ! command -v wasm-objdump >/dev/null 2>&1; then
+        echo "FAIL: --memory-max: wasm-objdump not found (install wabt)"
+        return 1
+    fi
+
+    for w in "${artifacts[@]}"; do
+        if [ ! -f "$w" ]; then
+            echo "FAIL: MISSING $w (not built)"
+            fail=1; continue
+        fi
+        local decls ok=1 line mx
+        decls="$(wasm-objdump -x "$w" 2>/dev/null | grep -E 'memory\[[0-9]+\] pages:' || true)"
+        if [ -z "$decls" ]; then
+            echo "FAIL: $w: no exported memory declaration"
+            fail=1; continue
+        fi
+        while IFS= read -r line; do
+            if ! printf '%s' "$line" | grep -q 'max='; then
+                echo "FAIL: $w: memory declares no maximum (missing -C link-arg=--max-memory=$((MEMORY_MAX_PAGES * 65536)))"
+                ok=0; continue
+            fi
+            mx="$(printf '%s' "$line" | sed -n 's/.*max=\([0-9]\+\).*/\1/p')"
+            if [ "$mx" != "$MEMORY_MAX_PAGES" ]; then
+                echo "FAIL: $w: memory max=$mx, expected $MEMORY_MAX_PAGES (built outside the shared recipe?)"
+                ok=0
+            fi
+        done <<< "$decls"
+        if [ "$ok" = 1 ]; then
+            echo "OK max=$MEMORY_MAX_PAGES $w"
+            count=$((count + 1))
+        else
+            fail=1
+        fi
+    done
+    echo "-----"
+    echo "$count of ${#artifacts[@]} contract artifact(s) declare max=$MEMORY_MAX_PAGES pages"
+    return "$fail"
+}
 
 # A two-sided control: every detection must be able to fire, and a clean artifact must pass. The
 # fixtures are plain files; `strings -a` reads them, so this controls the marker/path detector, not
@@ -172,7 +243,25 @@ selftest() {
         echo "FAIL: --self-test: a missing genesis artifact did not fail and name MISSING"; echo "$out"; return 1
     fi
     echo "OK: --self-test — a missing genesis artifact fails and names MISSING"
-    echo "OK: --self-test — 7 controls passed"
+
+    # The memory-bound fixtures are real wasm modules, built here with wabt.
+    if ! command -v wat2wasm >/dev/null 2>&1 || ! command -v wasm-objdump >/dev/null 2>&1; then
+        echo "FAIL: --self-test: wat2wasm/wasm-objdump not found (install wabt)"; return 1
+    fi
+    printf '(module (memory (export "memory") 1 4096))' > "$tmp/bounded.wat"
+    printf '(module (memory (export "memory") 1))' > "$tmp/unbounded.wat"
+    printf '(module (memory (export "memory") 1 2048))' > "$tmp/wrongmax.wat"
+    printf '(module)' > "$tmp/nomem.wat"
+    wat2wasm "$tmp/bounded.wat" -o "$tmp/bounded.wasm" || return 1
+    wat2wasm "$tmp/unbounded.wat" -o "$tmp/unbounded.wasm" || return 1
+    wat2wasm "$tmp/wrongmax.wat" -o "$tmp/wrongmax.wasm" || return 1
+    wat2wasm "$tmp/nomem.wat" -o "$tmp/nomem.wasm" || return 1
+    expect "a bounded memory passes" 0 "max=4096" "$SELF" --memory-max "$tmp/bounded.wasm" || return 1
+    expect "an unbounded memory fails" 1 "no maximum" "$SELF" --memory-max "$tmp/unbounded.wasm" || return 1
+    expect "a wrong maximum fails" 1 "expected 4096" "$SELF" --memory-max "$tmp/wrongmax.wasm" || return 1
+    expect "a module with no memory fails" 1 "no exported memory" "$SELF" --memory-max "$tmp/nomem.wasm" || return 1
+    expect "a missing artifact fails" 1 "MISSING" "$SELF" --memory-max "$tmp/absent.wasm" || return 1
+    echo "OK: --self-test — 12 controls passed"
     rm -rf "$SELFTEST_TMP"
     trap - EXIT
     return 0
@@ -181,6 +270,26 @@ selftest() {
 if [ "$SELF_TEST" = 1 ]; then
     selftest || exit 1
     exit 0
+fi
+
+if [ "$MEMORY_MAX" = 1 ]; then
+    if [ "${1:-}" = "--genesis" ]; then
+        shift
+        gen=()
+        for c in "${GENESIS[@]}"; do
+            gen+=("$GENESIS_ROOT/src/contract/$c/dwow_${c}_contract.wasm")
+        done
+        memory_max_check "${gen[@]}"; rc=$?
+    elif [ $# -gt 0 ]; then
+        memory_max_check "$@"; rc=$?
+    else
+        memory_max_check; rc=$?
+    fi
+    if [ "$REPORT_ONLY" = 1 ]; then
+        [ "$rc" -ne 0 ] && echo "REPORT-ONLY: the memory bound is NOT met (this run would exit 1)."
+        exit 0
+    fi
+    exit "$rc"
 fi
 
 fail=0

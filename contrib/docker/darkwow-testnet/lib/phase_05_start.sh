@@ -44,11 +44,11 @@ phase_start() {
         info "native profile started, waiting for P2P mesh..."
         sleep 10
 
-        # Verify native containers are healthy before starting bridge
-        EXITED=$(docker compose --profile native ps 2>/dev/null | grep "Exit" || true)
-        if [ -n "$EXITED" ]; then
+        # Verify native containers are healthy before starting bridge. `docker compose ps`
+        # shows a `restart: unless-stopped` crash loop as "Restarting", never "Exit".
+        if ! EXITED=$(nonrunning_dwow_nodes); then
             echo "$EXITED"
-            warn "Native container exited immediately — check logs"
+            warn "Native container is not running — check logs"
         fi
 
         # Now start bridge-node on top of the established mesh
@@ -61,10 +61,9 @@ phase_start() {
             docker compose --profile bridge up -d; check $? "compose up bridge"
         _wait_for_rpc "dwow-bridge" "31345" 30 || warn "bridge RPC not ready — P2P mesh may be incomplete"
 
-        EXITED=$(docker compose --profile bridge ps 2>/dev/null | grep "Exit" || true)
-        if [ -n "$EXITED" ]; then
+        if ! EXITED=$(nonrunning_dwow_nodes); then
             echo "$EXITED"
-            warn "Bridge container exited immediately — check logs"
+            warn "Bridge/node container is not running — check logs"
         fi
     else
         # Native mode: start only the requested number of nodes.
@@ -109,6 +108,21 @@ phase_start() {
                 docker compose --profile native up -d node1; check $? "compose up native node1"
         fi
     fi
+
+    # Fail before the block gate if a node is in a restart loop. Genesis rejection
+    # happens at container start; waiting for block 2 cannot fix it.
+    if ! NONRUNNING=$(nonrunning_dwow_nodes); then
+        echo "$NONRUNNING"
+        _fatal_artifact_logs "$NODE0"
+        fail "a node container is not running (exit/restart loop)"
+        return
+    fi
+    local rpc_rc=0
+    _wait_for_rpc "$NODE0" 31345 60 || rpc_rc=$?
+    case "$rpc_rc" in
+        2) fail "node0 is not running (genesis/startup failure)"; return ;;
+        1) warn "node0 RPC not ready after 60s — the block gate will report the failure" ;;
+    esac
 
     if [ "$WITH_WALLET" -gt 0 ] && ! is_join_mode; then
         info "Starting $WITH_WALLET wallet container(s)..."
@@ -168,15 +182,15 @@ phase_start() {
     if [ "$MODE" != "bridge" ]; then
         sleep 5
 
-        # Check for immediate exits
-        if [ "$MODE" = "merge" ]; then
-            EXITED=$(docker compose --profile merge ps 2>/dev/null | grep "Exit" || true)
-        else
-            EXITED=$(docker compose --profile native ps 2>/dev/null | grep "Exit" || true)
-        fi
-        if [ -n "$EXITED" ]; then
+        # Check for a crash loop, not just a clean exit: Docker reports a restarting
+        # container as "Restarting", which the old "Exit" grep could not see.
+        if ! EXITED=$(nonrunning_dwow_nodes); then
             echo "$EXITED"
-            warn "Container exited immediately — check logs"
+            docker inspect -f 'status={{.State.Status}} restarts={{.RestartCount}} exit={{.State.ExitCode}}' \
+                "$NODE0" 2>/dev/null || true
+            _fatal_artifact_logs "$NODE0"
+            fail "a node container is not running (exit/restart loop)"
+            return
         fi
     fi
 

@@ -93,20 +93,27 @@ phase_mining_activity() {
         fi
 
         info "Checking node2 for native mining activity..."
-        local NODE2_LOGS
-        NODE2_LOGS=$(docker logs dwow-node2 2>&1 || true)
-        if echo "$NODE2_LOGS" | grep -qi "miner.mine_linear\|Mined and applied block\|native mining\|built-in miner\|Mining block\|Block.*mined"; then
+        local NODE2_ST
+        NODE2_ST="$(container_state dwow-node2)"
+        if [ "$NODE2_ST" != "running" ]; then
+            _fatal_artifact_logs dwow-node2
+            warn "node2 is not running (state=$NODE2_ST)"
+        elif mining_log_evidence dwow-node2; then
             pass "node2 native mining activity detected"
         else
-            warn "node2 logs don't show clear native mining activity — may need more time"
+            info "node2 has no block-production line yet (diagnostic; the block gate is authoritative)"
         fi
     else
         info "Checking native mining activity (in-container RPC miner)..."
-        NODE0_LOGS=$(docker logs "$NODE0" 2>&1 || true)
-        if echo "$NODE0_LOGS" | grep -qi "miner.mine_linear\|Mined and applied block\|native mining\|built-in miner\|Mining block\|Block.*mined"; then
+        local NODE0_ST
+        NODE0_ST="$(container_state "$NODE0")"
+        if [ "$NODE0_ST" != "running" ]; then
+            _fatal_artifact_logs "$NODE0"
+            fail "node0 is not running (state=$NODE0_ST) — cannot mine"
+        elif mining_log_evidence "$NODE0"; then
             pass "native mining activity detected"
         else
-            warn "native mining activity not detected in logs — log format may differ, or miner may not have started yet"
+            info "no block-production line in node0 logs yet (diagnostic; the block gate is authoritative)"
         fi
     fi
 }

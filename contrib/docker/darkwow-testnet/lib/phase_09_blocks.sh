@@ -77,9 +77,31 @@ phase_blocks() {
     local transient_failures=0
     local valid_polls=0
     local TRANSIENT_WARN_THRESHOLD=3
+    # Wall-clock deadline, not a poll counter: RPC retries inside a poll used to
+    # stretch the nominal 1200s bound to ~2174s.
+    local start_s=$SECONDS
+    local deadline=$((SECONDS + SYNC_MAX_POLLS * SYNC_INTERVAL))
 
     info "Waiting for node0 to produce block 2..."
-    while [ "$poll" -lt "$SYNC_MAX_POLLS" ]; do
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        # Fail fast on a crash loop: a restarting node can never reach block 2,
+        # and its log names the real cause (genesis/artifact).
+        local n0_state
+        n0_state="$(container_state "$NODE0")"
+        if [ "$n0_state" != "running" ]; then
+            echo "  node0 state=$n0_state restarts=$(docker inspect -f '{{.RestartCount}}' "$NODE0" 2>/dev/null || echo ?)"
+            _fatal_artifact_logs "$NODE0"
+            fail "node0 is not running (state=$n0_state) — cannot reach block 2"
+            return
+        fi
+        local fatal
+        fatal="$(_fatal_artifact_logs "$NODE0")"
+        if [ -n "$fatal" ]; then
+            echo "$fatal"
+            fail "node0 logged a genesis/artifact failure — cannot reach block 2"
+            return
+        fi
+
         n0_height=$(jsonrpc_get_height "$NODE0_NAME" "$NODE0_PORT")
         n0_height=$(echo "$n0_height" | tr -dc '0-9')
         n0_height="${n0_height:-0}"
@@ -89,7 +111,7 @@ phase_blocks() {
             valid_polls=$((valid_polls + 1))
         fi
         if [ "${n0_height:-0}" -ge 2 ]; then
-            pass "node0 reached height=$n0_height after $((poll * SYNC_INTERVAL))s"
+            pass "node0 reached height=$n0_height after $((SECONDS - start_s))s"
             [ "$transient_failures" -gt 0 ] && info "  node0 RPC recovered after $transient_failures transient failures (valid=$valid_polls)"
             break
         fi
@@ -97,30 +119,47 @@ phase_blocks() {
         if [ "$transient_failures" -ge "$TRANSIENT_WARN_THRESHOLD" ] && [ $((transient_failures % 6)) -eq 0 ]; then
             warn "  node0 RPC: $transient_failures transient failures (height=0) out of $poll polls — node may be struggling to start"
         fi
-        if [ "$poll" -lt "$SYNC_MAX_POLLS" ]; then
-            info "  node0 height=$n0_height — waiting for block 2 (poll $poll/$SYNC_MAX_POLLS, ${SYNC_INTERVAL}s)..."
-            # Periodic diagnostic (every 12 polls = 2 minutes): show recent
-            # miner/sync activity so operators can see WHAT the node is doing,
-            # not just its height. Distinguishes between the CaughtUp wait
-            # and actual mining.
+        if [ "$SECONDS" -lt "$deadline" ]; then
+            info "  node0 height=$n0_height — waiting for block 2 (poll $poll, $((SECONDS - start_s))s elapsed)..."
+            # Periodic diagnostic (every 12 polls): show the node's own error and
+            # activity lines. The old filter excluded `rejected`/`Error`, so it hid
+            # the genesis refusal until the final tail.
             if [ $((poll % 12)) -eq 0 ]; then
-                info "  ── node0 diagnostic (poll $poll, elapsed $((poll * SYNC_INTERVAL))s) ──"
-                docker logs dwow-node0 --tail 20 2>&1 | grep -E 'sync_state|miner_task|consensus_linear|Mining' | tail -5 | while read line; do info "    $line"; done || true
+                info "  ── node0 diagnostic (poll $poll, elapsed $((SECONDS - start_s))s) ──"
+                local diag
+                diag="$(docker logs "$NODE0" --tail 200 2>&1 | grep -iE 'GENESIS|declares maximum|rejected|ERROR|panic|sync_state|miner_task|consensus_linear|Mining' | tail -5 || true)"
+                if [ -n "$diag" ]; then
+                    printf '%s\n' "$diag" | while read line; do info "    $line"; done
+                else
+                    docker logs "$NODE0" --tail 5 2>&1 | while read line; do info "    $line"; done || true
+                fi
                 info "  ── end diagnostic ──"
             fi
-            sleep "$SYNC_INTERVAL"
+            local remaining=$((deadline - SECONDS))
+            local nap=$SYNC_INTERVAL
+            [ "$remaining" -lt "$nap" ] && nap=$remaining
+            [ "$nap" -gt 0 ] && sleep "$nap"
         fi
     done
 
     if [ "${n0_height:-0}" -lt 2 ]; then
-        fail "node0 never produced block 2 after $((SYNC_MAX_POLLS * SYNC_INTERVAL))s (height=$n0_height)"
-        info "  Mining is not running."
+        local final_state
+        final_state="$(container_state "$NODE0")"
+        fail "node0 did not reach block 2 after $((SECONDS - start_s))s (height=$n0_height, state=$final_state)"
+        info "  ── TIMEOUT DIAGNOSTIC: genesis/artifact failures (full log) ──"
+        local fatal_all
+        fatal_all="$(_fatal_artifact_logs "$NODE0")"
+        if [ -n "$fatal_all" ]; then
+            printf '%s\n' "$fatal_all" | while read line; do info "    $line"; done
+        else
+            info "    (no genesis/artifact failure line found)"
+        fi
         info "  ── TIMEOUT DIAGNOSTIC: node0 full log tail ──"
-        docker logs dwow-node0 --tail 100 2>&1 | while read line; do info "    $line"; done || true
+        docker logs "$NODE0" --tail 100 2>&1 | while read line; do info "    $line"; done || true
         info "  ── TIMEOUT DIAGNOSTIC: sync_state transitions ──"
-        docker logs dwow-node0 --tail 500 2>&1 | grep -E 'sync_state' | while read line; do info "    $line"; done || info "    (no sync_state transitions found)"
+        docker logs "$NODE0" --tail 500 2>&1 | grep -E 'sync_state' | while read line; do info "    $line"; done || info "    (no sync_state transitions found)"
         info "  ── TIMEOUT DIAGNOSTIC: miner activity ──"
-        docker logs dwow-node0 --tail 500 2>&1 | grep -E 'miner_task|CaughtUp|Mining' | while read line; do info "    $line"; done || info "    (no miner activity found)"
+        docker logs "$NODE0" --tail 500 2>&1 | grep -E 'miner_task|CaughtUp|Mining' | while read line; do info "    $line"; done || info "    (no miner activity found)"
         info "  ── END TIMEOUT DIAGNOSTIC ──"
         return
     fi

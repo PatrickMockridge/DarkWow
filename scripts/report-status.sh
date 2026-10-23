@@ -119,6 +119,8 @@ INSTRUMENTS = [
     # satisfies constraint 1 exactly as the other model conformance entry does.
     ("wallet_model",               "python3 contrib/model/wallet_model.py"),
     ("wasm_artifact_genesis",      "bash contrib/wasm_artifact_check.sh --genesis"),
+    # The recipe's memory bound, asserted on the artifacts (static; wasm-objdump only).
+    ("wasm_memory_max",            "bash contrib/wasm_artifact_check.sh --memory-max"),
     ("barb_alphabet",              "bash contrib/barb_alphabet_diff.sh"),
     ("primitive_barbs",            "bash contrib/primitive_barbs_diff.sh"),
     ("capability_type",            "bash contrib/capability_type_diff.sh"),
@@ -598,14 +600,15 @@ CRITERIA = [
       settle="cargo test -p dwowd --all-features test_genesis_determinism"),
  dict(g="Genesis", id="G6",
       st="Reproducibility — the artifact is a function of the source, not of the host",
-      v=FAIL if v_of("wasm_artifact_genesis") == FAIL else (PASS if v_of("wasm_artifact_genesis") == PASS else MISSING),
-      src="derived", inst="`wasm_artifact_check.sh --genesis` + the absolute-path probe",
-      ev=f"gate: {ev('wasm_artifact_genesis',1)}  ·  purity probe (absolute host paths): {probes['abs_paths']['out']}. "
-         f"2026-10-22: the five genesis inputs this change moves (identity + the four manifest-repaired "
-         f"contracts) were rebuilt from clean twice and are byte-identical (sha256); all 32 artifacts "
-         f"are fresh and the nine genesis artifacts are CLEAN. The two-build equality is a run, not a "
-         f"static probe.",
-      settle="the purity gate + the two-pass rebuild; see OBL-C140/C210/T26"),
+      v=(FAIL if any(v_of(n) == FAIL for n in ("wasm_artifact_genesis", "wasm_memory_max"))
+         else (PASS if all(v_of(n) == PASS for n in ("wasm_artifact_genesis", "wasm_memory_max")) else MISSING)),
+      src="derived", inst="`wasm_artifact_check.sh --genesis --memory-max` + the absolute-path probe",
+      ev=f"purity: {ev('wasm_artifact_genesis',1)}  ·  memory bound: {ev('wasm_memory_max',1)}  ·  "
+         f"purity probe (absolute host paths): {probes['abs_paths']['out']}. 2026-10-22: the container "
+         f"build was hand-duplicated and omitted the recipe's memory flag; the container now builds "
+         f"through the shared Makefiles and both artifact gates run inside the image. The two-build "
+         f"equality is a run, not a static probe.",
+      settle="the purity + memory gates + the two-pass rebuild; see OBL-C140/C210/T26/C263"),
  dict(g="Genesis", id="G7",
       st="The pin is populated, committed, and clean against HEAD",
       v=PASS if (probes["pin_git"]["out"] == "" and probes["pin_placeholder"]["out"] == "0") else FAIL,

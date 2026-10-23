@@ -725,29 +725,27 @@ class DockerBuildStage:
 DOCKER_BUILD_STAGES: List[DockerBuildStage] = [
     # === Main testnet Dockerfile ===
     DockerBuildStage(
-        name="zkas build", dockerfile="Dockerfile", line_range="47",
+        name="zkas build (make)", dockerfile="Dockerfile", line_range="49",
         cargo_commands=1, uses_valve=False,  # relies on CARGO_BUILD_JOBS env var (no -j flag)
         rayon_controlled=True, parallel_cargo_jobs=1,
-        note="Builds ZK circuit compiler. Dependencies (halo2, etc.) compiled here."
+        note="Builds the ZK circuit compiler and materializes the gitignored ./zkas "
+             "that the contract Makefiles resolve."
     ),
     DockerBuildStage(
-        name="zkas rebuild (30 contracts)", dockerfile="Dockerfile", line_range="51-81",
-        cargo_commands=0,  # zkas binary, not cargo
-        rayon_controlled=False, parallel_cargo_jobs=1,
-        peak_ram_per_job_gb=0.1,
-        note="Rebuilds .zk.bin from .zk source. Trivially small (~45 KB total)."
-    ),
-    DockerBuildStage(
-        name="WASM contract builds (31 contracts)", dockerfile="Dockerfile", line_range="89-120",
-        cargo_commands=31, uses_valve=False,  # relies on CARGO_BUILD_JOBS env var
+        name="contract builds (make contracts, 32)", dockerfile="Dockerfile", line_range="95-103",
+        cargo_commands=32, uses_valve=False,  # each Makefile uses the shared recipe
         rayon_controlled=True, parallel_cargo_jobs=1,
-        note="FIRST build compiles entire wasm32 dependency tree (~1.2 GB peak). "
-             "Builds 2-31 are incremental (shared target/). Chained with && in one RUN."
+        note="One `make -C /app contracts` builds every contract through "
+             "script/contract-build-recipe.mk: remaps, max-memory, strip and "
+             "location-detail for all 32, .zk.bin regeneration, WASM copy and "
+             ".source_hash. The first build compiles the wasm32 dependency tree; "
+             "the rest are incremental."
     ),
     DockerBuildStage(
-        name="copy WASM files", dockerfile="Dockerfile", line_range="125-155",
+        name="artifact gates (memory-max, genesis purity, freshness)", dockerfile="Dockerfile", line_range="105-110",
         cargo_commands=0,
-        note="cp .wasm files to contract dirs for include_bytes! macro. Negligible."
+        note="wasm_artifact_check.sh --memory-max and --genesis, then "
+             "check-artifact-freshness.sh, run on the artifacts this image will execute."
     ),
     DockerBuildStage(
         name="native daemon build (dwowd + lilith)", dockerfile="Dockerfile", line_range="158",
@@ -855,7 +853,7 @@ BUILD_ONCE_IMAGES: List[BuildOnce] = [
         image_tag="darkwow-testnet:latest",
         dockerfile="contrib/docker/darkwow-testnet/Dockerfile",
         modes=["native", "merge", "bridge", "join-native", "join-merge"],
-        description="Main testnet image — 31 WASM contracts + dwowd + lilith. "
+        description="Main testnet image — 32 contract WASMs built through the shared recipe + dwowd + darkwow. "
                     "Used by 6 native services (lilith, node0-4). Built once, "
                     "tagged once, all services reference the same image:tag."
     ),

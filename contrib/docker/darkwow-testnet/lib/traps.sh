@@ -79,17 +79,24 @@ cleanup_on_exit() {
     # (Secret-file cleanup removed — keys.toml declaration model, no .secrets files.)
 
     # ── Container death diagnostics ─────────────────────────────────
-    # Inspect exited dwow containers for ExitCode, OOMKilled, and host OOM log.
+    # Inspect every dwow container that is not running — `status=exited` misses a
+    # `restart: unless-stopped` crash loop, which is `restarting`.
     _container_death_diagnostics() {
-        local died
-        died=$(docker ps -a --filter status=exited --filter name=dwow --format '{{.Names}}' 2>/dev/null)
-        if [ -n "$died" ]; then
-            echo ""
-            echo "  ── Exited container diagnostics ──"
-            for c in $died; do
-                echo "  Container $c:"
-                docker inspect "$c" --format '    ExitCode={{.State.ExitCode}} OOMKilled={{.State.OOMKilled}} Error={{.State.Error}}' 2>/dev/null || true
-            done
+        local all c st found=0
+        all=$(docker ps -a --filter name=dwow --format '{{.Names}}' 2>/dev/null)
+        for c in $all; do
+            st=$(docker inspect -f '{{.State.Status}}' "$c" 2>/dev/null || echo missing)
+            [ "$st" = "running" ] && continue
+            if [ "$found" = 0 ]; then
+                echo ""
+                echo "  ── Non-running container diagnostics ──"
+                found=1
+            fi
+            echo "  Container $c (state=$st):"
+            docker inspect "$c" --format '    status={{.State.Status}} exits={{.State.ExitCode}} restarts={{.RestartCount}} oom={{.State.OOMKilled}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} error={{.State.Error}}' 2>/dev/null || true
+            docker logs "$c" --tail 10 2>&1 | sed 's/^/    /' || true
+        done
+        if [ "$found" = 1 ]; then
             echo "  ── Host OOM killer log (last 10 entries) ──"
             dmesg -T 2>/dev/null | grep -i 'oom\|out of memory\|killed process' | tail -10 || echo "    (dmesg unavailable or no OOM entries)"
             echo ""
@@ -105,7 +112,7 @@ cleanup_on_exit() {
         echo ""
         echo "  To identify which binary crashed:"
         echo "    dmesg -T | grep -i segfault | tail -20"
-        echo "    docker ps -a --filter status=exited --format '{{.Names}} exit={{.ExitCode}}'"
+        echo "    docker ps -a --filter name=dwow --format '{{.Names}} {{.Status}}'"
         if [ -f /tmp/container-deaths.log ]; then
             echo ""
             echo "  Container death events captured during run:"
@@ -122,9 +129,8 @@ cleanup_on_exit() {
         _container_death_diagnostics
         echo ""
         echo "  Inspect logs:"
-        for c in $(docker ps -q --filter name=dwow 2>/dev/null); do
-            name=$(docker ps --format '{{.Names}}' --filter "id=$c" 2>/dev/null)
-            [ -n "$name" ] && echo "    docker logs $name"
+        for name in $(docker ps -a --format '{{.Names}}' --filter name=dwow 2>/dev/null); do
+            echo "    docker logs $name"
         done
         echo ""
         echo "  Tear down when done:"
