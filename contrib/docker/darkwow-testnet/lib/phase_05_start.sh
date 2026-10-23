@@ -135,12 +135,16 @@ phase_start() {
             if [ -f "$keys_file" ]; then
                 VOLUME_ARGS+=(-v "${keys_file}:/run/config/keys.toml:ro")
             fi
+            # Wallet ceiling measured 2026-10-23 (fa76d8c2ff): 58 MiB at
+            # startup+sync, 315 MiB after burn/mint/fee proving. Limit = peak +
+            # 256 MiB floor headroom = 571m. The wallet runs no RandomX and no
+            # Wasmer; phase 10 logs both peaks so the number stays evidence-based.
             docker run -d \
                 --name "dwow-wallet-$i" \
                 --hostname "wallet-$i" \
                 --restart no \
                 --network ${COMPOSE_PROJECT_NAME}_dwow-local \
-                --memory 2g --memory-swap 2g \
+                --memory 571m --memory-swap 571m \
                 -e RUST_MIN_STACK=67108864 \
                 -e WALLET_MODE=interactive \
                 -e WALLET_NAME="wallet-$i" \
