@@ -594,16 +594,16 @@ fn discover_native_token_outputs(
     let mut off = 0;
 
     while off < params.len().saturating_sub(32) {
-        let mut cursor = std::io::Cursor::new(&params[off..]);
-        let pos_before = cursor.position();
-        let Ok(generic_note) = AeadEncryptedNote::decode(&mut cursor) else {
+        // Bounded decode: a false-positive VarInt in arbitrary call bytes must not reserve a
+        // length-sized buffer before the input is known to contain it.
+        let Ok((generic_note, consumed)) = AeadEncryptedNote::decode_bounded(&params[off..])
+        else {
             off += 1;
             continue;
         };
         diagnostics.aead_decode_attempts += 1;
         tracing::info!(target: "dww::scan",
             "[native_token] step=2 aead_decode status=OK offset={}", off);
-        let consumed = (cursor.position() - pos_before) as usize;
 
         let mut decrypted = false;
         for secret in &trial_secrets {
@@ -882,11 +882,11 @@ fn scan_block(
             let mut aead_notes_tried: usize = 0;
 
             while off < data.len().saturating_sub(32) {
-                let mut cursor = std::io::Cursor::new(&data[off..]);
-                let pos_before = cursor.position();
-                if let Ok(generic_note) = AeadEncryptedNote::decode(&mut cursor) {
+                // Bounded decode (see discover_native_token_outputs).
+                if let Ok((generic_note, consumed)) =
+                    AeadEncryptedNote::decode_bounded(&data[off..])
+                {
                     aead_notes_tried += 1;
-                    let consumed = (cursor.position() - pos_before) as usize;
 
                     // Build augmented secret set with per-contract derived keys
                     let mut trial_secrets: Vec<SecretKey> = account_mgr.secrets();
@@ -1567,6 +1567,57 @@ mod tests {
         ).expect("R1 FAIL: idempotent discover must succeed");
         assert!(caps4.is_empty(),
             "R1 FAIL: re-scan with existing cap IDs must discover zero new caps");
+    }
+
+    /// A garbage VarInt in call data (the `0xFE`/`0xFF` byte-slide class) must be rejected by
+    /// the bounded note decode, not reserved and memset until the process is killed.
+    #[test]
+    fn test_discover_rejects_huge_note_varint() {
+        let temp_dir = std::env::temp_dir();
+        let keys_path = temp_dir.join("dwow_test_huge_note_varint.toml");
+        std::fs::write(&keys_path, "[wallet]\nwallet_secret = \"0100000000000000000000000000000000000000000000000000000000000000\"\n").ok();
+        let account_mgr = dwow_accounts::AccountManager::open(
+            &keys_path, dwow_sdk::crypto::keypair::Network::Testnet, "wallet",
+        ).expect("AccountManager::open");
+        let _ = std::fs::remove_file(&keys_path);
+
+        let mut call_data = vec![0x05u8, 0xFE, 0xFF, 0xFF, 0xFF, 0xFF];
+        call_data.extend_from_slice(&[0u8; 64]);
+
+        let (caps, _) = discover_native_token_outputs(
+            &account_mgr, &mut MerkleTree::new(32), &call_data, BlockHeight::new(42), 0x05,
+            &mut BlockScanDiagnostics::default(),
+            &std::collections::HashSet::new(),
+        ).expect("a hostile length must be rejected, not abort the scan");
+        assert!(caps.is_empty(), "a huge note length must not discover capabilities");
+    }
+
+    /// A ciphertext over the shared note bound is rejected by `decode_bounded` before allocation.
+    #[test]
+    fn test_discover_rejects_oversized_note_ciphertext() {
+        let temp_dir = std::env::temp_dir();
+        let keys_path = temp_dir.join("dwow_test_oversized_note.toml");
+        std::fs::write(&keys_path, "[wallet]\nwallet_secret = \"0100000000000000000000000000000000000000000000000000000000000000\"\n").ok();
+        let account_mgr = dwow_accounts::AccountManager::open(
+            &keys_path, dwow_sdk::crypto::keypair::Network::Testnet, "wallet",
+        ).expect("AccountManager::open");
+        let _ = std::fs::remove_file(&keys_path);
+        let master_sk = account_mgr.secrets().into_iter().next().expect("secret");
+        let pk = PublicKey::from_secret(master_sk);
+
+        let note = AeadEncryptedNote {
+            ciphertext: vec![0u8; dwow_sdk::crypto::note::MAX_NOTE_LEN + 1],
+            ephem_public: pk,
+        };
+        let mut call_data = vec![0x05u8];
+        dwow_serial::Encodable::encode(&note, &mut call_data).expect("encode note");
+
+        let (caps, _) = discover_native_token_outputs(
+            &account_mgr, &mut MerkleTree::new(32), &call_data, BlockHeight::new(42), 0x05,
+            &mut BlockScanDiagnostics::default(),
+            &std::collections::HashSet::new(),
+        ).expect("oversized note must be rejected, not abort the scan");
+        assert!(caps.is_empty(), "an oversized note must not discover capabilities");
     }
 
     /// G5: cap_id cross-language determinism.

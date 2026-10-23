@@ -110,3 +110,19 @@ impl ContractMetadata {
         dwow_serial::Decodable::decode(&mut cursor).ok()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dwow_serial::Decodable;
+
+    /// The node-path control: a transaction that declares an absurd `wasm_bincode` length must
+    /// be a rejected decode, never a length-sized allocation. This is the same codec path used by
+    /// `DeployParamsV1::decode` in block execution and tx admission.
+    #[test]
+    fn deploy_params_rejects_oversized_wasm_length() {
+        let mut bytes = vec![0xFE, 0xFF, 0xFF, 0xFF, 0xFF];
+        bytes.extend_from_slice(&[0u8; 64]);
+        assert!(DeployParamsV1::decode(&mut std::io::Cursor::new(&bytes)).is_err());
+    }
+}

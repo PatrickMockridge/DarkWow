@@ -608,8 +608,12 @@ impl<T: AsyncDecodable + Send> AsyncDecodable for Vec<T> {
     #[inline]
     async fn decode_async<D: AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self> {
         let len = VarInt::decode_async(d).await?.0;
+        let len = usize::try_from(len).map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "vec length does not fit usize")
+        })?;
+        // A wire length is not an allocation budget: bound it before growing the vector.
+        crate::bounded_vec_len::<T>(len)?;
         let mut ret = Vec::new();
-        ret.try_reserve(len as usize).map_err(|_| std::io::ErrorKind::InvalidData)?;
         for _ in 0..len {
             ret.push(AsyncDecodable::decode_async(d).await?);
         }
@@ -635,8 +639,11 @@ impl<T: AsyncDecodable + Send> AsyncDecodable for VecDeque<T> {
     #[inline]
     async fn decode_async<D: AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self> {
         let len = VarInt::decode_async(d).await?.0;
+        let len = usize::try_from(len).map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "vec length does not fit usize")
+        })?;
+        crate::bounded_vec_len::<T>(len)?;
         let mut ret = VecDeque::new();
-        ret.try_reserve(len as usize).map_err(|_| std::io::ErrorKind::InvalidData)?;
         for _ in 0..len {
             ret.push_back(AsyncDecodable::decode_async(d).await?);
         }

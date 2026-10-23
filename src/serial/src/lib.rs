@@ -51,6 +51,36 @@ pub trait Encodable {
     fn encode<W: Write>(&self, e: &mut W) -> Result<usize, Error>;
 }
 
+/// Upper bound, in bytes, on the allocation one `Vec`/`String` decode may request from a
+/// wire-supplied length.
+///
+/// A wire length is attacker-controlled and Linux overcommit makes `try_reserve(1.2 TB)`
+/// succeed; committing that reservation (`resize`) is what turns a corrupt VarInt into an
+/// OOM kill. The bound matches the transport rails: `TX_MAX_BYTES`, `MAX_FRAME_PAYLOAD` and
+/// `MAX_BATCH_BYTES` are all 32 MiB, and the largest legitimate payload today (a contract
+/// deployment) is ~1.4 MiB. A larger length is a rejected decode; it is an allocation policy,
+/// never a consensus validity rule on stored data.
+pub const MAX_VEC_BYTES: usize = 32 * 1024 * 1024;
+
+/// Reject a wire element count whose projected encoded size exceeds [`MAX_VEC_BYTES`].
+///
+/// `size_of::<T>()` is an upper bound on the wire size for fixed-width elements and a
+/// conservative projection for composite ones; the cap is deliberately above every legitimate
+/// payload in the tree. `checked_mul` keeps the projection overflow-safe.
+fn bounded_vec_len<T>(len: usize) -> Result<usize, Error> {
+    let elem = core::mem::size_of::<T>().max(1);
+    let bytes = len
+        .checked_mul(elem)
+        .ok_or_else(|| Error::new(std::io::ErrorKind::InvalidData, "vec length overflow"))?;
+    if bytes > MAX_VEC_BYTES {
+        return Err(Error::new(
+            std::io::ErrorKind::InvalidData,
+            "vec length exceeds MAX_VEC_BYTES",
+        ))
+    }
+    Ok(len)
+}
+
 /// Data which can be decoded in a consensus-consistent way.
 pub trait Decodable: Sized {
     fn decode<D: Read>(d: &mut D) -> Result<Self, Error>;
@@ -69,10 +99,11 @@ pub trait Decodable: Sized {
     /// metering middleware's injected `unreachable` — a failure that named neither gas nor a
     /// limit. See F13.
     fn decode_vec<D: Read>(d: &mut D, len: usize) -> Result<Vec<Self>, Error> {
+        // `len` is attacker-controlled on the wire. Bound it by an explicit maximum before
+        // allocating; `try_reserve` is not a bound under Linux overcommit (it succeeds for a
+        // TB-scale reservation). The vector then grows only as elements actually decode.
+        bounded_vec_len::<Self>(len)?;
         let mut ret = Vec::new();
-        // `try_reserve`, not `with_capacity`: `len` is attacker-controlled on the wire, and an
-        // allocation failure must be a rejected decode rather than an abort.
-        ret.try_reserve(len).map_err(|_| std::io::ErrorKind::InvalidData)?;
         for _ in 0..len {
             ret.push(Self::decode(d)?);
         }
@@ -332,16 +363,28 @@ impl Decodable for u8 {
         ReadExt::read_u8(d).map(u8::from_le)
     }
 
-    /// Read all of them at once. `u8`'s wire form is already a byte block, so this is a single
-    /// `read_exact` instead of one bounds-checked read and one `push` per element.
+    /// Read all of them at once. `u8`'s wire form is already a byte block, so this reads the
+    /// bytes in one pass instead of one bounds-checked read and one `push` per element.
+    ///
+    /// The length is bounded by [`MAX_VEC_BYTES`] and the read is incremental: a truncated
+    /// buffer costs only the bytes it actually contains. The earlier body reserved `len` and
+    /// called `resize(len, 0)` *before* reading, so a garbage VarInt was memset until the process
+    /// was OOM-killed (introduced by `e42f2c1c1a`; its `try_reserve`-is-safe claim is false under
+    /// Linux overcommit).
     #[inline]
     fn decode_vec<D: Read>(d: &mut D, len: usize) -> Result<Vec<Self>, Error> {
+        bounded_vec_len::<Self>(len)?;
         let mut ret = Vec::new();
-        // Same guard as the default body, and for the same reason: `len` comes off the wire, so
-        // an absurd value must be a rejected decode rather than an abort on allocation.
-        ret.try_reserve(len).map_err(|_| std::io::ErrorKind::InvalidData)?;
-        ret.resize(len, 0);
-        d.read_exact(&mut ret).map_err(|_| std::io::ErrorKind::InvalidData)?;
+        (&mut *d)
+            .take(len as u64)
+            .read_to_end(&mut ret)
+            .map_err(|_| Error::new(std::io::ErrorKind::InvalidData, "vec read failed"))?;
+        if ret.len() != len {
+            return Err(Error::new(
+                std::io::ErrorKind::InvalidData,
+                "truncated byte vector",
+            ))
+        }
         Ok(ret)
     }
 }
@@ -578,9 +621,12 @@ impl<T: Decodable> Decodable for Vec<T> {
     #[inline]
     fn decode<D: Read>(d: &mut D) -> Result<Self, Error> {
         let len = VarInt::decode(d)?.0;
+        let len = usize::try_from(len).map_err(|_| {
+            Error::new(std::io::ErrorKind::InvalidData, "vec length does not fit usize")
+        })?;
         // The element type decides how to read them: one `decode` each by default, or the whole
         // block at once for a type that overrides `decode_vec`.
-        T::decode_vec(d, len as usize)
+        T::decode_vec(d, len)
     }
 }
 
@@ -600,8 +646,11 @@ impl<T: Decodable> Decodable for VecDeque<T> {
     #[inline]
     fn decode<D: Read>(d: &mut D) -> Result<Self, Error> {
         let len = VarInt::decode(d)?.0;
+        let len = usize::try_from(len).map_err(|_| {
+            Error::new(std::io::ErrorKind::InvalidData, "vec length does not fit usize")
+        })?;
+        bounded_vec_len::<T>(len)?;
         let mut ret = VecDeque::new();
-        ret.try_reserve(len as usize).map_err(|_| std::io::ErrorKind::InvalidData)?;
         for _ in 0..len {
             ret.push_back(Decodable::decode(d)?);
         }
@@ -744,6 +793,76 @@ mod tests {
         // gives this for free; the point is that the bulk path did not lose it.
         let short = &encoded[..encoded.len() - 1];
         assert!(deserialize::<Vec<u8>>(short).is_err());
+    }
+
+    /// A wire length of `u32::MAX` with a short buffer must be rejected, not reserved.
+    #[test]
+    fn vec_u8_decode_rejects_u32_max_with_short_buffer() {
+        let mut bytes = vec![0xFE, 0xFF, 0xFF, 0xFF, 0xFF];
+        bytes.extend_from_slice(&[0u8; 64]);
+        assert!(deserialize::<Vec<u8>>(&bytes).is_err());
+    }
+
+    /// A `0xFF` (u64) VarInt — the 1.26 TB class — must be rejected before any allocation.
+    #[test]
+    fn vec_u8_decode_rejects_u64_huge_with_short_buffer() {
+        let mut bytes = vec![0xFF];
+        bytes.extend_from_slice(&0x1_0000_0000u64.to_le_bytes());
+        bytes.extend_from_slice(&[0u8; 64]);
+        assert!(deserialize::<Vec<u8>>(&bytes).is_err());
+    }
+
+    /// A length one byte over the cap, with all declared bytes present, must be rejected by the
+    /// cap rather than decoded. Before the fix this returned `Ok` (it had enough bytes).
+    #[test]
+    fn vec_u8_decode_rejects_length_one_over_cap() {
+        let len = MAX_VEC_BYTES + 1;
+        let mut bytes = vec![0xFE];
+        bytes.extend_from_slice(&(len as u32).to_le_bytes());
+        bytes.extend_from_slice(&vec![0u8; len]);
+        assert!(deserialize::<Vec<u8>>(&bytes).is_err());
+    }
+
+    /// The element-count projection bounds non-`u8` vectors too (`Vec<u32>` here).
+    #[test]
+    fn vec_decode_rejects_element_count_over_cap() {
+        let count = MAX_VEC_BYTES / core::mem::size_of::<u32>() + 1;
+        let mut bytes = vec![0xFE];
+        bytes.extend_from_slice(&(count as u32).to_le_bytes());
+        bytes.extend_from_slice(&[0u8; 64]);
+        assert!(deserialize::<Vec<u32>>(&bytes).is_err());
+    }
+
+    /// `VecDeque` shares the bound.
+    #[test]
+    fn vecdeque_decode_rejects_over_cap() {
+        let mut bytes = vec![0xFE, 0xFF, 0xFF, 0xFF, 0xFF];
+        bytes.extend_from_slice(&[0u8; 64]);
+        assert!(deserialize::<VecDeque<u8>>(&bytes).is_err());
+    }
+
+    #[cfg(feature = "async")]
+    #[test]
+    fn async_vec_decode_rejects_over_cap() {
+        let mut bytes = vec![0xFE, 0xFF, 0xFF, 0xFF, 0xFF];
+        bytes.extend_from_slice(&[0u8; 64]);
+        let mut cursor = futures_lite::io::Cursor::new(&bytes);
+        let res = futures_lite::future::block_on(
+            <Vec<u8> as AsyncDecodable>::decode_async(&mut cursor),
+        );
+        assert!(res.is_err());
+    }
+
+    #[cfg(feature = "async")]
+    #[test]
+    fn async_vecdeque_decode_rejects_over_cap() {
+        let mut bytes = vec![0xFE, 0xFF, 0xFF, 0xFF, 0xFF];
+        bytes.extend_from_slice(&[0u8; 64]);
+        let mut cursor = futures_lite::io::Cursor::new(&bytes);
+        let res = futures_lite::future::block_on(
+            <VecDeque<u8> as AsyncDecodable>::decode_async(&mut cursor),
+        );
+        assert!(res.is_err());
     }
 
     #[test]

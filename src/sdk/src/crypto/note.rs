@@ -25,7 +25,9 @@ use std::io::Cursor;
 
 use blake3;
 use chacha20poly1305::{AeadInPlace, ChaCha20Poly1305, KeyInit};
-use dwow_serial::{Decodable, Encodable, SerialDecodable, SerialEncodable};
+use dwow_serial::{
+    deserialize_partial, Decodable, Encodable, SerialDecodable, SerialEncodable, VarInt,
+};
 use pasta_curves::{group::ff::Field, pallas};
 use rand_core::{CryptoRng, RngCore};
 
@@ -35,11 +37,49 @@ use crate::error::ContractError;
 /// AEAD tag length in bytes
 pub const AEAD_TAG_SIZE: usize = 16;
 
+/// Upper bound on a serialized note's ciphertext. A note is a few hundred bytes; the
+/// bound matches the contract-side note framing (`native_token` `Output::decode`) and keeps
+/// a byte-slide scan from requesting a large buffer at a false-positive offset.
+pub const MAX_NOTE_LEN: usize = 4096;
+
 /// An encrypted note using Diffie-Hellman and ChaCha20Poly1305
 #[derive(Debug, Clone, PartialEq, Eq, SerialEncodable, SerialDecodable)]
 pub struct AeadEncryptedNote {
     pub ciphertext: Vec<u8>,
     pub ephem_public: PublicKey,
+}
+
+impl AeadEncryptedNote {
+    /// Decode one note from `data` without trusting its VarInt length.
+    ///
+    /// The wallet's scan slides over arbitrary call bytes and calls this at every offset.
+    /// The raw `Decodable` would reserve whatever length the VarInt claims before noticing
+    /// the input is short; this peeks the length first, rejects an over-long or truncated
+    /// note, then decodes through the derive-generated path so the wire format is unchanged.
+    pub fn decode_bounded(data: &[u8]) -> Result<(Self, usize), std::io::Error> {
+        let (ct_len, prefix) = deserialize_partial::<VarInt>(data)?;
+        let ct_len = usize::try_from(ct_len.0).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "note length does not fit usize",
+            )
+        })?;
+        if ct_len > MAX_NOTE_LEN {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "note ciphertext exceeds MAX_NOTE_LEN",
+            ))
+        }
+        if data.len().saturating_sub(prefix) < ct_len {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "note ciphertext truncated",
+            ))
+        }
+        let mut cursor = Cursor::new(data);
+        let note = Self::decode(&mut cursor)?;
+        Ok((note, cursor.position() as usize))
+    }
 }
 
 impl AeadEncryptedNote {
@@ -268,6 +308,40 @@ mod tests {
         let plaintext2: String = encrypted_note.decrypt(&keypair.secret).unwrap();
 
         assert_eq!(plaintext, plaintext2);
+    }
+
+    /// A valid note decodes through the bounded path and reports exactly its encoded length.
+    #[test]
+    fn decode_bounded_round_trips_valid_note() {
+        let keypair = Keypair::random(&mut OsRng);
+        let note = AeadEncryptedNote::encrypt(&"gm world", &keypair.public, &mut OsRng).unwrap();
+        let mut encoded = vec![];
+        note.encode(&mut encoded).unwrap();
+
+        let (decoded, consumed) = AeadEncryptedNote::decode_bounded(&encoded).expect("decode");
+        assert_eq!(consumed, encoded.len());
+        assert_eq!(decoded, note);
+    }
+
+    /// A ciphertext over the shared note bound is rejected before allocation.
+    #[test]
+    fn decode_bounded_rejects_over_max_note_len() {
+        let keypair = Keypair::random(&mut OsRng);
+        let note = AeadEncryptedNote {
+            ciphertext: vec![0u8; MAX_NOTE_LEN + 1],
+            ephem_public: keypair.public,
+        };
+        let mut encoded = vec![];
+        note.encode(&mut encoded).unwrap();
+        assert!(AeadEncryptedNote::decode_bounded(&encoded).is_err());
+    }
+
+    /// A garbage VarInt (the scan byte-slide class) is rejected without a length-sized reserve.
+    #[test]
+    fn decode_bounded_rejects_truncated_prefix() {
+        let mut bytes = vec![0xFE, 0xFF, 0xFF, 0xFF, 0xFF];
+        bytes.extend_from_slice(&[0u8; 32]);
+        assert!(AeadEncryptedNote::decode_bounded(&bytes).is_err());
     }
 
     #[test]

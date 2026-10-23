@@ -292,6 +292,14 @@ mod p2p_impls {
                     d: &mut D,
                 ) -> std::io::Result<Self> {
                     let len = super::varint_decode(d).await?;
+                    // The outer frame has its own bound; an inner VarInt must not be a second,
+                    // unbounded allocation before the payload is read.
+                    if len > crate::sync_connection::MAX_FRAME_PAYLOAD {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "sync payload length exceeds MAX_FRAME_PAYLOAD",
+                        ))
+                    }
                     let mut buf = vec![0u8; len];
                     FutAsyncReadExt::read_exact(d, &mut buf).await?;
                     serde_json::from_slice(&buf)
