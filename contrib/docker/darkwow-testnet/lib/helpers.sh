@@ -228,8 +228,11 @@ mining_log_evidence() {
 # a restart-looping node emits every ~64s; the old poll loop buried them in a tail-100.
 _fatal_artifact_logs() {
     # Always return 0: callers run under `set -e` and use the output as a signal.
+    # Scope is genesis/artifact faults only. A generic panic is not fast-failed: a
+    # recoverable one would false-fail a healthy run, and a crash loop is caught by
+    # the container-state check while a non-crashing one fails the height gate.
     docker logs "$1" 2>&1 | grep -iE \
-        'declares maximum|contract memory export|GENESIS HASH MISMATCH|genesis.*(failed|mismatch)|panicked at|FATAL' \
+        'declares maximum|contract memory export|GENESIS HASH MISMATCH|genesis.*(failed|mismatch)' \
         | tail -20 || true
 }
 
