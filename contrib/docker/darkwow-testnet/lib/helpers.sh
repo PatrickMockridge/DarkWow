@@ -236,6 +236,21 @@ _fatal_artifact_logs() {
         | tail -20 || true
 }
 
+# Peak cgroup memory for a container, in bytes, or "n/a" when unreadable.
+# Used to size the wallet ceiling from evidence instead of guessing.
+container_memory_peak() {
+    local id path
+    id="$(docker inspect -f '{{.Id}}' "$1" 2>/dev/null)" || { echo n/a; return; }
+    for path in "/sys/fs/cgroup/system.slice/docker-${id}.scope/memory.peak" \
+                "/sys/fs/cgroup/docker/${id}/memory.peak"; do
+        if [ -r "$path" ]; then
+            cat "$path"
+            return
+        fi
+    done
+    echo n/a
+}
+
 # Print every started node container that is not `running` (restarting/exited/dead).
 # Returns 0 when all are running or absent. The old checks grepped for "Exit", which a
 # `restart: unless-stopped` crash loop never shows.

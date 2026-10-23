@@ -168,6 +168,12 @@ phase_wallet_verify() {
 
     for wallet_idx in $(seq 1 "${WITH_WALLET:-1}"); do
     info "Phase 10: Verifying wallet container dwow-wallet-${wallet_idx}..."
+    # Evidence for the ceiling: the peak reached during startup + sync.
+    local peak
+    peak="$(container_memory_peak "dwow-wallet-${wallet_idx}")"
+    if [ "$peak" != "n/a" ]; then
+        info "  wallet-${wallet_idx} cgroup memory peak (startup+sync): $((peak / 1048576)) MiB"
+    fi
 
     # 1. Wallet sync gate: poll wallet-1 until it has synced at least
     #    one block. After Phase 9 confirmed blocks exist, wallet sync
@@ -368,6 +374,12 @@ phase_wallet_transfer() {
         return 1
     fi
     pass "transfer tx built and broadcast ($txid)"
+    # Evidence for the proving ceiling: the peak after burn/mint/fee proving.
+    local peak
+    peak="$(container_memory_peak dwow-wallet-1)"
+    if [ "$peak" != "n/a" ]; then
+        info "  wallet-1 cgroup memory peak after transfer proving: $((peak / 1048576)) MiB"
+    fi
 
     # ── 4. Mempool check REMOVED (P0#4) ──────────────────────────────
     # tx.pending RPC method does not exist in the daemon RPC registry.
