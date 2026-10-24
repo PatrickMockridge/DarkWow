@@ -392,6 +392,18 @@ rpc_retry() {
     return 1
 }
 
+# Height with a liveness verdict: echoes the height when the RPC answers, and
+# returns non-zero when it does not (connection refused, method not found, or a
+# malformed reply). `jsonrpc_get_height` collapses both cases to 0, which is how
+# node1's port collision was reported as "sync lag" for a whole run.
+jsonrpc_height_checked() {
+    local container="$1" port="$2" raw h
+    raw=$(rpc_retry "$container" "$port" "blockchain.get_height" "[]" 2 3 2>/dev/null) || return 1
+    h=$(echo "$raw" | jq -r '.result.height // empty' 2>/dev/null | head -1 | tr -d '[:space:]')
+    [ -n "$h" ] || return 1
+    echo "$h"
+}
+
 jsonrpc_get_block() {
     local container="$1" port="$2" block_num="$3"
     rpc_retry "$container" "$port" "blockchain.get_block_linear" "[$block_num]" 5 30 2>/dev/null

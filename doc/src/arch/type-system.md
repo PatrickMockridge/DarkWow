@@ -390,9 +390,29 @@ Distinguished from `BlockTarget(u32)` (PoW difficulty) because a CF multiplier
 applies to fee admission thresholds, not to proof-of-work verification. The
 `CongestionFactor` compound type encapsulates two `CfValue` components
 (premium and standard). Direct `CfValue` extraction SHALL use `.premium()`
-and `.standard()` accessors (`src/linear/src/fee_window.rs:279-282`); fee
+and `.standard()` accessors (`src/linear/src/fee_window.rs:287-290`); fee
 arithmetic SHALL route through `compute_fee_v3`, which selects the premium or
-standard CF per tier (`fee_window.rs:321`).
+standard CF per tier (`fee_window.rs:322`).
+
+**WindowCounts** — one completed fee window's applied FeeV3 demand, as two
+named counts: `premium` (`FeeTier::HIGH`) and `standard` (MEDIUM/LOW). The
+counts are of transactions, not calls; the domain is the applied blocks of
+`max(1, H - WINDOW_SIZE) ..= H - 1`, defined in fee-spec §12.10. It is nominal
+because a count is a consensus input: swapping the two, or passing a bare
+`u64`, would silently feed the controller a different chain. Fields are
+private; construction is `WindowCounts::new(premium, standard)` with named
+accessors. There SHALL be no `From<(u64, u64)>`, no `Default`, and no public
+positional constructor.
+
+**FeeWindowSnapshot** — the settled congestion state at a boundary: the
+circuit and WASM `CongestionFactor`s, plus `identity()`. The snapshot is
+consensus state keyed by boundary height, committed atomically with the block
+and restored on disconnect. `encode`/`decode` SHALL be private to the type and
+used only at the sled persistence boundary (§2.2); no public function takes or
+returns `[u8; N]`, and the eight legacy `fee_window_*` u32 keys are written
+inside that boundary (the atomic-field dispensation of §2.3.3 applies to the
+hot-path fields only). No `From`, no `Default`; construction is
+`new(circuit, wasm)` / `identity()`.
 
 **RiskFactor(u64)** — execution risk multiplier in `RISK_FACTOR_SCALE` units
 (100_000 = 1.0×). Distinguished from `FeeAmount(u64)` because a risk factor
@@ -403,8 +423,8 @@ a bare `u64`.
 **WasmKb(u64)** — WASM deploy size in kilobytes. Distinguished from
 `FeeAmount(u64)` because storage size and payment amount inhabit distinct
 economic domains. `compute_storage_fee(WasmKb) -> FeeAmount`
-(`src/linear/src/fee_window.rs:301`) and `compute_fee_v3(gas,
-CongestionFactor, FeeTier, RiskFactor) -> FeeAmount` (`fee_window.rs:314`)
+(`src/linear/src/fee_window.rs:309`) and `compute_fee_v3(gas,
+CongestionFactor, FeeTier, RiskFactor) -> FeeAmount` (`fee_window.rs:322`)
 take these as distinct typed parameters; `compute_storage_fee(fee_amount)`
 SHALL NOT compile.
 

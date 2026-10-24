@@ -496,6 +496,42 @@ def is_window_boundary(height: int) -> bool:
     return height > 0 and height % WINDOW_SIZE == 0
 
 
+def completed_window_heights(boundary_height: int) -> range:
+    """Heights whose applied transactions feed the adjustment announced at a boundary.
+
+    The flag is set on the boundary block itself, before it is mined, so the input
+    can only be blocks that already exist: the last WINDOW_SIZE completed heights,
+    clipped at genesis. Boundary 20 therefore consumes 1..=19 (19 blocks); every
+    later boundary consumes WINDOW_SIZE blocks (40 -> 20..=39).
+
+    Chain-derived: the counts are of transactions INCLUDED in those blocks, which
+    every node has and which are covered by the block hashes. The earlier model fed
+    the controller each node's private mempool depth, which is not identical across
+    nodes and cannot satisfy fee-spec §13.1's "no node has local fee parameters".
+    """
+    start = max(1, boundary_height - WINDOW_SIZE)
+    return range(start, boundary_height)
+
+
+def count_window_tiers(tiers) -> Tuple[int, int]:
+    """Fold a window's applied FeeV3 tiers into (premium, standard) counts.
+
+    Premium is exactly FeeTier.HIGH (the split `compute_fee_v3` uses for the
+    premium CF); MEDIUM and LOW are standard. One count per FeeV3 transaction,
+    not per contract call: a transaction with several FeeV3 calls is one unit of
+    demand, matching the mempool queue counters the model replaces.
+    """
+    premium = 0
+    standard = 0
+    for tier in tiers:
+        value = tier._multiplier if isinstance(tier, FeeTier) else tier
+        if value == FeeTier.HIGH:
+            premium += 1
+        else:
+            standard += 1
+    return WindowCounts(premium, standard)
+
+
 # ============================================================================
 # [1:1] CongestionFactor — mirrors Rust CongestionFactor(u32) with SCALE
 # ============================================================================
@@ -528,8 +564,43 @@ class CongestionFactor:
         return self.standard.get()
 
 
+@dataclass(frozen=True)
+class WindowCounts:
+    """One completed window's applied FeeV3 demand, as named counts.
+
+    Premium is FeeTier.HIGH; standard is MEDIUM/LOW; one count per transaction.
+    Nominal in the Rust transcription (type-system.md): the two counts cannot be
+    swapped, and neither is a height, amount, fee or length.
+    """
+    premium: int
+    standard: int
+
+
+@dataclass(frozen=True)
+class FeeWindowSnapshot:
+    """The settled congestion state at a boundary, as typed values.
+
+    This is what is persisted per boundary height and restored on disconnect.
+    It has no byte representation at the API; encoding (if any) is the Rust
+    type's persistence boundary.
+    """
+    circuit: CongestionFactor
+    wasm: CongestionFactor
+
+    @classmethod
+    def identity(cls) -> "FeeWindowSnapshot":
+        return cls(CongestionFactor(), CongestionFactor())
+
+
 def compute_congestion_factor(premium_count: int, standard_count: int) -> CongestionFactor:
-    """Compute congestion factors from mempool queue depths. [1:1] Rust."""
+    """Compute congestion factors from the completed window's tier counts. [1:1] Rust.
+
+    The arithmetic is unchanged from the mempool-era model: `premium_count` and
+    `standard_count` are demand units. The SPECIFIED source is now the applied
+    FeeV3 transactions of `completed_window_heights(boundary)`, folded by
+    `count_window_tiers` — chain data, identical on every node — not a node's
+    private mempool depth.
+    """
     cf_premium = SCALE + int(ALPHA_PREMIUM * SCALE * int(math.log2(premium_count + 1)))
     cf_standard = SCALE + int(ALPHA_STANDARD * SCALE * int(math.log2(standard_count + 1)))
 
@@ -678,6 +749,21 @@ class FeeWindow:
             (self._wasm_cf.standard * BASELINE_STORAGE) // SCALE,
         )
 
+    # -- Snapshot / restore (chain-derived, reorg-safe) --
+
+    def snapshot(self) -> FeeWindowSnapshot:
+        """The settled boundary state as typed values."""
+        return FeeWindowSnapshot(
+            CongestionFactor(self._circuit_cf.premium, self._circuit_cf.standard),
+            CongestionFactor(self._wasm_cf.premium, self._wasm_cf.standard),
+        )
+
+    def restore(self, snap: FeeWindowSnapshot) -> None:
+        self._circuit_cf = CongestionFactor(snap.circuit.premium, snap.circuit.standard)
+        self._prev_circuit_cf = self._circuit_cf
+        self._wasm_cf = CongestionFactor(snap.wasm.premium, snap.wasm.standard)
+        self._prev_wasm_cf = self._wasm_cf
+
     # -- BlockHeader signalling [1:1] fee_window_flags --
 
     @staticmethod
@@ -724,6 +810,71 @@ class FeeWindow:
         if wasm_cm > 2:
             wasm_cm = 0
         return (circuit_cm, wasm_cm)
+
+
+# ============================================================================
+# Boundary history — the fee-window state as a function of the canonical chain
+# ============================================================================
+#
+# This is the reorg-safe realisation of the chain-derived rule. The daemon
+# mirrors it with height-keyed snapshots in the consensus tree: connecting a
+# boundary block writes the snapshot in the same atomic batch as the block;
+# disconnecting it removes the snapshot and restores the previous boundary's
+# state. No node-local input remains.
+
+class BoundaryHistory:
+    """Fee-window state over a canonical sequence of boundary blocks."""
+
+    def __init__(self, config: Optional[FeeWindowConfig] = None):
+        self.config = config or FeeWindowConfig()
+        self._snapshots: Dict[int, FeeWindowSnapshot] = {}
+
+    def state_at(self, height: int) -> FeeWindow:
+        """State after the highest boundary at or below `height` (identity before any)."""
+        window = FeeWindow(self.config)
+        boundary = max((h for h in self._snapshots if h <= height), default=None)
+        if boundary is not None:
+            window.restore(self._snapshots[boundary])
+        return window
+
+    def apply_boundary(self, boundary_height: int, counts: WindowCounts) -> FeeWindow:
+        """Derive and record the adjustment announced at `boundary_height`.
+
+        `counts` are the applied FeeV3 transactions in
+        `completed_window_heights(boundary_height)` (see `count_window_tiers`).
+        The previous boundary is required to be the immediately preceding one;
+        a reorg must roll the disconnected boundary back first.
+        """
+        assert is_window_boundary(boundary_height), f"{boundary_height} is not a boundary"
+        assert boundary_height not in self._snapshots, (
+            f"boundary {boundary_height} already applied — roll it back first")
+        previous = [h for h in self._snapshots if h < boundary_height]
+        if previous:
+            last = max(previous)
+            expected = last + WINDOW_SIZE
+            assert boundary_height == expected, (
+                f"boundary {boundary_height} follows {last}, expected {expected}")
+            window = FeeWindow(self.config)
+            window.restore(self._snapshots[last])
+        else:
+            # First boundary: the cap is measured from identity, as the daemon's
+            # FeeWindowState::new initialises prev = SCALE, not from "uncapped".
+            window = FeeWindow(self.config)
+            window._prev_circuit_cf = window._circuit_cf
+            window._prev_wasm_cf = window._wasm_cf
+        window.adjust_circuit(counts.premium, counts.standard)
+        window.adjust_wasm(counts.premium, counts.standard)
+        self._snapshots[boundary_height] = window.snapshot()
+        return window
+
+    def rollback_boundary(self, boundary_height: int) -> FeeWindow:
+        """Disconnect a boundary block: drop its snapshot and restore the previous."""
+        self._snapshots.pop(boundary_height, None)
+        return self.state_at(boundary_height - 1)
+
+    def boundaries(self) -> List[int]:
+        """Boundary heights applied, ascending."""
+        return sorted(self._snapshots)
 
 
 # ============================================================================
@@ -1021,6 +1172,47 @@ def test_boundary_detection():
     assert is_window_boundary(20)
     assert is_window_boundary(40)
     assert not is_window_boundary(21)
+
+
+def test_completed_window_heights():
+    """Boundary H consumes the last WINDOW_SIZE completed heights, clipped at genesis."""
+    assert list(completed_window_heights(20)) == list(range(1, 20))
+    assert list(completed_window_heights(40)) == list(range(20, 40))
+    assert len(list(completed_window_heights(60))) == WINDOW_SIZE
+
+
+def test_window_tier_counts():
+    """Premium is FeeTier.HIGH; MEDIUM and LOW are standard."""
+    assert count_window_tiers([FeeTier.HIGH, FeeTier.MEDIUM, FeeTier.LOW, FeeTier.HIGH]) == WindowCounts(2, 2)
+    assert count_window_tiers([]) == WindowCounts(0, 0)
+
+
+def test_boundary_history_is_chain_derived():
+    """Same applied window counts -> same state, regardless of who mined."""
+    a = BoundaryHistory()
+    b = BoundaryHistory()
+    a.apply_boundary(20, WindowCounts(0, 1))
+    b.apply_boundary(20, WindowCounts(0, 1))
+    assert a.state_at(20).snapshot() == b.state_at(20).snapshot()
+    # One standard-tier transaction is exactly the observed node0 boundary.
+    cf = a.state_at(20).circuit_cf
+    assert (cf.premium.get(), cf.standard.get()) == (1_010_001, 1_010_000)
+
+
+def test_boundary_history_rollback_then_reapply():
+    """A disconnected boundary restores its predecessor; re-applying is deterministic."""
+    h = BoundaryHistory()
+    h.apply_boundary(20, WindowCounts(0, 1))
+    first = h.state_at(20).snapshot()
+    h.apply_boundary(40, WindowCounts(0, 4))
+    h.rollback_boundary(40)
+    assert h.state_at(39).snapshot() == first
+    assert h.boundaries() == [20]
+    h.apply_boundary(40, WindowCounts(0, 0))
+    fresh = BoundaryHistory()
+    fresh.apply_boundary(20, WindowCounts(0, 1))
+    fresh.apply_boundary(40, WindowCounts(0, 0))
+    assert h.state_at(40).snapshot() == fresh.state_at(40).snapshot()
 
 
 def test_congestion_factor_ordering():
@@ -2379,6 +2571,10 @@ if __name__ == "__main__":
         test_initial_window_uses_defaults,
         test_window_index,
         test_boundary_detection,
+        test_completed_window_heights,
+        test_window_tier_counts,
+        test_boundary_history_is_chain_derived,
+        test_boundary_history_rollback_then_reapply,
         test_congestion_factor_ordering,
         test_congestion_factor_log_scaling,
         test_empty_mempool_converges_to_one,

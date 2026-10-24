@@ -100,7 +100,7 @@ impl Dww {
         // commitment, because assembling it moves the call the commitment covers.
         let fee = crate::fee_builder::prepare_fee_call(
             &self.wallet, &self.account_mgr, None, seed,
-            &[], self.contract_risk_factor(&deployooor_id, false), wasm_kb, self.latest_fee_window_flags(),
+            &[], self.contract_risk_factor(&deployooor_id, false), wasm_kb, self.fee_window_cfs().0,
             FeeTier::LOW,
         )?;
         let tx_commitment =

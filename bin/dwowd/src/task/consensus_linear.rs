@@ -288,6 +288,12 @@ pub(crate) async fn reorg_to_heavier_chain(
     // The reorg returns the displaced blocks' transactions to the mempool (`OBL-C44`) — this is the
     // site the row names: the decision was made here, and the handle is threaded in from the caller
     // rather than being out of reach.
+    //
+    // The apply lock is taken HERE, not across the network walk above: the walk
+    // is read-only and awaits a peer, and a std::sync guard cannot cross an
+    // await in a Send future. The mutation it protects is this synchronous
+    // reconnect sequence (OBL-C269).
+    let _apply = blockchain.lock_apply();
     if let Err(e) = activate_best_chain(blockchain, &competing, fork_point, None, mempool) {
         error!(target: "dwowd::task::consensus_linear_init_task",
             "Reorg failed at height {}: {}", block.header.height, e);

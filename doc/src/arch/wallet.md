@@ -952,6 +952,17 @@ commitment `pedersen_commit(fee, fee_blind)` is computed with its own blind, not
 zero. The wallet SHALL ensure Pedersen homomorphic balance:
 `input_blind = output_blind + fee_blind`.
 
+**Congestion factor.** The fee formula's circuit CF SHALL be the chain-derived
+factor, not a value read from the latest block header. The wallet derives it
+from its own stored blocks with the shared rule (fee-spec.md FI-WINDOW-7): for
+each completed boundary in order, fold the applied `FeeParamsV3.tier` values of
+that window into the typed `WindowCounts` and advance the
+`FeeWindowSnapshot` it caches. The header `fee_window_flags` remain an advisory
+direction signal; `derive_cfs()` on them SHALL NOT be the fee source. Exactness
+matters because the fee must meet every node's admission threshold. The cache
+is keyed by tip; a reorg (the tip moving backwards) discards it and recomputes
+from the wallet's own chain.
+
 **Integration point.** The wallet's fee path in `bin/dww/src/fee_builder.rs` is
 `prepare_fee_call(...)`, which returns a `FeeHandoff`, and `FeeHandoff::finish(...)`,
 which proves the fee call once the transaction's frame commitment exists. It SHALL use

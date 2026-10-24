@@ -195,6 +195,13 @@ pub struct CChainState {
     /// Serializes connect_block calls — prevents concurrent block application
     /// from racing on height, VM cache, and sled writes (RandomX FFI segfaults).
     connect_lock: Mutex<()>,
+    /// Outermost apply lock: held across a block's WASM execution + commit and
+    /// across a whole reorg (rollback + disconnect + reconnect). `connect_lock`
+    /// only covers the commit, so without this an execution could read the
+    /// contracts-tree cumulative singleton while a reorg rewrites it, or a
+    /// child block could be executed against a half-disconnected parent
+    /// (OBL-C269). Lock order: apply_lock -> reorg_lock -> connect_lock.
+    apply_lock: Mutex<()>,
     /// Serializes the whole reorg (disconnect + reconnect). The reorg is a
     /// multi-block disconnect/connect sequence; without a dedicated outer lock,
     /// the broadcast-path and sync-path reorgs (and the miner's connect) can
@@ -482,6 +489,7 @@ impl CChainState {
             competing_blocks: Mutex::new(BTreeMap::new()),
             competing_seen: Mutex::new(HashSet::new()),
             connect_lock: Mutex::new(()),
+            apply_lock: Mutex::new(()),
             reorg_lock: Mutex::new(()),
             tip_hash: Mutex::new(None),
             genesis_hash: std::sync::OnceLock::new(),
@@ -504,6 +512,12 @@ impl CChainState {
     /// across `activate_best_chain`'s disconnect and connect phases.
     pub fn lock_reorg(&self) -> std::sync::MutexGuard<'_, ()> {
         self.reorg_lock.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Hold the apply lock across an execution+commit or a whole reorg.
+    /// See the field doc for the lock order.
+    pub fn lock_apply(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.apply_lock.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Cached tip block hash `(height, hash)`. Recomputed only when the tip
@@ -541,6 +555,45 @@ impl CChainState {
 
     pub fn get_block(&self, height: BlockHeight) -> Result<Block> {
         self.store.get_block(height).map_err(|e| LinearError::StorageError(e.to_string()))
+    }
+
+    /// Count the applied FeeV3 tiers of the completed window preceding `boundary`.
+    ///
+    /// The boundary block itself does not exist when its adjustment is announced,
+    /// so the input is the last `WINDOW_SIZE` committed heights (clipped at
+    /// genesis). This is chain data: every node that applied those blocks
+    /// computes the same counts (FI-WINDOW-7).
+    fn window_counts_before(
+        &self,
+        boundary: BlockHeight,
+    ) -> Result<crate::fee_window::WindowCounts> {
+        let mut blocks = Vec::new();
+        for h in crate::fee_window::completed_window_heights(boundary) {
+            blocks.push(self.get_block(h)?);
+        }
+        Ok(crate::fee_window::window_counts(&blocks))
+    }
+
+    /// The factors and flags the boundary block at `height` announces, derived
+    /// from the completed window's applied transactions.
+    ///
+    /// Read-only: `connect_block` persists the same derivation when the block is
+    /// applied. The miner uses this so its announcement cannot depend on local
+    /// mempool state (FI-WINDOW-7).
+    pub fn derive_fee_window(
+        &self,
+        height: BlockHeight,
+    ) -> Result<(
+        crate::fee_window::FeeWindowSnapshot,
+        crate::fee_window::FeeWindowFlags,
+    )> {
+        let fw = self.fee_window.as_ref().ok_or_else(|| {
+            LinearError::StorageError("fee window state is not initialized".to_string())
+        })?;
+        let counts = self.window_counts_before(height)?;
+        let (circuit, wasm) = fw.derive_window(counts);
+        let flags = fw.encode_flags_for(circuit, wasm);
+        Ok((crate::fee_window::FeeWindowSnapshot::new(circuit, wasm), flags))
     }
 
     pub fn get_latest_block(&self) -> Result<Block> {
@@ -1439,6 +1492,25 @@ impl CChainState {
                 }
             }
 
+            // ── Fee window, derived from the applied chain (FI-WINDOW-7) ──
+            // The completed window's applied FeeV3 tiers advance both axes on
+            // every node that applies the block. The input is chain data, not
+            // this node's mempool; the snapshot is committed with the block so
+            // a reorg can restore the predecessor.
+            let fee_window_boundary =
+                dwow_sdk::blockchain::FeeWindowId::is_window_boundary(height);
+            if fee_window_boundary {
+                if let Some(ref fw) = self.fee_window {
+                    let counts = self.window_counts_before(height)?;
+                    let (circuit, wasm) = fw.adjust_from_window(counts);
+                    info!(target: "dwow_chain::connect_block",
+                        "Fee window boundary at height {}: premium_count={}, standard_count={}, circuit_premium={:?}, circuit_standard={:?}, wasm_premium={:?}, wasm_standard={:?}",
+                        height, counts.premium(), counts.standard(),
+                        circuit.premium(), circuit.standard(),
+                        wasm.premium(), wasm.standard());
+                }
+            }
+
             // Accumulate chain work
             let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
             consensus.accumulated_work.add_block(block.header.target);
@@ -1447,7 +1519,11 @@ impl CChainState {
             let mut consensus_batch = sled::Batch::default();
             consensus.save_to_batch(&mut consensus_batch);
             if let Some(ref fw) = self.fee_window {
-                fw.save_to_batch(&mut consensus_batch);
+                if fee_window_boundary {
+                    fw.save_snapshot_to_batch(&mut consensus_batch, height);
+                } else {
+                    fw.save_to_batch(&mut consensus_batch);
+                }
             }
             consensus_batch.insert("accumulated_work", &accumulated.to_le_bytes());
             drop(consensus);
@@ -1972,6 +2048,35 @@ impl CChainState {
             consensus_batch.insert("accumulated_work", &new_accumulated.to_le_bytes());
         }
 
+        // ── Fee window: restore the previous boundary's snapshot ──────────
+        // The state is a function of the canonical boundary history
+        // (FI-WINDOW-7); disconnecting a boundary drops its snapshot and
+        // restores the predecessor (identity before the first boundary).
+        let fee_window_restore: Option<crate::fee_window::FeeWindowSnapshot> =
+            if dwow_sdk::blockchain::FeeWindowId::is_window_boundary(height) {
+                consensus_batch.remove(crate::fee_window::snapshot_key(height));
+                let prev = if height.get() > dwow_sdk::blockchain::FeeWindowId::WINDOW_SIZE {
+                    Some(BlockHeight::new(
+                        height.get() - dwow_sdk::blockchain::FeeWindowId::WINDOW_SIZE,
+                    ))
+                } else {
+                    None
+                };
+                let snapshot = prev
+                    .and_then(|p| {
+                        crate::fee_window::FeeWindowSnapshot::read(&self.store.consensus, p)
+                    })
+                    .unwrap_or_else(crate::fee_window::FeeWindowSnapshot::identity);
+                consensus_batch.insert(
+                    crate::fee_window::FEE_WINDOW_LATEST_KEY.to_vec(),
+                    prev.map(|p| p.get()).unwrap_or(0).to_le_bytes().to_vec(),
+                );
+                snapshot.write_legacy_keys(&mut consensus_batch);
+                Some(snapshot)
+            } else {
+                None
+            };
+
         // M7 — remove this block's uncles from the `uncles` tree (symmetric
         // disconnect, sync-protocol.md §19.6). The per-height hash index was
         // written atomically at connect time.
@@ -1987,17 +2092,38 @@ impl CChainState {
         let mut uncles_by_height_remove = sled::Batch::default();
         uncles_by_height_remove.remove(&height.to_le_bytes());
 
+        // Contracts undo (CBlockUndo): built here and applied inside the same
+        // transaction as the supply-chain removal, so a failure cannot leave the
+        // two cumulative trees torn (OBL-C269).
+        let mut contracts_undo_batch = sled::Batch::default();
+        let undo_present = if let Ok(Some(undo_bytes)) =
+            self.store.contracts_undo.get(&height.to_le_bytes())
+        {
+            let ops: Vec<(Vec<u8>, Option<Vec<u8>>)> = dwow_serial::deserialize(undo_bytes.as_ref())
+                .map_err(|e| LinearError::StorageError(format!("deserialize contracts undo: {e}")))?;
+            for (key, value) in ops {
+                match value {
+                    Some(v) => contracts_undo_batch.insert(key, v),
+                    None => contracts_undo_batch.remove(key),
+                }
+            }
+            true
+        } else {
+            false
+        };
+
         // --- Atomic removal (cross-tree sled transaction) ---
-        // Following Bitcoin's DisconnectBlock pattern: all removals succeed
-        // or none do. The contracts tree is reversed separately below via the
-        // per-block undo batch captured at connect time.
+        // Following Bitcoin's DisconnectBlock pattern: every tree, including
+        // the contracts tree and its undo record, succeeds or none do.
         let result = (&self.store.blocks, &self.store.commitment_set, &self.store.nullifiers,
                       &self.store.consensus, self.supply_chain.tree(),
                       &self.store.block_targets,
-                      &self.store.uncles, &self.store.uncles_by_height)
+                      &self.store.uncles, &self.store.uncles_by_height,
+                      &self.store.contracts, &self.store.contracts_undo)
             .transaction(|(tx_blocks, tx_coins, tx_nullifiers,
                            tx_consensus, tx_supply, tx_targets,
-                           tx_uncles, tx_uncles_by_height)| {
+                           tx_uncles, tx_uncles_by_height,
+                           tx_contracts, tx_contracts_undo)| {
                 tx_blocks.apply_batch(&blocks_remove)?;
                 tx_coins.apply_batch(&commitments_remove)?;
                 tx_nullifiers.apply_batch(&nullifiers_remove)?;
@@ -2006,6 +2132,10 @@ impl CChainState {
                 tx_targets.apply_batch(&targets_remove)?;
                 tx_uncles.apply_batch(&uncles_remove)?;
                 tx_uncles_by_height.apply_batch(&uncles_by_height_remove)?;
+                if undo_present {
+                    tx_contracts.apply_batch(&contracts_undo_batch)?;
+                    tx_contracts_undo.remove(&height.to_le_bytes())?;
+                }
                 Ok(())
             })
             .map_err(|e: sled::transaction::TransactionError<sled::Error>| {
@@ -2021,24 +2151,12 @@ impl CChainState {
         }
         result?;
 
-        // Reverse the WASM contracts-tree writes for this block (Bitcoin
-        // `CBlockUndo`). The inverse ops were captured at connect time; apply
-        // them to restore every key the WASM touched (commitment/nullifier sets,
-        // per-contract state, and the cumulative-commit singletons).
-        if let Ok(Some(undo_bytes)) = self.store.contracts_undo.get(&height.to_le_bytes()) {
-            let ops: Vec<(Vec<u8>, Option<Vec<u8>>)> = dwow_serial::deserialize(undo_bytes.as_ref())
-                .map_err(|e| LinearError::StorageError(format!("deserialize contracts undo: {e}")))?;
-            let mut undo_batch = sled::Batch::default();
-            for (key, value) in ops {
-                match value {
-                    Some(v) => undo_batch.insert(key, v),
-                    None => undo_batch.remove(key),
-                }
+        // The committed snapshot is authoritative; bring the in-memory state in
+        // line with the canonical boundary history it now describes.
+        if let Some(snapshot) = fee_window_restore {
+            if let Some(ref fw) = self.fee_window {
+                fw.restore(&snapshot);
             }
-            self.store.contracts.apply_batch(undo_batch)
-                .map_err(|e| LinearError::StorageError(format!("apply contracts undo: {e}")))?;
-            self.store.contracts_undo.remove(&height.to_le_bytes())
-                .map_err(|e| LinearError::StorageError(format!("remove contracts undo: {e}")))?;
         }
 
         // --- Post-commit in-memory cleanup ---

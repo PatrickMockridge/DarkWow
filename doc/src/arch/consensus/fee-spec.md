@@ -164,13 +164,21 @@ anti-tamper proof is needed. The `fee_window_flags` in the block header are the 
 valve position indicator — every node can read them.
 
 **2. PID Controller (FeeWindowState).** FI-WINDOW-1,2,3. Every 20 blocks (one
-window), the controller reads queue depths from the mempool (process variable),
-compares against capacity (setpoint), and adjusts the valve position. The
-adjustment is capped at ±10% per window — process stability requires slow, damped
+window), the controller reads the **applied transactions of the completed
+window** (process variable), compares them against capacity (setpoint), and
+adjusts the valve position. The input is chain data: at boundary height `H` the
+node counts the FeeV3 transactions included in heights
+`max(1, H - WINDOW_SIZE) ..= H - 1`, split into premium (`FeeTier::HIGH`) and
+standard (MEDIUM/LOW) exactly as `compute_fee_v3` splits them. Every node that
+applies the same blocks therefore computes the same counts, and the state is
+persisted per boundary height so a reorg can restore it.
+The adjustment is capped at ±10% per window — process stability requires slow, damped
 response. Two independent control loops run in parallel: one for circuit execution
 congestion (ZK proof complexity) and one for WASM storage congestion (deploy size).
 The controller is deterministic: all nodes compute identical outputs from identical
 inputs. No non-reproducible arithmetic (FI-WINDOW-2). No coordination required.
+A node's own mempool is **not** an input: it is not identical across nodes and
+cannot satisfy this section's determinism rule.
 
 **3. Fouling Detector (ContractRiskTracker).** FI-RISK-1 through FI-RISK-6. In a
 chemical plant, fouling builds up inside pipes over time, increasing the actual
@@ -1229,9 +1237,9 @@ where:
 
 *Corrected 2026-10-12 (`F-336`): the two formulas read `α × floor(SCALE ×
 log₂(P + 1))`, placing the floor inside the α multiplication. The implementation
-floors once, over the whole product — `compute_cf()` (`src/linear/src/fee_window.rs:459`)
+floors once, over the whole product — `compute_cf()` (`src/linear/src/fee_window.rs:464`)
 evaluates `(α × SCALE × ilog2(P + 1)) as u32`, matched by the reference model's
-`int(α × SCALE × int(math.log2(P + 1)))` (`contrib/model/fee_window_model.py:533`).
+`int(α × SCALE × int(math.log2(P + 1)))` (`contrib/model/fee_window_model.py:567`).
 The old form also read `log₂` as the real log; both implementations take the integer
 log first.*
 
@@ -1843,12 +1851,18 @@ correct for a 2-node testnet is wrong for a 1000-node mainnet. Chain-synced
 values ensure every node converges on the same parameters by reading the same
 chain. This is the defining property: **no node has local fee parameters.**
 
-The `fee_window_flags` in the block header are the public channel for this
-coordination. They encode congestion direction (hold/+10%/-10%) for both the
-circuit execution CF and the WASM storage CF. Every node reads these flags
-from the block header and derives identical congestion factors via
-`derive_cfs()`. A node that substitutes a local value for a chain value has
-forked itself from the network.
+The congestion factors are derived from the completed window's applied
+transactions (§12.10) at every node, and the state is persisted per boundary
+height so a reorg restores the predecessor's snapshot. The earlier "all nodes
+observe the same mempool" premise was false: a mempool is per-node and its
+depth differs with relay timing. The `fee_window_flags` in the block header are
+the public **direction signalling** channel for wallets and other observers
+(hold/+10%/-10% per CF). They are advisory for block validity and excluded from
+the block hash (FI-FLAG-2/3), so they are not the source of the factors: a node
+that needs an exact CF reads the chain, and a wallet that needs an exact fee
+derives it from its own copy of the chain's window data. A node that
+substitutes a local value for a chain value has forked itself from the
+network.
 
 ### 13.2 SPEC-1: Chain-Derived State, Protocol-Constant Coefficients
 
@@ -2024,19 +2038,19 @@ on all nodes given the same inputs. *Restated 2026-10-12 (`F-337`). This added
 "Floating-point arithmetic SHALL NOT be used." The invariant holds, but not by that
 route — the coefficients are `f64`. `alpha_premium` and `alpha_standard` are `f64`
 fields of `FeeWindowConfig`, `compute_cf()` evaluates `α × SCALE × log₂(P + 1)` in
-`f64`, and the ±10% cap band is computed in `f64` too (`src/linear/src/fee_window.rs:459`,
+`f64`, and the ±10% cap band is computed in `f64` too (`src/linear/src/fee_window.rs:464`,
 `:544`). Determinism survives because of what the float is allowed to touch, not
 because there is none: the binary logarithm is the integer `ilog2(P + 1)`, never
 `f64::log2`, and `f64` appears only as a fixed constant multiplied by integer
 operands and truncated with `as u32`. Same inputs — the same constant bits and the
 same integers — give the same correctly-rounded IEEE-754 product on every node,
 which is what the clause's first sentence asks. The reference model is identical in
-kind (`contrib/model/fee_window_model.py:533`), save that it takes the log with
+kind (`contrib/model/fee_window_model.py:567`), save that it takes the log with
 `int(math.log2(...))` rather than an integer log.* Scope: fee_window.rs. Level: L1.
 
-**FI-WINDOW-3: CF ordering.** If `premium_pending > 0` or `standard_pending > 0`,
-`cf.premium >= cf.standard`. At zero congestion, equality is acceptable. Scope:
-fee_window.rs. Level: L1.
+**FI-WINDOW-3: CF ordering.** If the completed window's `premium_count > 0` or
+`standard_count > 0`, `cf.premium >= cf.standard`. At zero congestion, equality
+is acceptable. Scope: fee_window.rs. Level: L1.
 
 **FI-WINDOW-4: Backward compatibility (I2).** Blocks without `fee_window_flags`
 (pre-activation, `fee_window_flags == 0`) SHALL be treated as having zero
@@ -2049,23 +2063,29 @@ difficulty, for identical WASM size and congestion regime. The per-opcode
 difficulty table (§12.4.2) SHALL be the sole cost-ordering determinant.
 Scope: fee_window.rs + opcode_cost.rs. Level: L1.
 
-**FI-WINDOW-6: CF convergence (I6).** As mempool queue depth → 0, CF SHALL
-converge to SCALE for both tiers. As queue depth grows, CF SHALL grow
-logarithmically — doubling the queue adds at most α to the factor.
+**FI-WINDOW-6: CF convergence (I6).** As the completed window's congested
+transaction count → 0, CF SHALL converge to SCALE for both tiers. As that count
+grows, CF SHALL grow logarithmically — a doubling adds at most α to the factor.
 Scope: fee_window.rs. Level: L1.
 
 **FI-WINDOW-7: Deterministic CF computation (I8).** The window's congestion
-factor SHALL be computed locally from the miner's mempool queue depth at the
-window boundary. All nodes synced to the same chain tip observe identical
-CF values — no coordination or gossip is required. I1 guarantees determinism.
-Scope: fee_window.rs + miner_task. Level: L1.
+factors SHALL be derived from the **applied transactions of the completed
+window** (heights `max(1, H - WINDOW_SIZE) ..= H - 1`), by every node that
+applies those blocks. A mempool is node-local and SHALL NOT be an input. The
+per-boundary snapshot SHALL be persisted with the block and restored on
+disconnect, so a reorg cannot leave the factors at a value the canonical chain
+does not imply. All nodes synced to the same tip therefore observe identical CF
+values with no coordination or gossip. I1 guarantees determinism.
+Scope: fee_window.rs + chain_state.rs. Level: L1.
 
 ### 14.3 Flags
 
-**FI-FLAG-1: Flags chain-synced.** The `fee_window_flags` field in the block header
-SHALL encode the congestion direction computed at the most recent window boundary.
-A wallet reading flags from block N SHALL derive the same CFs that the miner used
-to set mempool thresholds for block N+1. Scope: miner → BlockHeader → wallet.
+**FI-FLAG-1: Flags chain-synced.** The `fee_window_flags` field in the block
+header SHALL encode the congestion direction computed at the most recent window
+boundary, as a signalling hint. It is not the source of the factors: the exact
+CFs are chain-derived (FI-WINDOW-7), and a wallet that needs an exact fee derives
+them from its own copy of the chain's window data. A wallet reading only the
+flags gets the direction, not the value. Scope: BlockHeader → observers.
 Level: L1.5.
 
 **FI-FLAG-2: Flags excluded from block hash.** `fee_window_flags` SHALL NOT
@@ -2152,7 +2172,7 @@ for a contract in its hardcoded genesis-id list and `TrustTier::Unverified` othe
 and `describe_with_trust()` (`bin/dww/src/manifest_resolver.rs:152`) renders it — the
 enum's `SelfDeployed` and `Attested` variants (`src/sdk/src/manifest.rs:1001`) are
 never produced there. The sibling `attestation_risk_factor()`
-(`src/linear/src/fee_window.rs:342`), which the wallet comment calls the "wallet-side
+(`src/linear/src/fee_window.rs:347`), which the wallet comment calls the "wallet-side
 trust metric", is dead: nothing calls it. The four-input metric remains the
 obligation — contract age and tx-path reuse need wallet-side history the display path
 does not read, and the attested tier needs an on-chain Attestation query the resolver

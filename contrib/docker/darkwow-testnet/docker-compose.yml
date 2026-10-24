@@ -41,6 +41,7 @@ services:
       - NETWORK=darkwow-testnet
       - P2P_PORT=31340
       - RPC_PORT=31345
+      - MANAGEMENT_PORT=31344
       - STRATUM_PORT=31347
       - SEED_ADDR=
       - PEER_ADDR=node0:31342,node1:31343
@@ -107,6 +108,7 @@ services:
       - NODE_ROLE=genesis
       - P2P_PORT=31342
       - RPC_PORT=31345
+      - MANAGEMENT_PORT=31344
       - STRATUM_PORT=31347
       - SEED_ADDR=
       - PEER_ADDR=observer:31340,node1:31343
@@ -170,6 +172,7 @@ services:
       - NODE_ROLE=miner
       - P2P_PORT=31343
       - RPC_PORT=31346
+      - MANAGEMENT_PORT=31344
       - STRATUM_PORT=31349
       - SEED_ADDR=
       - PEER_ADDR=observer:31340,node0:31342
@@ -177,7 +180,7 @@ services:
       - MINING_THREADS=${MINING_THREADS:-1}
       - DWOW_RAYON_THREADS=${DWOW_RAYON_THREADS:-2}
       - MERGE_MINING=${MERGE_MINING:-false}
-      - MM_RPC_PORT=31349
+      - MM_RPC_PORT=31350
       - P2POOL_HOST=127.0.0.1
       - P2POOL_STRATUM_PORT=3333
       - RANDOMX_MAX_THREADS=1

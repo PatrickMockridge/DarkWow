@@ -277,6 +277,7 @@ pub extern "C" fn dwow_wallet_open(
             verified_anchor_height: smol::lock::Mutex::new(dwow_sdk::blockchain::BlockHeight::new(0)),
             burn_pk_cache: smol::lock::Mutex::new(None),
             mint_pk_cache: smol::lock::Mutex::new(None),
+            fee_window_cache: std::sync::Mutex::new(None),
         };
         dww.initialize_wallet().ok()?;
 
@@ -345,6 +346,7 @@ pub extern "C" fn dwow_wallet_open_persistent(
             verified_anchor_height: smol::lock::Mutex::new(dwow_sdk::blockchain::BlockHeight::new(0)),
             burn_pk_cache: smol::lock::Mutex::new(None),
             mint_pk_cache: smol::lock::Mutex::new(None),
+            fee_window_cache: std::sync::Mutex::new(None),
         };
         dww.initialize_wallet().ok()?;
         Some(Box::new(WalletHandle { dww, _wallet: wallet, last_error: std::cell::RefCell::new(None) }))

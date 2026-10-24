@@ -631,6 +631,23 @@ Every sled value SHALL decode to a known type through that type's explicit
 definitions (`model/mod.rs`). A value that fails to decode SHALL produce a
 typed error identifying the field that failed validation — never a default.
 
+### A.3.3.1 Fee-Window Input and State Types
+
+The fee window's boundary input is derived at the contract boundary, not
+re-parsed from raw call bytes. For every applied transaction, the chain layer
+uses the typed call decoder — `ContractCall::as_mass_balance_fee_v3()` →
+`FeeParamsV3::decode(params_bytes())` → `.tier` — and folds the transaction
+into a `WindowCounts` (`FeeTier::HIGH` is premium; MEDIUM/LOW are standard;
+one count per transaction). This is the same typed decode the entrypoint uses;
+the chain SHALL NOT slice `call.data` by offset.
+
+The window's settled state is a `FeeWindowSnapshot` (type-system.md §2.3): a
+chain-side value keyed by boundary height, never a call payload and never a
+contract state value. Its only byte representation is its persistence
+encoding, private to the type. The block header carries the advisory
+`FeeWindowFlags` direction signal, which is not an input to and not a
+reconstruction of the snapshot.
+
 ### A.3.4 The `unwrap_or` Prohibition
 
 `decode(&data).unwrap_or(default)` and `deserialize(&data).unwrap_or(default)`

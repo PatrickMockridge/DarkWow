@@ -52,6 +52,28 @@ _get_cf_from_log() {
     docker logs "$node" 2>&1 | grep "Fee window boundary" | tail -1 | grep -oP "${key}=CfValue\(\K[0-9]+" || true
 }
 
+# Height of the most recent "Fee window boundary at height N:" log line, or empty.
+_get_boundary_height() {
+    local node="$1"
+    docker logs "$node" 2>&1 | grep "Fee window boundary" | tail -1 \
+        | grep -oP 'at height \K[0-9]+' || true
+}
+
+# A boundary value at a NAMED height, from that node's log. Comparing "last
+# line" across nodes compares different windows whenever one node lags; this
+# makes L3-FW-2 compare like with like.
+_get_cf_at_height() {
+    local node="$1" key="$2" height="$3"
+    docker logs "$node" 2>&1 | grep "Fee window boundary at height ${height}:" | tail -1 \
+        | grep -oP "${key}=CfValue\(\K[0-9]+" || true
+}
+
+_get_flags_at_height() {
+    local node="$1" height="$2"
+    docker logs "$node" 2>&1 | grep "Fee window boundary at height ${height}:" | tail -1 \
+        | grep -oP 'flags=0x[0-9a-fA-F]+' | cut -d'=' -f2 || true
+}
+
 # Wallet chain height via sync status (frozen porcelain format).
 _wallet_chain_height() {
     local idx="$1"
@@ -168,6 +190,20 @@ phase_fee_window() {
     esac
 
     if [ -n "$other_nodes" ]; then
+        # Compare at a NAMED boundary height. A lagging node's last line is an
+        # earlier window; that is "did not reach", not "divergence".
+        local node0_boundary
+        node0_boundary=$(_get_boundary_height "$NODE0_NAME")
+        local ref_cp ref_cs ref_wp ref_ws
+        ref_cp=$(_get_cf_at_height "$NODE0_NAME" "circuit_premium" "$node0_boundary")
+        ref_cs=$(_get_cf_at_height "$NODE0_NAME" "circuit_standard" "$node0_boundary")
+        ref_wp=$(_get_cf_at_height "$NODE0_NAME" "wasm_premium" "$node0_boundary")
+        ref_ws=$(_get_cf_at_height "$NODE0_NAME" "wasm_standard" "$node0_boundary")
+        if [ -z "$node0_boundary" ] || [ -z "$ref_cp" ]; then
+            warn "L3-FW-2: node0 has no parseable boundary line yet — skipping cross-node comparison"
+            return
+        fi
+
         for node_spec in $other_nodes; do
             local node_name="${node_spec%%:*}"
             local node_port="${node_spec##*:}"
@@ -177,23 +213,37 @@ phase_fee_window() {
                 continue
             fi
 
-            local node_flags node_cp node_cs node_wp node_ws
-            node_flags=$(_get_flags_from_log "$node_name")
-            node_cp=$(_get_cf_from_log "$node_name" "circuit_premium")
-            node_cs=$(_get_cf_from_log "$node_name" "circuit_standard")
-            node_wp=$(_get_cf_from_log "$node_name" "wasm_premium")
-            node_ws=$(_get_cf_from_log "$node_name" "wasm_standard")
-
-            if [ -z "$node_cp" ]; then
-                warn "L3-FW-2: $node_name has no fee window boundary log yet (sync may be behind)"
+            # Wait (bounded) for this node to emit the same boundary height.
+            local poll nb
+            nb=$(_get_boundary_height "$node_name")
+            poll=0
+            while { [ -z "$nb" ] || [ "$nb" -lt "$node0_boundary" ]; } 2>/dev/null && [ "$poll" -lt 40 ]; do
+                poll=$((poll + 1))
+                sleep 10
+                nb=$(_get_boundary_height "$node_name")
+            done
+            if [ -z "$nb" ] || [ "$nb" -lt "$node0_boundary" ] 2>/dev/null; then
+                warn "L3-FW-2: $node_name has not reached boundary $node0_boundary (last=${nb:-none}) — not a divergence verdict"
                 continue
             fi
 
-            if [ "$node_cp" = "$circuit_premium" ] && [ "$node_cs" = "$circuit_standard" ] \
-               && [ "$node_wp" = "$wasm_premium" ] && [ "$node_ws" = "$wasm_standard" ]; then
-                pass "L3-FW-2: $node_name consensus match (circuit=$node_cp/$node_cs wasm=$node_wp/$node_ws)"
+            local node_flags node_cp node_cs node_wp node_ws
+            node_flags=$(_get_flags_at_height "$node_name" "$node0_boundary")
+            node_cp=$(_get_cf_at_height "$node_name" "circuit_premium" "$node0_boundary")
+            node_cs=$(_get_cf_at_height "$node_name" "circuit_standard" "$node0_boundary")
+            node_wp=$(_get_cf_at_height "$node_name" "wasm_premium" "$node0_boundary")
+            node_ws=$(_get_cf_at_height "$node_name" "wasm_standard" "$node0_boundary")
+
+            if [ -z "$node_cp" ]; then
+                warn "L3-FW-2: $node_name has no boundary line at height $node0_boundary — skipping"
+                continue
+            fi
+
+            if [ "$node_cp" = "$ref_cp" ] && [ "$node_cs" = "$ref_cs" ] \
+               && [ "$node_wp" = "$ref_wp" ] && [ "$node_ws" = "$ref_ws" ]; then
+                pass "L3-FW-2: $node_name boundary $node0_boundary match (circuit=$node_cp/$node_cs wasm=$node_wp/$node_ws, flags=$node_flags)"
             else
-                fail "L3-FW-2: $node_name DIVERGENCE — circuit=$node_cp/$node_cs wasm=$node_wp/$node_ws (node0 circuit=$circuit_premium/$circuit_standard wasm=$wasm_premium/$wasm_standard)"
+                fail "L3-FW-2: $node_name DIVERGENCE at boundary $node0_boundary — circuit=$node_cp/$node_cs wasm=$node_wp/$node_ws (node0 circuit=$ref_cp/$ref_cs wasm=$ref_wp/$ref_ws)"
             fi
         done
     else

@@ -122,13 +122,14 @@ pub fn prepare_fee_call(
     circuit_costs: &[u64],
     risk_factor: RiskFactor,
     wasm_kb: WasmKb,
-    fee_window_flags: FeeWindowFlags,
+    circuit_cf: dwow_chain::fee_window::CongestionFactor,
     tier: FeeTier,
 ) -> Result<FeeHandoff> {
-    // Derive the circuit congestion factor from the latest block header flags.
-    // wallet.md §6.4.2 / fee-spec.md §8.2. (The WASM CF was only used for the
+    // The circuit congestion factor is chain-derived by the caller
+    // (`Dww::fee_window_cfs`), so the wallet's fee matches what every node
+    // computed from the same chain (fee-spec FI-WINDOW-7). The header flags are
+    // a direction signal, not the source. (The WASM CF was only used for the
     // removed storage term; storage is flat per §12.4.3.)
-    let (circuit_cf, _wasm_cf) = fee_window_flags.derive_cfs();
 
     // Compute the admission fee via the FeeV3 gas-framing formula:
     // fee = gas × CF × tier × risk  (+ storage fee for DeployV1 only).

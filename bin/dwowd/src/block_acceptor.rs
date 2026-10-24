@@ -122,6 +122,24 @@ pub fn accept_block_with_mempool(
     fee_estimator: Option<&std::sync::Arc<dwow_chain::fee_estimator::FeeEstimator>>,
     mempool: Option<&dwow_mempool::MempoolPtr>,
 ) -> Result<BlockConnectOutcome> {
+    // The whole apply — WASM execution, commit, and any reorg it triggers — is
+    // serialized by the apply lock, so an execution cannot read a cumulative
+    // singleton while a reorg rewrites it (OBL-C269).
+    let _apply = chain_state.lock_apply();
+    accept_block_locked(chain_state, block, uncles, vm, target, fee_estimator, mempool)
+}
+
+/// The body of [`accept_block_with_mempool`], for callers that already hold the
+/// apply lock (the reorg reconnect path and the recursive re-accept).
+fn accept_block_locked(
+    chain_state: &CChainState,
+    block: &Block,
+    uncles: &[UncleBlock],
+    vm: &Arc<std::sync::Mutex<randomx::RandomXVM>>,
+    target: BlockTarget,
+    fee_estimator: Option<&std::sync::Arc<dwow_chain::fee_estimator::FeeEstimator>>,
+    mempool: Option<&dwow_mempool::MempoolPtr>,
+) -> Result<BlockConnectOutcome> {
     // 1. Proof of token balance — no hidden darkw minting beyond the coinbase.
     // 0. Phase 0 structural validation — cheapest check first.
     // Per formal guardrail: VALID_COINBASE rejects blocks with missing,
@@ -535,7 +553,7 @@ pub fn accept_block_with_mempool(
                 mempool,
             )?;
             // Re-accept the extension against the competing chain.
-            return accept_block_with_mempool(chain_state, block, uncles, vm, target, fee_estimator, mempool);
+            return accept_block_locked(chain_state, block, uncles, vm, target, fee_estimator, mempool);
         }
         dwow_chain::ReorgSignal::Lighter => {
             // Store the uncle-chain extension BEFORE WASM and return
@@ -911,7 +929,7 @@ pub fn activate_best_chain(
             }
         };
         let target = competing.header.target;
-        let outcome = match accept_block_with_mempool(chain_state, competing, &[], &vm, target, fee_estimator, mempool) {
+        let outcome = match accept_block_locked(chain_state, competing, &[], &vm, target, fee_estimator, mempool) {
             Ok(o) => o,
             Err(e) => {
                 log_reorg_failure(chain_state, fork_point, &disconnected, &format!("accept_block: {e}"));

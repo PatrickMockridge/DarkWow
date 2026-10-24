@@ -1519,94 +1519,61 @@ async fn miner_task(node: DwowNodePtr) -> Result<()> {
 
         let height = latest_block.header.height.succ();
 
-        // ── Fee window boundary detection ─────────────────────────────────
-        // At height ≡ 0 (mod 20), adjust thresholds based on mempool congestion
-        // and encode the signal in the block header (fee-spec.md §12.10).
+        // ── Fee window boundary detection (FI-WINDOW-7) ───────────────────
+        // At height ≡ 0 (mod 20) the block announces the adjustment derived
+        // from the completed window's APPLIED FeeV3 tiers. The miner derives
+        // the same values `connect_block` will persist; it does not mutate the
+        // canonical state, and its own mempool is not an input.
         let fee_window_flags: FeeWindowFlags = {
             use dwow_sdk::blockchain::FeeWindowId;
             if FeeWindowId::is_window_boundary(height) {
-                let premium_pending = node.mempool.as_ref()
-                    .map(|mp| mp.premium_queue_len())
-                    .unwrap_or_else(|| {
+                match chain_state.derive_fee_window(height) {
+                    Ok((snapshot, flags)) => {
+                        let circuit_cf = snapshot.circuit();
+                        if let Some(ref mp) = node.mempool {
+                            // FeeV3: compute the three tier prices from the fee circuit's
+                            // gas (the minimum gas any fee tx carries) at the current CFs.
+                            // §12.5: PRICE_{LOW,MEDIUM,HIGH} = {1,2,4} × CF (gas is the fee).
+                            use dwow_chain::opcode_cost::circuit_difficulty;
+                            let gas_ref = dwow_core::zkas::ZkBinary::decode(
+                                dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V3_BIN, false,
+                            ).map(|fee_zkbin| circuit_difficulty(&fee_zkbin.opcodes))
+                              .unwrap_or_else(|e| {
+                                  tracing::warn!(target: "dwowd::miner",
+                                      "FeeV3 zkbin decode failed: {e}; fee tiers use default gas");
+                                  0
+                              });
+
+                            // §12.4.4: high tier uses CF_premium; medium/low use CF_standard
+                            // (compute_fee_v3 selects the CF component by tier).
+                            let price_high = compute_fee_v3(gas_ref, circuit_cf, FeeTier::HIGH, RiskFactor::BASELINE);
+                            let price_medium = compute_fee_v3(gas_ref, circuit_cf, FeeTier::MEDIUM, RiskFactor::BASELINE);
+                            let price_low = compute_fee_v3(gas_ref, circuit_cf, FeeTier::LOW, RiskFactor::BASELINE);
+                            mp.update_tier_prices(price_high, price_medium, price_low);
+                            // Admission re-derives each transaction's required fee
+                            // from the transaction itself, and starts that sum from
+                            // the fee circuit's own rows — the same base the wallet
+                            // uses (`OBL-C218`). The three prices above are that
+                            // derivation evaluated for this reference gas; this is
+                            // the reference itself.
+                            mp.update_fee_circuit_rows(gas_ref);
+                        }
+                        // Contract risk (FI-RISK-2/3) is evaluated in
+                        // `connect_block` from the applied block. Doing it here as
+                        // well advanced every window twice per boundary, and let
+                        // a losing miner move a tracker no block commits to.
+                        info!(target: "dwowd::miner_task",
+                            "Fee window boundary at height {}: circuit_premium={:?}, circuit_standard={:?}, wasm_premium={:?}, wasm_standard={:?}, flags=0x{:04x}",
+                            height, circuit_cf.premium(), circuit_cf.standard(),
+                            snapshot.wasm().premium(), snapshot.wasm().standard(), flags.get());
+                        flags
+                    }
+                    Err(e) => {
                         warn!(target: "dwowd::miner_task",
-                            "Window boundary at height {} but mempool is None — \
-                             using zero congestion. If this node is mining, \
-                             mempool should be active.", height);
-                        0
-                    }) as u64;
-                let standard_pending = node.mempool.as_ref()
-                    .map(|mp| mp.standard_queue_len())
-                    .unwrap_or(0) as u64;
-                if let Some(ref fw) = chain_state.fee_window {
-                    let circuit_cf = fw.adjust_circuit(premium_pending, standard_pending);
-                    let wasm_cf = fw.adjust_wasm(premium_pending, standard_pending);
-                    let flags = fw.encode_flags();
-                    if let Some(ref mp) = node.mempool {
-                        // FeeV3: compute the three tier prices from the fee circuit's
-                        // gas (the minimum gas any fee tx carries) at the current CFs.
-                        // §12.5: PRICE_{LOW,MEDIUM,HIGH} = {1,2,4} × CF (gas is the fee).
-                        use dwow_chain::opcode_cost::circuit_difficulty;
-                        let gas_ref = dwow_core::zkas::ZkBinary::decode(
-                            dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V3_BIN, false,
-                        ).map(|fee_zkbin| circuit_difficulty(&fee_zkbin.opcodes))
-                          .unwrap_or_else(|e| {
-                              tracing::warn!(target: "dwowd::miner",
-                                  "FeeV3 zkbin decode failed: {e}; fee tiers use default gas");
-                              0
-                          });
-
-                        // §12.4.4: high tier uses CF_premium; medium/low use CF_standard
-                        // (compute_fee_v3 selects the CF component by tier).
-                        let price_high = compute_fee_v3(gas_ref, circuit_cf, FeeTier::HIGH, RiskFactor::BASELINE);
-                        let price_medium = compute_fee_v3(gas_ref, circuit_cf, FeeTier::MEDIUM, RiskFactor::BASELINE);
-                        let price_low = compute_fee_v3(gas_ref, circuit_cf, FeeTier::LOW, RiskFactor::BASELINE);
-                        mp.update_tier_prices(price_high, price_medium, price_low);
-                        // Admission re-derives each transaction's required fee
-                        // from the transaction itself, and starts that sum from
-                        // the fee circuit's own rows — the same base the wallet
-                        // uses (`OBL-C218`). The three prices above are that
-                        // derivation evaluated for this reference gas; this is
-                        // the reference itself.
-                        mp.update_fee_circuit_rows(gas_ref);
+                            "Fee window derivation failed at height {}: {} — header flags default",
+                            height, e);
+                        FeeWindowFlags::default()
                     }
-                    // ── Contract risk factor evaluation (FI-RISK-2) ──────────
-                    // At each window boundary, update risk factors for contracts
-                    // with recorded cost deviations in the current window.
-                    // Risk factors are per-contract, stored in sled, and read by
-                    // compute_fee_v3() for admission threshold computation.
-                    {
-                        let mut tracker = chain_state.contract_risk_tracker
-                            .lock()
-                            .unwrap_or_else(|e| e.into_inner());
-                        // Evaluate ALL contracts with pending deviations.
-                        // FI-RISK-2: escalates under-declaring contracts,
-                        // de-escalates conforming contracts, leaves others at
-                        // baseline. For contracts with no deviations, this is
-                        // a no-op (get_risk_factor returns baseline, FI-RISK-4).
-                        let updated = tracker.evaluate_all_windows();
-                        if !updated.is_empty() {
-                            info!(target: "dwowd::miner_task",
-                                "Contract risk factors updated: {} contracts",
-                                updated.len());
-                            for (cid, risk) in &updated {
-                                debug!(target: "dwowd::miner_task",
-                                    "  contract={} risk={}", cid, risk);
-                            }
-                        }
-                        // Persist updated risk factors to sled after evaluation.
-                        if let Err(e) = tracker.save_to_tree(&chain_state.store.contract_risk) {
-                            warn!(target: "dwowd::miner_task",
-                                "Failed to persist contract risk factors: {}", e);
-                        }
-                        drop(tracker);
-                    }
-
-                    info!(target: "dwowd::miner_task",
-                        "Fee window boundary at height {}: circuit_premium={:?}, circuit_standard={:?}, wasm_premium={:?}, wasm_standard={:?}, flags=0x{:04x}",
-                        height, circuit_cf.premium(), circuit_cf.standard(), wasm_cf.premium(), wasm_cf.standard(), flags.get());
-                    flags
-                } else {
-                    FeeWindowFlags::default()
                 }
             } else {
                 FeeWindowFlags::default()

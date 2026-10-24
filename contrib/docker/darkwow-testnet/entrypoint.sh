@@ -54,6 +54,29 @@ WALLET_SECRET_FILE="${WALLET_SECRET_FILE:-}"
 FORWARD_DESTINATION="${FORWARD_DESTINATION:-}"
 MERGE_MINING="${MERGE_MINING:-false}"
 MM_RPC_PORT="${MM_RPC_PORT:-31348}"
+
+# Two listeners inside one container netns cannot share a port. node1's
+# RPC_PORT=31346 silently collided with the default MANAGEMENT_PORT and made
+# blockchain.get_height unreachable, which the pipeline reported as "sync lag".
+# Refuse to start, naming both listeners, instead of letting one win the bind.
+check_listener_ports() {
+    local names=(P2P RPC STRATUM MANAGEMENT)
+    local values=("$P2P_PORT" "$RPC_PORT" "$STRATUM_PORT" "$MANAGEMENT_PORT")
+    if [ "${MERGE_MINING:-false}" = "true" ]; then
+        names+=(MM_RPC)
+        values+=("$MM_RPC_PORT")
+    fi
+    local i j
+    for ((i = 0; i < ${#values[@]}; i++)); do
+        for ((j = i + 1; j < ${#values[@]}; j++)); do
+            if [ "${values[i]}" = "${values[j]}" ]; then
+                echo "FATAL: ${names[i]}_PORT and ${names[j]}_PORT both use ${values[i]}" >&2
+                exit 1
+            fi
+        done
+    done
+}
+check_listener_ports
 FINALITY_MODE="${FINALITY_MODE:-always}"
 FINALITY_CARIBINA_ENABLED="${FINALITY_CARIBINA_ENABLED:-true}"
 FINALITY_ENABLE_MONERO="${FINALITY_ENABLE_MONERO:-false}"

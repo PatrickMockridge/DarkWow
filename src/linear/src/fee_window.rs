@@ -40,7 +40,11 @@
 //! the PID output signal that tells every wallet what choke position to
 //! target for the next window.
 //!
-//! Domain: `[domain: fee_signalling]` — valve control, NOT consensus-critical.
+//! Domain: `[domain: fee_signalling]` — valve control. The factors are
+//! chain-derived state: every node computes them from the completed window's
+//! applied FeeV3 transactions, and the per-boundary snapshot is persisted with
+//! the block and restored on disconnect. The header flags are advisory
+//! signalling only and are excluded from the block hash (fee-spec §14.3).
 //! See: `fee-spec.md §0.1` for the process engineering analogy.
 //! See: `consensus.md §Supply Audit` for the mass balance flow meter.
 //!
@@ -167,10 +171,11 @@ impl FeeWindowFlags {
 
     /// Derive estimated congestion factors from the flags.
     ///
-    /// Wallets don't maintain a full `FeeWindowState` — they observe the
-    /// miner's flags in each block header and apply the signalled direction
-    /// to the identity CF (SCALE = 1.0). This gives the wallet a CF estimate
-    /// for `compute_fee()` without tracking multi-window PID state.
+    /// This is a **legacy/light estimate**: it applies the signalled direction
+    /// to the identity CF and cannot reproduce the daemon's multi-window state.
+    /// Wallets that need an exact fee derive the factors from their own copy of
+    /// the chain's window data (`FeeWindowState`'s chain-derived rule); the
+    /// flags are a direction signal, not the source of the values.
     ///
     /// Returns `(circuit_cf, wasm_cf)`.
     pub fn derive_cfs(self) -> (CongestionFactor, CongestionFactor) {
@@ -525,6 +530,84 @@ impl FeeWindowState {
         cf
     }
 
+    /// Derive both axes for a boundary from the completed window's applied counts
+    /// and store them (the connect path).
+    ///
+    /// `premium_count`/`standard_count` are the applied FeeV3 transactions of
+    /// `completed_window_heights(boundary)` (`window_counts`), not mempool depths.
+    pub fn adjust_from_window(
+        &self,
+        counts: WindowCounts,
+    ) -> (CongestionFactor, CongestionFactor) {
+        let circuit = self.adjust_circuit(counts.premium(), counts.standard());
+        let wasm = self.adjust_wasm(counts.premium(), counts.standard());
+        (circuit, wasm)
+    }
+
+    /// The values both axes would take for these counts, without mutating.
+    ///
+    /// The miner needs the state that `connect_block` will persist for the
+    /// boundary block it is about to build; deriving it here from the same
+    /// chain data keeps the announcement and the commit identical, and a lost
+    /// race leaves no local state to roll back.
+    pub fn derive_window(
+        &self,
+        counts: WindowCounts,
+    ) -> (CongestionFactor, CongestionFactor) {
+        let cfg = &self.config;
+        let (premium_count, standard_count) = (counts.premium(), counts.standard());
+        let raw = Self::compute_cf(
+            premium_count, standard_count, cfg.alpha_premium, cfg.alpha_standard,
+        );
+        let prev_cp = *self.circuit_prev_premium_cf.lock().unwrap_or_else(|e| e.into_inner());
+        let prev_cs = *self.circuit_prev_standard_cf.lock().unwrap_or_else(|e| e.into_inner());
+        let prev_wp = *self.wasm_prev_premium_cf.lock().unwrap_or_else(|e| e.into_inner());
+        let prev_ws = *self.wasm_prev_standard_cf.lock().unwrap_or_else(|e| e.into_inner());
+        let circuit = Self::cap_with(
+            prev_cp, prev_cs, raw, cfg.max_adjustment, premium_count, standard_count,
+        );
+        let wasm = Self::cap_with(
+            prev_wp, prev_ws, raw, cfg.max_adjustment, premium_count, standard_count,
+        );
+        (circuit, wasm)
+    }
+
+    /// The settled boundary state, as typed values.
+    pub fn snapshot(&self) -> FeeWindowSnapshot {
+        FeeWindowSnapshot::new(
+            CongestionFactor::new(
+                self.circuit_premium_cf.load(Ordering::Acquire),
+                self.circuit_standard_cf.load(Ordering::Acquire),
+            ),
+            CongestionFactor::new(
+                self.wasm_premium_cf.load(Ordering::Acquire),
+                self.wasm_standard_cf.load(Ordering::Acquire),
+            ),
+        )
+    }
+
+    /// Restore both current and previous values from a snapshot. A restored
+    /// state is a settled boundary state, so prev == current.
+    pub fn restore(&self, snapshot: &FeeWindowSnapshot) {
+        self.store_settled(snapshot.circuit(), snapshot.wasm());
+    }
+
+    /// Write a settled pair into all eight values (current and previous).
+    fn store_settled(&self, circuit: CongestionFactor, wasm: CongestionFactor) {
+        let cp = circuit.premium().get();
+        let cs = circuit.standard().get();
+        let wp = wasm.premium().get();
+        let ws = wasm.standard().get();
+        self.circuit_premium_cf.store(cp, Ordering::Release);
+        self.circuit_standard_cf.store(cs, Ordering::Release);
+        self.wasm_premium_cf.store(wp, Ordering::Release);
+        self.wasm_standard_cf.store(ws, Ordering::Release);
+        *self.circuit_prev_premium_cf.lock().unwrap_or_else(|e| e.into_inner()) = cp;
+        *self.circuit_prev_standard_cf.lock().unwrap_or_else(|e| e.into_inner()) = cs;
+        *self.wasm_prev_premium_cf.lock().unwrap_or_else(|e| e.into_inner()) = wp;
+        *self.wasm_prev_standard_cf.lock().unwrap_or_else(|e| e.into_inner()) = ws;
+    }
+
     /// Apply ±10% cap (I7) and CF ordering (I4) to a raw CF.
     fn apply_cap(
         raw_cf: CongestionFactor,
@@ -536,7 +619,18 @@ impl FeeWindowState {
     ) -> CongestionFactor {
         let prev_p = *prev_premium.lock().unwrap_or_else(|e| e.into_inner());
         let prev_s = *prev_standard.lock().unwrap_or_else(|e| e.into_inner());
+        Self::cap_with(prev_p, prev_s, raw_cf, max_adj, premium_pending, standard_pending)
+    }
 
+    /// Pure cap: the prior window's values are supplied, not read from a lock.
+    fn cap_with(
+        prev_p: u32,
+        prev_s: u32,
+        raw_cf: CongestionFactor,
+        max_adj: f64,
+        premium_pending: u64,
+        standard_pending: u64,
+    ) -> CongestionFactor {
         // Independent per-tier guards (A4/C5 fix): cap premium if prev_p > 0,
         // cap standard if prev_s > 0. Both initialized to SCALE at construction.
         // Separate guards prevent a corrupted prev_s==0 from zeroing standard tier.
@@ -571,8 +665,17 @@ impl FeeWindowState {
     /// Encode the current congestion factors into `FeeWindowFlags` for the block header.
     /// Byte 0 = CIRCUIT_CF direction, Byte 1 = WASM_CF direction.
     pub fn encode_flags(&self) -> FeeWindowFlags {
-        let circuit_cf = self.circuit_cf();
-        let wasm_cf = self.wasm_cf();
+        self.encode_flags_for(self.circuit_cf(), self.wasm_cf())
+    }
+
+    /// Encode the direction from the stored previous values to `circuit_cf`/`wasm_cf`.
+    /// The miner announces a boundary it has not persisted yet, so the values are
+    /// supplied instead of read from the current state.
+    pub fn encode_flags_for(
+        &self,
+        circuit_cf: CongestionFactor,
+        wasm_cf: CongestionFactor,
+    ) -> FeeWindowFlags {
         let prev_circuit = *self.circuit_prev_premium_cf.lock()
             .unwrap_or_else(|e| e.into_inner());
         let prev_wasm = *self.wasm_prev_premium_cf.lock()
@@ -592,9 +695,10 @@ impl FeeWindowState {
             }
         };
 
-        let circuit_byte = encode_byte(circuit_cf, prev_circuit);
-        let wasm_byte = encode_byte(wasm_cf, prev_wasm);
-        FeeWindowFlags::pack(circuit_byte, wasm_byte)
+        FeeWindowFlags::pack(
+            encode_byte(circuit_cf, prev_circuit),
+            encode_byte(wasm_cf, prev_wasm),
+        )
     }
 
     // ── Persistence (follows PoWConsensus::save_to_batch / load) ────
@@ -635,10 +739,25 @@ impl FeeWindowState {
         );
     }
 
+    /// Persist a boundary snapshot and the current state into the batch that
+    /// commits the boundary block. The snapshot is keyed by height so a reorg
+    /// can restore the predecessor (FI-WINDOW-7).
+    pub fn save_snapshot_to_batch(&self, batch: &mut sled::Batch, height: BlockHeight) {
+        self.snapshot().save_to_batch(batch, height);
+        self.save_to_batch(batch);
+    }
+
     /// Load fee window state from a sled tree. Returns `Err` if only some of the
     /// 8 expected keys are present (partial persistence after crash — A9/H5 fix).
     /// Missing all keys is accepted (fresh store). Missing some is rejected.
     pub fn load(&self, tree: &sled::Tree) -> Result<(), LinearError> {
+        // Chain-derived snapshots take precedence: the state is a function of the
+        // canonical boundary history. Stores written before this rule have only
+        // the eight individual keys and fall through to the legacy path below.
+        if let Some((_height, snapshot)) = FeeWindowSnapshot::latest(tree) {
+            self.restore(&snapshot);
+            return Ok(());
+        }
         let load_u32 = |key: &[u8]| -> Option<u32> {
             tree.get(key).ok().flatten().and_then(|b| {
                 if b.len() == 4 {
@@ -690,6 +809,220 @@ impl FeeWindowState {
         }
         Ok(())
     }
+}
+
+// ── Chain-derived boundary input and typed snapshots ────────────────────
+
+/// One completed fee window's applied FeeV3 demand.
+///
+/// Premium is `FeeTier::HIGH`; standard is MEDIUM/LOW; one count per
+/// transaction. Nominal: the two counts cannot be swapped, and neither is a
+/// height, amount, fee or length (type-system.md §2.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WindowCounts {
+    premium: u64,
+    standard: u64,
+}
+
+impl WindowCounts {
+    /// Counts from a completed window's applied transactions.
+    pub const fn new(premium: u64, standard: u64) -> Self {
+        Self { premium, standard }
+    }
+
+    pub const fn premium(self) -> u64 {
+        self.premium
+    }
+
+    pub const fn standard(self) -> u64 {
+        self.standard
+    }
+}
+
+/// The settled congestion state at a fee-window boundary.
+///
+/// Private fields; `new` and `identity` are the domain entries. The type owns
+/// its only byte representation, used at the sled persistence boundary
+/// (type-system.md §2.2): no caller passes or receives `[u8; N]`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FeeWindowSnapshot {
+    circuit: CongestionFactor,
+    wasm: CongestionFactor,
+}
+
+impl FeeWindowSnapshot {
+    /// A settled boundary state.
+    pub fn new(circuit: CongestionFactor, wasm: CongestionFactor) -> Self {
+        Self { circuit, wasm }
+    }
+
+    /// The state before any boundary: both axes at SCALE.
+    pub fn identity() -> Self {
+        let scale = CongestionFactor::new(CongestionFactor::SCALE, CongestionFactor::SCALE);
+        Self::new(scale, scale)
+    }
+
+    pub fn circuit(&self) -> CongestionFactor {
+        self.circuit
+    }
+
+    pub fn wasm(&self) -> CongestionFactor {
+        self.wasm
+    }
+
+    /// Store this snapshot at `height` and record it as the latest boundary.
+    /// Persistence boundary only.
+    pub(crate) fn save_to_batch(&self, batch: &mut sled::Batch, height: BlockHeight) {
+        batch.insert(snapshot_key(height), self.encode());
+        batch.insert(FEE_WINDOW_LATEST_KEY.to_vec(), height.to_le_bytes().to_vec());
+    }
+
+    /// Read the snapshot stored at `height`, if present and well-formed.
+    pub(crate) fn read(tree: &sled::Tree, height: BlockHeight) -> Option<Self> {
+        let bytes = tree.get(snapshot_key(height)).ok().flatten()?;
+        Self::decode(&bytes).ok()
+    }
+
+    /// The highest stored boundary and its snapshot.
+    pub(crate) fn latest(tree: &sled::Tree) -> Option<(BlockHeight, Self)> {
+        let bytes = tree.get(FEE_WINDOW_LATEST_KEY).ok().flatten()?;
+        if bytes.len() != 8 {
+            return None;
+        }
+        let mut b = [0u8; 8];
+        b.copy_from_slice(&bytes);
+        let height = BlockHeight::new(u64::from_le_bytes(b));
+        if height.get() == 0 {
+            return None;
+        }
+        Self::read(tree, height).map(|s| (height, s))
+    }
+
+    /// Write this snapshot into the eight legacy state keys (current and
+    /// previous). The height-keyed snapshot is authoritative; these keys keep
+    /// pre-rule stores and the hot-path current-value readers consistent.
+    pub(crate) fn write_legacy_keys(&self, batch: &mut sled::Batch) {
+        let cp = self.circuit.premium().get();
+        let cs = self.circuit.standard().get();
+        let wp = self.wasm.premium().get();
+        let ws = self.wasm.standard().get();
+        batch.insert(&b"fee_window_circuit_premium_cf"[..], &cp.to_le_bytes());
+        batch.insert(&b"fee_window_circuit_standard_cf"[..], &cs.to_le_bytes());
+        batch.insert(&b"fee_window_wasm_premium_cf"[..], &wp.to_le_bytes());
+        batch.insert(&b"fee_window_wasm_standard_cf"[..], &ws.to_le_bytes());
+        batch.insert(&b"fee_window_circuit_prev_premium_cf"[..], &cp.to_le_bytes());
+        batch.insert(&b"fee_window_circuit_prev_standard_cf"[..], &cs.to_le_bytes());
+        batch.insert(&b"fee_window_wasm_prev_premium_cf"[..], &wp.to_le_bytes());
+        batch.insert(&b"fee_window_wasm_prev_standard_cf"[..], &ws.to_le_bytes());
+    }
+
+    /// Persistence encoding — the only place a snapshot becomes bytes.
+    /// Fixed layout: circuit premium/standard, wasm premium/standard (u32 LE).
+    fn encode(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(16);
+        out.extend_from_slice(&self.circuit.premium().get().to_le_bytes());
+        out.extend_from_slice(&self.circuit.standard().get().to_le_bytes());
+        out.extend_from_slice(&self.wasm.premium().get().to_le_bytes());
+        out.extend_from_slice(&self.wasm.standard().get().to_le_bytes());
+        out
+    }
+
+    /// Validating decode (`CongestionFactor::new` re-establishes I4).
+    fn decode(bytes: &[u8]) -> Result<Self, LinearError> {
+        if bytes.len() != 16 {
+            return Err(LinearError::StorageError(format!(
+                "fee_window snapshot: expected 16 bytes, got {}",
+                bytes.len()
+            )));
+        }
+        let mut buf = [0u8; 4];
+        let mut read = |offset: usize| -> u32 {
+            buf.copy_from_slice(&bytes[offset..offset + 4]);
+            u32::from_le_bytes(buf)
+        };
+        let cp = read(0);
+        let cs = read(4);
+        let wp = read(8);
+        let ws = read(12);
+        Ok(Self::new(
+            CongestionFactor::new(cp, cs),
+            CongestionFactor::new(wp, ws),
+        ))
+    }
+}
+
+/// Derive the next boundary's snapshot from the previous one and the window
+/// counts, with no node state. Shared by the daemon's announce path and the
+/// wallet's accumulator (FI-WINDOW-7).
+pub fn next_snapshot(
+    prev: &FeeWindowSnapshot,
+    counts: WindowCounts,
+    config: &FeeWindowConfig,
+) -> Result<(FeeWindowSnapshot, FeeWindowFlags), LinearError> {
+    let fw = FeeWindowState::new(config.clone());
+    fw.restore(prev);
+    let (circuit, wasm) = fw.derive_window(counts);
+    let flags = fw.encode_flags_for(circuit, wasm);
+    Ok((FeeWindowSnapshot::new(circuit, wasm), flags))
+}
+
+/// Snapshot key prefix for a boundary's derived state.
+pub(crate) const FEE_WINDOW_SNAPSHOT_PREFIX: &[u8] = b"fee_window_snapshot:";
+/// Key holding the highest boundary height whose snapshot is stored.
+pub(crate) const FEE_WINDOW_LATEST_KEY: &[u8] = b"fee_window_latest";
+
+/// Key under which the state derived at `height` is stored.
+pub(crate) fn snapshot_key(height: BlockHeight) -> Vec<u8> {
+    let mut key = Vec::with_capacity(FEE_WINDOW_SNAPSHOT_PREFIX.len() + 8);
+    key.extend_from_slice(FEE_WINDOW_SNAPSHOT_PREFIX);
+    key.extend_from_slice(&height.to_le_bytes());
+    key
+}
+
+/// Heights whose applied transactions feed the adjustment announced at `boundary`.
+///
+/// The flag is set on the boundary block itself, before it is mined, so the
+/// input is the last `WINDOW_SIZE` completed heights, clipped at genesis:
+/// boundary 20 consumes 1..=19, every later boundary consumes 20 blocks.
+pub fn completed_window_heights(boundary: BlockHeight) -> impl Iterator<Item = BlockHeight> {
+    let end = boundary.get();
+    let start = end
+        .saturating_sub(dwow_sdk::blockchain::FeeWindowId::WINDOW_SIZE)
+        .max(1);
+    (start..end).map(BlockHeight::new)
+}
+
+/// Count the completed window's applied FeeV3 transactions by tier.
+///
+/// Premium is `FeeTier::HIGH`; standard is MEDIUM/LOW — the same split
+/// `compute_fee_v3` uses. One count per transaction, not per FeeV3 call. A
+/// call whose params do not decode is counted as standard: an accepted block
+/// cannot contain one, so the choice only keeps the fold total.
+pub fn window_counts(blocks: &[crate::Block]) -> WindowCounts {
+    let mut premium = 0u64;
+    let mut standard = 0u64;
+    for block in blocks {
+        for tx in &block.transactions {
+            match tx_demand(tx) {
+                Some(true) => premium += 1,
+                Some(false) => standard += 1,
+                None => {}
+            }
+        }
+    }
+    WindowCounts::new(premium, standard)
+}
+
+/// One transaction's demand unit: `Some(true)` premium, `Some(false)` standard,
+/// `None` when the transaction carries no FeeV3 call. A FeeV3 call whose params
+/// do not decode counts as standard; an accepted block cannot contain one, so
+/// the choice only keeps the fold total.
+fn tx_demand(tx: &crate::Transaction) -> Option<bool> {
+    let fee_call = tx.contract_calls.iter().find_map(|c| c.as_mass_balance_fee_v3())?;
+    Some(matches!(
+        dwow_native_token_contract::model::FeeParamsV3::decode(fee_call.params_bytes()),
+        Ok(params) if params.tier == FeeTier::HIGH
+    ))
 }
 
 #[cfg(test)]
@@ -1072,5 +1405,90 @@ mod tests {
         let cf_zero2 = FeeWindowState::compute_cf(0, 0, 0.05, 0.01);
         assert_eq!(cf_zero1, cf_zero2,
             "GAP-4: zero-congestion CF must also be deterministic");
+    }
+
+    /// The boundary input is a function of the applied window's transactions:
+    /// one count per FeeV3 transaction, premium = HIGH, standard = MEDIUM/LOW,
+    /// non-FeeV3 calls ignored, a malformed FeeV3 call still counted.
+    #[test]
+    fn test_window_demand_fold() {
+        use dwow_sdk::blockchain::BlockVersion;
+        let fee_call = |params: Vec<u8>| crate::ContractCall {
+            contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
+            data: {
+                let mut d = vec![0x08u8];
+                d.extend_from_slice(&params);
+                d
+            },
+        };
+        let tx = |calls: Vec<crate::ContractCall>| crate::Transaction {
+            version: BlockVersion::CURRENT,
+            inputs: vec![],
+            outputs: vec![],
+            contract_calls: calls,
+            lock_time: 0,
+            nullifiers: vec![],
+            witness: vec![],
+        };
+        let other = crate::ContractCall {
+            contract_id: dwow_sdk::crypto::ContractId::from_bytes([9u8; 32])
+                .expect("32 non-sentinel bytes are a valid contract id"),
+            data: vec![0x01],
+        };
+
+        assert_eq!(tx_demand(&tx(vec![other.clone()])), None, "non-fee call is not demand");
+        // The absorber boundary requires the selector plus the FeeParamsV3
+        // fixed header; a call that passes it but whose params do not decode is
+        // still one standard-tier unit (an accepted block cannot contain one).
+        assert_eq!(
+            tx_demand(&tx(vec![other, fee_call(vec![0u8; 443])])),
+            Some(false),
+            "a malformed FeeV3 call is still one standard-tier demand unit"
+        );
+    }
+
+    /// `next_snapshot` is a pure function of the previous snapshot and the
+    /// window counts; the arithmetic reproduces the observed boundary.
+    #[test]
+    fn test_next_snapshot_is_deterministic() {
+        let config = FeeWindowConfig::default();
+        let identity = FeeWindowSnapshot::identity();
+        let counts = WindowCounts::new(0, 1);
+        let (a, _) = next_snapshot(&identity, counts, &config).expect("derives");
+        let (b, _) = next_snapshot(&identity, counts, &config).expect("derives");
+        assert_eq!(a, b, "same previous state + counts => same snapshot");
+        assert_eq!(a.circuit().premium().get(), 1_010_001);
+        assert_eq!(a.circuit().standard().get(), 1_010_000);
+        assert_eq!(a.wasm(), a.circuit(), "both axes use the same counts");
+    }
+
+    /// Typed snapshot persistence: the value written at a boundary height reads
+    /// back as the same typed state, and `latest` tracks the highest boundary.
+    #[test]
+    fn test_snapshot_persistence_round_trip() {
+        let db = sled::Config::new().temporary(true).open().expect("temp db");
+        let tree = db.open_tree(b"consensus").expect("tree");
+        let snapshot = FeeWindowSnapshot::new(
+            CongestionFactor::new(1_010_001, 1_010_000),
+            CongestionFactor::new(1_000_000, 1_000_000),
+        );
+        let mut batch = sled::Batch::default();
+        snapshot.save_to_batch(&mut batch, BlockHeight::new(20));
+        tree.apply_batch(batch).expect("persist snapshot");
+
+        assert_eq!(
+            FeeWindowSnapshot::read(&tree, BlockHeight::new(20)),
+            Some(snapshot),
+            "a persisted snapshot reads back identically"
+        );
+        assert_eq!(
+            FeeWindowSnapshot::latest(&tree),
+            Some((BlockHeight::new(20), snapshot)),
+            "latest names the highest boundary"
+        );
+
+        let state = FeeWindowState::new(FeeWindowConfig::default());
+        state.restore(&snapshot);
+        assert_eq!(state.snapshot(), snapshot, "restore is lossless");
     }
 }

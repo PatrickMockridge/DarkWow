@@ -182,13 +182,17 @@ phase_blocks() {
         [ "$node_name" = "$NODE0_NAME" ] && continue
 
         local h
-        h=$(jsonrpc_get_height "$node_name" "$node_port")
-        h=$(echo "$h" | tr -dc '0-9')
-        h="${h:-0}"
+        if ! h=$(jsonrpc_height_checked "$node_name" "$node_port"); then
+            # A started node whose blockchain RPC cannot answer is a fault, not
+            # lag: node1's RPC/management port collision hid its real state for
+            # an entire run behind the old "unreachable or height=0" warning.
+            fail "$node_name: blockchain RPC unreachable at $node_port — a started node must answer get_height"
+            continue
+        fi
         if [ "$h" -ge 1 ] 2>/dev/null; then
             pass "$node_name: height=$h"
         else
-            warn "$node_name: RPC unreachable or height=0 (sync lag is normal)"
+            warn "$node_name: height=0 (sync lag is normal)"
         fi
     done
 

@@ -172,6 +172,12 @@ pub struct Dww {
     pub burn_pk_cache: smol::lock::Mutex<Option<dwow_core::zk::proof::ProvingKey>>,
     /// Cached mint proving key — built once from the embedded zkas binary.
     pub mint_pk_cache: smol::lock::Mutex<Option<dwow_core::zk::proof::ProvingKey>>,
+    /// Chain-derived fee-window state: (tip height, settled boundary snapshot).
+    /// Derived from this wallet's own blocks with the shared typed rule
+    /// (`dwow_chain::fee_window::FeeWindowSnapshot`); header flags are not the
+    /// source.
+    pub fee_window_cache:
+        std::sync::Mutex<Option<(BlockHeight, dwow_chain::fee_window::FeeWindowSnapshot)>>,
 }
 
 // §1.3: The wallet process SHALL declare its composite barb set.
@@ -228,7 +234,7 @@ impl Dww {
             }
         }
 
-        Ok(Self { network, account_mgr, wallet, p2p: None, executor: None, p2p_settings, highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip::new()), local_genesis_hash: smol::lock::Mutex::new(None), verified_anchor_height: smol::lock::Mutex::new(BlockHeight::new(0)), burn_pk_cache: smol::lock::Mutex::new(None), mint_pk_cache: smol::lock::Mutex::new(None) })
+        Ok(Self { network, account_mgr, wallet, p2p: None, executor: None, p2p_settings, highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip::new()), local_genesis_hash: smol::lock::Mutex::new(None), verified_anchor_height: smol::lock::Mutex::new(BlockHeight::new(0)), burn_pk_cache: smol::lock::Mutex::new(None), mint_pk_cache: smol::lock::Mutex::new(None), fee_window_cache: std::sync::Mutex::new(None) })
     }
 
     /// Get the current chain tip height from the local block store.
@@ -244,10 +250,10 @@ impl Dww {
     }
 
     /// Return `fee_window_flags` from the latest synced block header.
-    /// Falls back to `self.latest_fee_window_flags()` (identity CF) when no blocks
+    /// Falls back to `self.fee_window_cfs().0` (identity CF) when no blocks
     /// are synced or the block cannot be read.
     ///
-    /// G1 fix: replaces hardcoded `self.latest_fee_window_flags()` at all wallet
+    /// G1 fix: replaces hardcoded `self.fee_window_cfs().0` at all wallet
     /// transaction construction sites. The wallet SHALL read the miner's
     /// advertised congestion flags per fee-spec.md §12.9.
     pub fn latest_fee_window_flags(&self) -> FeeWindowFlags {
@@ -258,6 +264,65 @@ impl Dww {
             },
             _ => FeeWindowFlags::default(),
         }
+    }
+
+    /// Chain-derived fee-window congestion factors at the current tip.
+    ///
+    /// Walks completed windows forward from the cached snapshot using the
+    /// wallet's own blocks and the shared derivation
+    /// (`dwow_chain::fee_window`), so the wallet's fee matches what every node
+    /// computed from the same chain (fee-spec FI-WINDOW-7). Returns identity
+    /// before the first boundary or if a window block is missing.
+    pub fn fee_window_cfs(
+        &self,
+    ) -> (
+        dwow_chain::fee_window::CongestionFactor,
+        dwow_chain::fee_window::CongestionFactor,
+    ) {
+        use dwow_chain::fee_window::{
+            completed_window_heights, next_snapshot, window_counts, FeeWindowConfig,
+            FeeWindowSnapshot,
+        };
+        let as_cfs = |snap: &FeeWindowSnapshot| (snap.circuit(), snap.wasm());
+        let identity = FeeWindowSnapshot::identity();
+        let tip = match self.chain_height() {
+            Ok(h) if h.get() > 0 => h,
+            _ => return as_cfs(&identity),
+        };
+        let mut cache = self.fee_window_cache.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((cached_tip, snapshot)) = cache.as_ref() {
+            if *cached_tip == tip {
+                return as_cfs(snapshot);
+            }
+            if *cached_tip > tip {
+                // The tip moved backwards (reorg): the cached state may describe
+                // a branch that is no longer canonical. Recompute from identity.
+                *cache = None;
+            }
+        }
+        let (from, mut state) = cache
+            .as_ref()
+            .map(|(h, s)| (h.get(), *s))
+            .unwrap_or((0, identity));
+        let window = dwow_sdk::blockchain::FeeWindowId::WINDOW_SIZE;
+        let mut boundary = (from / window + 1) * window;
+        while boundary <= tip.get() {
+            let mut blocks = Vec::new();
+            for h in completed_window_heights(BlockHeight::new(boundary)) {
+                let Ok(block) = self.chain_block(h) else {
+                    return as_cfs(&state);
+                };
+                blocks.push(block);
+            }
+            let counts = window_counts(&blocks);
+            match next_snapshot(&state, counts, &FeeWindowConfig::default()) {
+                Ok((next, _flags)) => state = next,
+                Err(_) => return as_cfs(&state),
+            }
+            boundary += window;
+        }
+        *cache = Some((tip, state));
+        as_cfs(&state)
     }
 
     /// Fee-path execution risk factor for a contract.
@@ -1470,7 +1535,7 @@ impl Dww {
         // §6.3 step 6 / model steps 3-4: fee from a different DRKW cap.
         let fee = crate::fee_builder::prepare_fee_call(
             &self.wallet, &self.account_mgr, Some(&selected.cap_id), seed,
-            &transfer_circuit_costs, self.contract_risk_factor(&*NATIVE_TOKEN_CONTRACT_ID, false), WasmKb::ZERO, self.latest_fee_window_flags(),
+            &transfer_circuit_costs, self.contract_risk_factor(&*NATIVE_TOKEN_CONTRACT_ID, false), WasmKb::ZERO, self.fee_window_cfs().0,
             FeeTier::LOW,
         )?;
 
@@ -1724,7 +1789,7 @@ impl Dww {
         let fee = crate::fee_builder::prepare_fee_call(
             &self.wallet, &self.account_mgr, None, seed, &[],
             self.contract_risk_factor(&deployooor_id, false), WasmKb::ZERO,
-            self.latest_fee_window_flags(), FeeTier::LOW,
+            self.fee_window_cfs().0, FeeTier::LOW,
         )?;
         let tx_commitment =
             dwow_sdk::crypto::util::tx_commitment([&lock_call, &fee.contract_call()]);
@@ -1893,7 +1958,7 @@ impl Dww {
                 // `OBL-C198`: the fee call is prepared before it is proved, because its proof
                 // binds to the commitment derived over the transaction's whole call set.
                 let fee = crate::fee_builder::prepare_fee_call(
-                    &self.wallet, &self.account_mgr, None, seed, &circuit_costs, self.contract_risk_factor(&contract_id, _manifest_full.is_some()), WasmKb::ZERO, self.latest_fee_window_flags(),
+                    &self.wallet, &self.account_mgr, None, seed, &circuit_costs, self.contract_risk_factor(&contract_id, _manifest_full.is_some()), WasmKb::ZERO, self.fee_window_cfs().0,
             FeeTier::LOW,
         )?;
                 let fee_call = fee.contract_call();
@@ -1959,7 +2024,7 @@ impl Dww {
                         .unwrap_or_default()
                 };
                 let fee = crate::fee_builder::prepare_fee_call(
-                    &self.wallet, &self.account_mgr, None, seed, &circuit_costs, self.contract_risk_factor(&contract_id, _manifest_full.is_some()), WasmKb::ZERO, self.latest_fee_window_flags(),
+                    &self.wallet, &self.account_mgr, None, seed, &circuit_costs, self.contract_risk_factor(&contract_id, _manifest_full.is_some()), WasmKb::ZERO, self.fee_window_cfs().0,
                     FeeTier::LOW,
                 )?;
                 let fee_call = fee.contract_call();
@@ -2063,7 +2128,7 @@ impl Dww {
         // `OBL-C198`: the commitment is a derivation over the whole call set, so the fee call is
         // prepared first, the commitment taken over both calls, and only then is the fee proved.
         let fee = crate::fee_builder::prepare_fee_call(
-            &self.wallet, &self.account_mgr, None, seed, &circuit_costs, self.contract_risk_factor(&contract_id, _manifest_full.is_some()), WasmKb::ZERO, self.latest_fee_window_flags(),
+            &self.wallet, &self.account_mgr, None, seed, &circuit_costs, self.contract_risk_factor(&contract_id, _manifest_full.is_some()), WasmKb::ZERO, self.fee_window_cfs().0,
             FeeTier::LOW,
         )?;
         let fee_call = fee.contract_call();
