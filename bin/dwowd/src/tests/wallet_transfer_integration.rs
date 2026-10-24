@@ -1098,7 +1098,7 @@ fn test_single_call_manifest_build_is_refused_in_a_two_call_tx() -> TestResult<(
         let fee = dwow_wallet::fee_builder::prepare_fee_call(
             &dww.wallet, &dww.account_mgr, None, seed, &circuit_costs,
             dww.contract_risk_factor(&*BOX_CONTRACT_ID, true),
-            dwow_sdk::blockchain::WasmKb::ZERO, dww.latest_fee_window_flags(),
+            dwow_sdk::blockchain::WasmKb::ZERO, dww.fee_window_cfs().0,
             dwow_sdk::blockchain::FeeTier::LOW,
         ).expect("prepare_fee_call");
         let fee_call = fee.contract_call();

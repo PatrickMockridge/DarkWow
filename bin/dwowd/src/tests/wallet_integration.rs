@@ -250,6 +250,7 @@ fn test_wallet_integration() {
             verified_anchor_height: smol::lock::Mutex::new(BlockHeight::new(0)),
             burn_pk_cache: smol::lock::Mutex::new(None),
             mint_pk_cache: smol::lock::Mutex::new(None),
+            fee_window_cache: std::sync::Mutex::new(None),
         };
 
         dww.initialize_wallet().expect("wallet schema init");
@@ -883,6 +884,7 @@ required_barbs = ["Spend","Mine"]
             verified_anchor_height: smol::lock::Mutex::new(BlockHeight::new(0)),
             burn_pk_cache: smol::lock::Mutex::new(None),
             mint_pk_cache: smol::lock::Mutex::new(None),
+            fee_window_cache: std::sync::Mutex::new(None),
         };
         wrong_dww
             .initialize_wallet()

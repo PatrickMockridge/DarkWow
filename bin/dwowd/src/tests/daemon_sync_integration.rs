@@ -970,6 +970,38 @@ fn test_multi_block_reorg_state_consistency() {
             "tip must be the competing 4b after a depth-2 reorg",
         );
 
+        // OBL-C269: the two cumulative-supply representations must agree after
+        // the reconnect. The contracts-tree singleton is what `pow_reward_v1`
+        // reads; the supply-chain entry is what the next coinbase declares. The
+        // disconnect now reverses the contracts tree inside the same sled
+        // transaction as the supply removal, so a reorg cannot leave them torn.
+        {
+            use dwow_native_token_contract::{
+                NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT,
+                NATIVE_TOKEN_CONTRACT_INFO_TREE,
+            };
+            let info_prefix = dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
+                .hash_state_id(NATIVE_TOKEN_CONTRACT_INFO_TREE);
+            let mut key = Vec::from(info_prefix.as_slice());
+            key.extend_from_slice(NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT);
+            let stored = chain
+                .store
+                .contracts
+                .get(key)
+                .expect("read contracts singleton")
+                .expect("singleton exists after the reorg");
+            let entry = chain
+                .supply_chain
+                .get(BlockHeight::new(4))
+                .expect("supply chain entry at the tip");
+            let expected = dwow_serial::serialize(&entry.value_commit);
+            assert_eq!(
+                &stored[..],
+                expected.as_slice(),
+                "OBL-C269: contracts cumulative singleton must equal the supply-chain tip",
+            );
+        }
+
         let _ = std::fs::remove_file(&keys_path);
     });
 }
