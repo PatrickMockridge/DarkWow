@@ -26,11 +26,11 @@ services:
       resources:
         limits:
           cpus: '2'
-          # Measured 2026-10-23 (fa76d8c2ff, native 2-wallet run): 614 MiB at
-          # startup+genesis, 2461 MiB steady-state, 2696 MiB final at height ~190.
-          # Limit = peak + 20% (2696 x 1.2 = 3235.2), rounded up to 3236m. The
-          # commitment/nullifier maps grow with height, so a longer run raises the
-          # peak; the phase-9/report logs read it every run.
+          # Measured 2026-10-25 (19ba7cefce, native 2-wallet run after the typed
+          # fee-window fix): 569 MiB startup+genesis, 2250 MiB at the phase-20
+          # report, 2517 MiB live peak after ~1300 blocks. Limit 3236m keeps
+          # >= 719 MiB. The commitment/nullifier maps grow with height; the
+          # phase-9/report logs read the peak every run.
           memory: 3236m
 
     hostname: observer
@@ -82,9 +82,9 @@ services:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
     container_name: dwow-node0
-    # Measured 2026-10-23 (fa76d8c2ff): 2245 MiB at startup+genesis (9 contract
-    # deployments + ZK keygen), 2494 MiB steady-state/final at height ~190.
-    # Limit = peak + 20% (2494 x 1.2 = 2992.8), rounded up to 2993m.
+    # Measured 2026-10-25 (19ba7cefce): 1946 MiB at startup+genesis (9 contract
+    # deployments + ZK keygen), 2472 MiB at the phase-20 report, 2518 MiB live
+    # peak. Limit 2993m keeps >= 475 MiB.
     deploy:
       resources:
         limits:
@@ -156,9 +156,10 @@ services:
       resources:
         limits:
           cpus: '2'
-          # Measured 2026-10-23 (fa76d8c2ff): 266 MiB at startup+genesis (adopts
-          # genesis, no keygen), 2766 MiB final at height ~190 while synced.
-          # Limit = peak + 20% (2766 x 1.2 = 3319.2), rounded up to 3320m.
+          # Measured 2026-10-25 (19ba7cefce): 570 MiB at startup+genesis (adopts
+          # genesis, no keygen), 2984 MiB final and live peak while synced.
+          # Limit 3320m keeps 336 MiB, above the 256 MiB floor; an OOM under
+          # this limit is a new finding, not a reason to raise it.
           memory: 3320m
 
     hostname: node1

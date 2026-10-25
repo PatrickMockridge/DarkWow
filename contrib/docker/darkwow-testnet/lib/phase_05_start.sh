@@ -135,7 +135,7 @@ phase_start() {
             if [ -f "$keys_file" ]; then
                 VOLUME_ARGS+=(-v "${keys_file}:/run/config/keys.toml:ro")
             fi
-            # Wallet ceiling measured 2026-10-23 (fa76d8c2ff): 58 MiB at
+            # Wallet ceiling measured 2026-10-25 (19ba7cefce): 62 MiB at
             # startup+sync, 315 MiB after burn/mint/fee proving. Limit = peak +
             # 256 MiB floor headroom = 571m. The wallet runs no RandomX and no
             # Wasmer; phase 10 logs both peaks so the number stays evidence-based.
