@@ -1502,12 +1502,18 @@ impl CChainState {
             if fee_window_boundary {
                 if let Some(ref fw) = self.fee_window {
                     let counts = self.window_counts_before(height)?;
-                    let (circuit, wasm) = fw.adjust_from_window(counts);
+                    // The announcement is the direction from the stored previous
+                    // state to the derived one; compute it before `adjust` moves
+                    // prev forward. Both the miner's line and this one then carry
+                    // the same fields — the pipeline gate reads the last line.
+                    let (circuit, wasm) = fw.derive_window(counts);
+                    let flags = fw.encode_flags_for(circuit, wasm);
+                    let _ = fw.adjust_from_window(counts);
                     info!(target: "dwow_chain::connect_block",
-                        "Fee window boundary at height {}: premium_count={}, standard_count={}, circuit_premium={:?}, circuit_standard={:?}, wasm_premium={:?}, wasm_standard={:?}",
+                        "Fee window boundary at height {}: premium_count={}, standard_count={}, circuit_premium={:?}, circuit_standard={:?}, wasm_premium={:?}, wasm_standard={:?}, flags=0x{:04x}",
                         height, counts.premium(), counts.standard(),
                         circuit.premium(), circuit.standard(),
-                        wasm.premium(), wasm.standard());
+                        wasm.premium(), wasm.standard(), flags.get());
                 }
             }
 

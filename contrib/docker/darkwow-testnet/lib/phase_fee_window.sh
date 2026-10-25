@@ -37,10 +37,12 @@ _poll_height() {
 # Extract fee_window_flags from a node's miner log. Returns hex value or empty.
 _get_flags_from_log() {
     local node="$1"
-    # Total: returns empty (exit 0) when the node has not yet emitted a fee
-    # window boundary log (the "pre-boundary" state of fee-spec.md §12) — never
-    # a non-zero pipefail exit that aborts the caller under `set -e`.
-    docker logs "$node" 2>&1 | grep "Fee window boundary" | tail -1 | grep -oP 'flags=0x[0-9a-fA-F]+' | cut -d'=' -f2 || true
+    # Prefer the last boundary line that carries flags: the node logs the
+    # announcement (miner) and the connect-side derivation, and only the
+    # announcement historically carried flags. Total: returns empty (exit 0)
+    # when no boundary line exists — never a non-zero pipefail exit.
+    docker logs "$node" 2>&1 | grep "Fee window boundary" | grep "flags=0x" | tail -1 \
+        | grep -oP 'flags=0x[0-9a-fA-F]+' | cut -d'=' -f2 || true
 }
 
 # Extract a congestion-factor value (CfValue) from the last fee window boundary
