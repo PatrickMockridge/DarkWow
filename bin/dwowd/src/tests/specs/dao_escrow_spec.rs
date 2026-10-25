@@ -1075,11 +1075,11 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
             },
             // **The vote, and the `OBL-C160` fix's positive control.** The approval is over
             // `(CLAIM_ID_LIFECYCLE, voter_x, voter_y, 0)` — the quadruple the contract recomputes with its
-            // own `poseidon_hash` — and the parameters carry the *same* secret twice: as the 32 bytes
-            // `CapabilityProof.capability_secret`, which the contract feeds to `from_repr` to derive the
-            // tree key, and as the field element `VoteClaimV2` constrains the published instance to. If
-            // those two disagreed the proof would be rejected; if the message disagreed the approval would
-            // be (`Custom(54)`). Nothing else in the tree couples them, which is why the row is the check.
+            // own `poseidon_hash`. The capability secret is now the *client's witness* only;
+            // `vote_nullifier` is derived from it by the harness's client and carried in the params, and
+            // `VoteClaimV2` instances the same value from the witness. If those two disagreed the proof
+            // would be rejected; if the message disagreed the approval would be (`Custom(54)`). Nothing
+            // else in the tree couples them, which is why the row is the check.
             //
             // `is_zk: true` because `VoteClaimV2` is a real proof — the harness builds it, so this row
             // also exercises the client's witness assembly against the contract's instance order.
@@ -1095,13 +1095,9 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                         let approvals = gov.lock().unwrap().vote.clone();
                         let cap_proof = dwow_dao_escrow_contract::model::CapabilityProof {
                             capability_id: [1u8; 32],
-                            // The circuit's witness, as bytes. Non-canonical bytes would make the
-                            // contract's `from_repr` fall back to zero — silently, since it uses
-                            // `unwrap_or` — and the tree key would then be a value the proof never
-                            // published. `capability_secret` is a small literal, so it is canonical.
-                            capability_secret: capability_secret.to_repr(),
                             // Not zero: `IntentNullifier` refuses the all-zero encoding, and the field is
-                            // unread by `vote_claim_v1` (it derives its own key), so any legal value does.
+                            // unread by `vote_claim_v1` (the params carry the vote nullifier), so any
+                            // legal value does.
                             nullifier: dwow_sdk::crypto::IntentNullifier::from_base(pallas::Base::from(4u64)),
                             issuer_pub: [0u8; 32],
                             predicate_result: [0u8; 32],
