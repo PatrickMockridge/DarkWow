@@ -99,6 +99,8 @@
 ## Audit Reports
   - [Audit Index](arch/audit/README.md)
   - [Defect Tracker](arch/verification-hazop.md) ← what is broken, where it lives, and the control that proves it fixed
+  - [Risk Management](arch/risk-management.md) ← ALARP bands, dispositions, approval, and the performance/risk weights
+  - [Residual Risk Register](arch/residual-risk.md) ← accepted risks: the ALARP record, compensating control and review trigger
   - [Decisions and Accepted Risks](arch/decisions.md) ← non-defects: interpretations, accepted risks, and the retired launch register's decisions
   - [Launch Risk Register](arch/launch-risk-register.md) ← retired; the release checklist that reads the tracker
   - [Documentation Review — Findings Ledger](arch/audit/docs-review-2026-10-10.md) ← docs-vs-code campaign: 486 findings / 239 confirmed rows, remediated — all 270 ledger rows promoted as of 2026-10-12 at `b45b4d02d1`; `scripts/check-ledger-promotion.sh --check` proves it

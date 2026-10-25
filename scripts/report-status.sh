@@ -29,9 +29,9 @@
 # ─────────────────────────────────────────────────────────────────────────────────────────────────
 # TWO THINGS THAT WILL BITE YOU, both measured rather than guessed.
 #
-# * The register is a tracker with two statuses. There is no status vocabulary, no root-cause worklist
-#   and no second launch ledger; `scripts/check-defect-register.sh` is its only gate, and this report
-#   counts `open=N closed=N` from the Status column rather than ranking prose.
+# * The register has four dispositions and a risk column. There is no second launch ledger;
+#   `scripts/check-defect-register.sh` is its only gate, and this report counts the open set and
+#   publishes its ALARP band distribution from the Status and Risk columns, never from prose.
 # * `scripts/check-doc-index.sh` globs the WORKING TREE, not `git ls-files` (`:121-126`), so a gitignored
 #   `.md` under `reports/` is still inside the doc gate's scope. The raw capture therefore writes
 #   `.out`/`.err`/`.exit` and never a `.md`. Do not "tidy" those extensions.
@@ -75,6 +75,7 @@ REPORT = os.environ["REPORT"]
 SELF   = os.environ["SELF_TEST"] == "1"
 
 REGISTER = os.path.join(REPO, "doc", "src", "arch", "verification-hazop.md")
+RESIDUAL = os.path.join(REPO, "doc", "src", "arch", "residual-risk.md")
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────
 # The verdict vocabulary. Three values, and the middle one is the one that matters: NOT ESTABLISHED is
@@ -431,25 +432,45 @@ probes["genesis_ids"] = {"rc": 0 if agree else 1, "out":
     f"  display labels in execution.rs (compared as labels, not ids): {exec_label}\n"
     f"  agree={agree}"}
 
-# The defect tracker's census — two statuses, no severity column. The register is a tracker, not a
-# ranked document; `open=N closed=N` is the honest report, and a row turns green only through the
-# gate's code+control rule.
+# The defect tracker's census — four dispositions and the risk band of every live row. A row turns
+# green only through the gate's code+control rule; an accepted risk is a residual, never green.
 def register_rows():
-    """(id, status) for every tracker row."""
+    """(id, status, risk, proposition) for every main-table tracker row."""
     out = []
     with open(REGISTER, errors="replace") as f:
         for line in f:
-            m = re.match(r'^\|\s*(OBL-[CZT]\d+)\s*\|\s*(OPEN|CLOSED)\s*\|', line)
+            m = re.match(
+                r'^\|\s*(OBL-[CZT]\d+)\s*\|\s*(OPEN|BLOCKED|DEFERRED|CLOSED)\s*\|(.+?)\|\s*'
+                r'([CHML]/[DPT])\s*\|\s*$', line)
             if m:
-                out.append((m.group(1), m.group(2), "-", ""))
+                out.append((m.group(1), m.group(2), m.group(4), ""))
     return out, [], {}, 0
 rows, sev_recovered, table_shapes, arity_mismatch = register_rows()
-OPEN_TOKENS = {"OPEN"}
-open_rows = [(rid, tok, prop) for rid, tok, _sev, prop in rows if tok in OPEN_TOKENS]
+OPEN_TOKENS = {"OPEN", "BLOCKED", "DEFERRED"}
+SEV_W = {"C": 5, "H": 3, "M": 2, "L": 1}
+LIK_W = {"D": 5, "P": 3, "T": 1}
+def risk_band(sev_lik):
+    try:
+        sev, lik = sev_lik.split("/")
+        r = SEV_W[sev] * LIK_W[lik]
+    except (ValueError, KeyError):
+        return "unknown"
+    if r >= 15:
+        return "Intolerable"
+    if r <= 5 and sev not in ("C", "H"):
+        return "Broadly acceptable"
+    return "Tolerable"
+open_rows = [(rid, tok, sevlik) for rid, tok, sevlik, _prop in rows if tok in OPEN_TOKENS]
 open_by_sev = {}
+for _rid, _tok, _sevlik in open_rows:
+    _b = risk_band(_sevlik)
+    open_by_sev[_b] = open_by_sev.get(_b, 0) + 1
+_residual_count = len(re.findall(r"^\| R-\d+ \|", open(RESIDUAL, errors="replace").read(), re.M)) \
+    if os.path.exists(RESIDUAL) else 0
 _census_lines = [
     f"rows={len(rows)} unique={len(set(r[0] for r in rows))} "
-    f"open={len(open_rows)} closed={len(rows)-len(open_rows)}",
+    f"open={len(open_rows)} closed={len(rows)-len(open_rows)} residual={_residual_count}",
+    "bands=" + ",".join(f"{k}:{v}" for k, v in sorted(open_by_sev.items())),
 ]
 probes["register_census"] = {"rc": 0, "out": "\n".join(_census_lines)}
 
@@ -647,14 +668,16 @@ CRITERIA = [
       st="The defect tracker's schema holds and no row is green without code and a control",
       v=v_of("defect_tracker"), src="derived",
       inst="`scripts/check-defect-register.sh --working-tree`",
-      ev=f"{ev('defect_tracker')}. Five columns, OPEN/CLOSED only, every locus resolves; a CLOSED "
-         f"row needs a resolving, wired control and a code change in the same commit.",
+      ev=f"{ev('defect_tracker')}. Six columns, OPEN/BLOCKED/DEFERRED/CLOSED with a computed risk "
+         f"band, every locus resolves; a CLOSED row needs a resolving, self-tested control and a "
+         f"production code change (or a cited evidence commit), and the batch approval hash holds.",
       settle="—"),
  dict(g="Consensus", id="C2",
-      st="Open defects are counted, not ranked by a register severity",
-      v="%d open" % len(open_rows), src="derived",
-      inst="Status column of the tracker",
-      ev="; ".join(r for r, _, _ in open_rows) or "(none)",
+      st="Open defects are ranked by the register's ALARP band",
+      v=", ".join(f"{k}={v}" for k, v in sorted(open_by_sev.items())) or "0 open",
+      src="derived",
+      inst="Status and Risk columns of the tracker",
+      ev="; ".join(f"{r}({s})" for r, _, s in open_rows) or "(none)",
       settle="—"),
  dict(g="Consensus", id="C3",
       st="The umbrella's Tier-1 gates are all green",
@@ -706,8 +729,9 @@ CRITERIA = [
  dict(g="Consensus", id="C10",
       st="Consensus value cannot be minted through a contract",
       v=NOTEST, src="declared", inst="—",
-      ev="The tracker carries no severity, so this is not derivable from it. The old answer rested on "
-         "counting the register's C-severity rows — the ranking the tracker now refuses to invent.",
+      ev="The tracker now ranks rows by severity and likelihood, but no row is a mintability proof: "
+         "the C-severity open set is listed by criterion C2 and each is a contract finding, not a "
+         "consensus-mintability review.",
       settle="a dedicated consensus-mintability review"),
  dict(g="Consensus", id="C11",
       st="The heavyweight contract suite is green",
@@ -910,9 +934,11 @@ w("### The defect tracker census")
 w("")
 w(f"`{probes['register_census']['out']}`")
 w("")
-w("Counts are from the tracker's **Status column**: `OPEN` or `CLOSED`, nothing else. The tracker's")
-w("gate (`scripts/check-defect-register.sh`) is its only verdict, and it refuses a closure that does not")
-w("change code and carry a resolving, wired control.")
+w("Counts are from the tracker's **Status and Risk columns**: `OPEN`, `BLOCKED` and `DEFERRED` are open")
+w("defects, `CLOSED` is a fixed one, and residuals live in `residual-risk.md` with an ALARP record. The")
+w("tracker's gate (`scripts/check-defect-register.sh`) is its only verdict; it refuses a closure that")
+w("does not change production code and carry a resolving, self-tested control, and verifies the batch")
+w("approval hash over the tracker, residual register and risk policy.")
 w("")
 w("This report renders **no verdict on any open row's proposition** — it reports them as the register "
   "states them, with the instrument that read them. It also does not fix anything: a finding is recorded "

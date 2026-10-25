@@ -302,8 +302,11 @@ Every change MUST preserve them. Source document and section in parentheses.
   code-complete.
 - **Failures read from recorded sources verbatim.** Never reconstructed from
   memory. Failures written inline in plans, never placeholdered.
-- **Python model is the specification.** If model and Rust disagree, the model
-  is correct until proven otherwise. Fix the model first, then the Rust.
+- **Python model is the specification**, with two recorded exceptions:
+  `wallet_model.py` and `fee_model.py` are mirrors (their headers say so;
+  `reports/register-audit-2026-10-25.md` §7 records the classification). For
+  every other model, if model and Rust disagree, the model is correct until
+  proven otherwise. Fix the model first, then the Rust.
 
 ---
 

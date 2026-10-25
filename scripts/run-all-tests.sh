@@ -44,7 +44,14 @@ run_gate() {
     echo ""
     echo -e "=== ${label} ==="
     local status=0
+    local started=$SECONDS
     "$@" || status=$?
+    local elapsed=$((SECONDS - started))
+    # Gate cost is a measured quantity, not a guess: the portfolio's cost/benefit needs it, and a
+    # retirement that saves time is a risk decision, never a performance point (risk-management.md).
+    mkdir -p "${REPO_ROOT:-.}/reports"
+    printf '%s\t%s\t%s\t%s\n' "$(date -Is)" "$label" "$elapsed" "$status" \
+        >> "${REPO_ROOT:-.}/reports/gate-times.tsv"
     if [ "$status" -eq 0 ]; then
         echo -e "${GREEN}PASS:${NC} ${label}"
         PASSED=$((PASSED + 1))

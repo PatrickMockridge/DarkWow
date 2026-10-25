@@ -3,7 +3,8 @@
 
 This model MIRRORS the deployed Rust implementation (src/contract/native_token).
 On-chain changes land first; this model tracks them. Divergences are bugs in
-the model, not the spec.
+the model, not the spec. This is a recorded exception to the "Python model is
+the specification" rule — see reports/register-audit-2026-10-25.md §7.
 
 The three plaintext native-token elements, by entrypoint selector:
 

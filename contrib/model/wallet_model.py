@@ -18,7 +18,9 @@ This file is a Python model of the DarkWow wallet. It serves two purposes:
 AUTHORITY: The Rust implementation in bin/dww/ and src/sdk/ is the
 definitive implementation. The formal specification documents (doc/src/arch/)
 are the normative authority. Where this model diverges from either, update
-the model. The model is a companion, not a replacement.
+the model. The model is a companion, not a replacement. This is a recorded
+exception to the "Python model is the specification" rule — see
+reports/register-audit-2026-10-25.md §7.
 
 STRUCTURE: The file is organized in layers, bottom-up:
   Layer 0 — Cryptographic primitives (Pallas curve, Poseidon hash, AEAD)

@@ -129,14 +129,22 @@ after being deleted from the code comment; `Blocks=16MiB` survived in a module d
 ## Definition of closed out
 
 A tracker row may be marked **CLOSED** only when **all** of the following hold. The tracker is
-`doc/src/arch/verification-hazop.md`; it has two statuses, `OPEN` and `CLOSED`, and a row carries a
-code locus and a control. A status edit, label, exception, counter wording or documentation change
-satisfies **none** of these by itself. A non-defect is deleted or moved to
-`doc/src/arch/decisions.md`; it is never relabelled green.
+`doc/src/arch/verification-hazop.md`; its main table uses `OPEN`, `BLOCKED`, `DEFERRED` and
+`CLOSED`, with `RESIDUAL`, `MERGED` and `DECISION` as tombstones in the Settled-IDs appendix. A row
+carries a code locus, a control and a risk (`S/L`, band computed per
+[`risk-management.md`](../arch/risk-management.md)). A status edit, label, exception, counter
+wording or documentation change satisfies **none** of these by itself. A non-defect is deleted or
+moved to `doc/src/arch/decisions.md`; it is never relabelled green.
+
+**A residual is not a closure.** An accepted risk moves to `doc/src/arch/residual-risk.md` with the
+ALARP record of `risk-management.md` §6 (cheapest control, why not now, compensating control,
+reopening trigger, owner) and the batch approval of §7. The ID is tombstoned in the tracker
+appendix; it stays unresolved, and the health report counts it.
 
 1. **The defect is impossible in current code.** The path that produced the behavior is gone, or it
    is guarded on the real path; the root cause was removed rather than compensated for (R2). A guard
-   beside the defect does not close it.
+   beside the defect does not close it. A fix that adds a guard SHALL also name the failure mode the
+   guard could introduce and the control for it, or remove the guard (R2/R4/R7).
 2. **A failing-before control exists.** A control was observed **failing with the defect present**
    (a pre-fix run, a mutation, or a planted-defect self-test) and passes after the fix (R5, R8). "It
    compiles" and "the gate is green" are not evidence.
@@ -155,9 +163,13 @@ satisfies **none** of these by itself. A non-defect is deleted or moved to
    the genesis pin is re-recorded once and its positive and negative controls run. "Rides the pin
    batch" is not closure until the batch has landed.
 9. **The tracker enforces it.** `scripts/check-defect-register.sh` refuses a row that moves to
-   `CLOSED` in a change set touching only docs, reports or exceptions, and refuses a `CLOSED` row
-   whose control does not resolve or is not wired; `hooks/pre-commit` blocks the same two cases. A
-   closure the gate refuses is not a closure.
+   `CLOSED` in a change set touching only docs, reports, `scripts/`, `hooks/` or `contrib/ci/` (a
+   production change under `src/`, `bin/`, `proofs/` or `contrib/` is what counts as code), refuses
+   a `CLOSED` row whose control does not resolve, whose script control has no `--self-test`, or
+   whose control is the locus itself, refuses an ID that disappears without a tombstone and an ID
+   live in the tracker and in `decisions.md`/`residual-risk.md`, and verifies the batch approval's
+   `scope_hash`; `hooks/pre-commit` blocks the same cases. A closure the gate refuses is not a
+   closure.
 
 A requirement may be reclassified as a **non-defect** only against the authoritative specification
 (text and the commit that removed it), recorded separately from any fix; it is never used to green a

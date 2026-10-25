@@ -33,8 +33,9 @@ vacuous. The last is not decoration — this layer has deleted more than one sta
 nothing, and its gate cannot see vacuity inside a `∀ … →`.
 
 The repository's own rule governs readiness: **the Python model is the specification** (register,
-`OBL-C29`). A mechanism whose Python does not exist is not ready to be modelled, and the table says which
-those are.
+`OBL-C29`), except the two declared mirrors `wallet_model.py` and `fee_model.py`
+(`reports/register-audit-2026-10-25.md` §7). A mechanism whose Python does not exist is not ready to be
+modelled, and the table says which those are.
 
 ## The mechanisms
 

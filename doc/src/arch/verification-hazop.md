@@ -1,67 +1,67 @@
 # Verification defect register — a tracker, not a task
 
-This file tracks what is broken so it gets fixed. It is not a work product: a change to it is
-worth nothing unless the code changed in the same commit. The normative rule is
-[`doc/src/dev/hazop-rules.md`](../dev/hazop-rules.md) §"Definition of closed out".
+This file tracks what is broken so it gets fixed. A change to it is worth nothing unless the code
+changed in the same commit (for `CLOSED`) or the batch approval covers it (for a residual). The
+normative rules are [`hazop-rules.md`](../dev/hazop-rules.md) §"Definition of closed out" and
+[`risk-management.md`](risk-management.md).
 
-**Row shape.** `ID | Status | Defect (one sentence) | Locus (path:function) | Control`.
-`Status` is `OPEN` or `CLOSED`; there is no `PARTLY`, `FIXED`, `DECISION` or
-`ACCEPTED-WITH-REASON` here. Non-defects live in [`decisions.md`](decisions.md). History
-lives in git. A live row is capped at 600 characters.
+**Row shape.** `ID | Status | Defect | Locus | Control | Risk`. The main table uses `OPEN`,
+`BLOCKED`, `DEFERRED` and `CLOSED`. `RESIDUAL`, `MERGED` and `DECISION` are tombstones in the
+Settled-IDs appendix: a residual's record is in [`residual-risk.md`](residual-risk.md), a decision's
+is in [`decisions.md`](decisions.md). `Risk` is `S/L` with `S ∈ {C,H,M,L}` and `L ∈ {D,P,T}`; the
+band is computed from [`risk-management.md`](risk-management.md) §4, never written by hand. An
+`OPEN` row carries a resolving control or `plan:<text>`; `—` is forbidden. A row is capped at 600
+characters.
 
-**Closure is code.** `scripts/check-defect-register.sh` refuses a row that moves to `CLOSED`
-in a change set that touches only docs/reports/exceptions, refuses a `CLOSED` row whose
-control does not resolve or is not wired, and refuses a late closure whose evidence commit
-does not change code. The pre-commit hook enforces the same two rules. The one legitimate
-register-only commit is minting a new `OPEN` row.
+**Closure is code.** `scripts/check-defect-register.sh` refuses a `CLOSED` row whose control does
+not resolve, whose script control has no `--self-test`, or whose control is the locus itself; refuses
+a closure commit that changes only docs, reports, `scripts/`, `hooks/` or `contrib/ci/`; refuses an
+ID that disappears without a tombstone; refuses an ID live in the tracker and in `decisions.md` or
+`residual-risk.md`; and verifies the batch approval's `scope_hash`. `CLOSED` still means impossible
+in current code with a failing-before control (the nine conditions in `hazop-rules.md`).
 
-| ID | Status | Defect | Locus | Control |
-|---|---|---|---|---|
-| OBL-C102 | OPEN | A protected fund's holdings are inert bookkeeping (`total_funds: 0`); the payout is not bound to the fund's purse. | `src/contract/drain_protection/src/entrypoint.rs:init_fund_process_instruction_v1` | `test_heavyweight_drain_protection` |
-| OBL-C109 | OPEN | The Python maturity model keys by commitment while the code keys by nullifier; they are not the same source of truth. | `contrib/model/chain_model.py:is_commitment_mature` | `—` |
-| OBL-C130 | OPEN | The wallet selects a capability by asset id only, not by `ContractId` and barbs as §6.4.1 requires. | `bin/dww/src/dispatch.rs:dispatch_sync` | `scripts/check-wallet-kernel.sh` |
-| OBL-C136 | OPEN | A fixed 5-second wait, not wait-until-consistent, makes the event-graph DAG test fail under load with no stated cause. | `src/event_graph/tests.rs:bootstrap_nodes` | `—` |
-| OBL-C160 | OPEN | A vote's capability secret is read from public call data, so the one-vote property rests on the group approval rather than a secret. | `src/contract/dao_escrow/src/entrypoint.rs:vote_claim_v1` | `test_heavyweight_dao_escrow` |
-| OBL-C202 | OPEN | An instrument is a gate only over what it was pointed at; the bearer_bond round-trip covers two arms and the spec covers five. | `src/contract/test-harness/tests/encode_roundtrip.rs` | `scripts/check-codec-size-derivation.sh` |
-| OBL-C205 | OPEN | No prove+verify control goes through native_token's burn arm; its vector is built by hand and can disagree with the circuit. | `src/contract/native_token/src/entrypoint/mod.rs:burn_get_metadata` | `—` |
-| OBL-C206 | OPEN | A PI-7 block-hash mismatch is not reproducible under an identical configuration, so a single failure cannot be read as a verdict. | `bin/dwowd/src/tests/uniform_runner.rs:run_heavyweight_test` | `test_heavyweight_stablecoin` |
-| OBL-C214 | OPEN | The wallet's hardcoded contract registry is not compared with any `manifest.toml`; the three homes can drift. | `bin/dww/src/contract_metadata.rs:CONTRACT_METADATA_REGISTRY` | `—` |
-| OBL-C239 | OPEN | `validate_field_type`'s default arm accepts an unknown type the encoder then rejects. | `bin/dww/src/manifest_resolver.rs:validate_field_type` | `—` |
-| OBL-C240 | OPEN | VM exclusivity is type-carried, but the lock that carries it is a blocking `std::sync::Mutex` (residual is OBL-C259). | `src/linear/src/execution.rs:TxBackend` | `per_vm_mutex_serializes_hash_calls` |
-| OBL-C241 | OPEN | `Membership::derive_note` hashes a different preimage than the circuit and client, so the helper builds calls the circuit refuses. | `src/contract/dao_escrow/src/model/mod.rs:Membership::derive_note` | `—` |
-| OBL-C246 | OPEN | The same-block relayer `initialize`+`deploy_capital` arrangement was removed rather than repaired; no endpoint-named control covers it. | `bin/dwowd/src/tests/heavyweight_pipeline.rs:test_relayer_lifecycle_heavyweight` | `test_relayer_lifecycle_heavyweight` |
-| OBL-C248 | OPEN | `prove_coverage_v1` is unauthenticated and `total_staked` is never updated; only the empty-success half is fixed. | `src/contract/bearer_bond/src/entrypoint/mod.rs:verify_coverage_v1` | `test_heavyweight_bearer_bond` |
-| OBL-C250 | OPEN | The deploy's stored WASM hash was a local addition: it committed to the module's length rather than its bytes and nothing read it. The upstream port deletes the write, the read-back and the field; closure awaits the heavyweight control. | `src/contract/deployooor/src/entrypoint/deploy_v1.rs:deploy_process_instruction_v1` | `test_heavyweight_deployooor` |
-| OBL-C251 | OPEN | A redemption pays no collateral to the redeemer and the spend hook counts burned nullifiers as redeemed value; the asset is not bound. | `src/contract/stablecoin/src/entrypoint.rs:process_redeem_stable_instruction` | `test_heavyweight_stablecoin` |
-| OBL-C253 | OPEN | An exit trusts the caller for member identity and weight, and the payout is not checked against the fund's purse. | `src/contract/drain_protection/src/entrypoint.rs:exit_process_instruction_v1` | `test_heavyweight_drain_protection` |
-| OBL-C259 | OPEN | A thread waiting on the RandomX VM lock blocks a smol executor thread. | `src/linear/src/chain_state.rs:CChainState::vm_cache` | `—` |
-| OBL-C260 | OPEN | The generic manifest client constructs one proof per call, so a multi-proof arm (PN redeem/transfer/otc_swap) cannot be built; it now fails closed. | `src/sdk/src/contract_client.rs:ManifestCallPlan::prove` | `—` |
-| OBL-C261 | OPEN | The 400M gas exhaustion is in **DeployV1** at height 2, not LockV1: the local `wasm_content_commitment` ran one Poseidon hash per 64-byte chunk over the 292,574-byte drain_protection module (~4,571 hashes) inside the guest (`fn_code=0x01` was the call-tree length prefix, not the selector). The upstream port deletes the content commitment. | `src/contract/deployooor/src/entrypoint/deploy_v1.rs:deploy_process_instruction_v1` | `test_heavyweight_deployooor` |
-| OBL-C262 | OPEN | Scan-time manifest/WASM Layer-2 comparison has no manifest to read: upstream `DeployV1` `ix` is the new contract's `__initialize` payload, and the port removed the local manifest envelope. The comparison remains available for manifests the wallet holds, but a user deployment's manifest is wallet-side and is not checked against that deployment's WASM at scan time. | `bin/dww/src/scan.rs:scan_block_linear` | `—` |
-| OBL-C263 | OPEN | The container build hand-duplicated the contract recipe as bare cargo commands: no `-C link-arg=--max-memory`, and strip/location-detail only for the first of 32 packages. The image's genesis artifacts declared no memory maximum and were refused at instantiation; the same drift breaks genesis-hash parity. | `contrib/docker/darkwow-testnet/Dockerfile:contracts` | `contrib/wasm_artifact_check.sh` |
-| OBL-C264 | OPEN | The pipeline counted a `Restarting` node as running, passed mining from a startup banner, and reported the genesis refusal as a mining timeout; the true artifact error appeared only in the final log tail. | `contrib/docker/darkwow-testnet/lib/phase_09_blocks.sh:phase_blocks` | `—` |
-| OBL-C265 | CLOSED | A wire VarInt length was reserved and zero-filled before its bytes were read, so one corrupt length (0xFE/0xFF) in scan call data or `DeployParamsV1` OOM-killed the wallet or node; the introducing commit `e42f2c1c1a`'s `try_reserve` bound is false under Linux overcommit. The control passes (`23 passed`) and its planted-defect run FAILED. | `src/serial/src/lib.rs:u8::decode_vec` | `vec_u8_decode_rejects_length_one_over_cap` |
-| OBL-C266 | OPEN | PoW hashes in RandomX cache (light) mode on every path — no dataset is ever allocated — while consensus documents claim a ~4 GB dataset that forces memory-hard computation; either the property is not enforced or the documents are false. The node-memory audit found it; no fix is claimed. | `src/linear/src/chain_state.rs:get_vm` | `—` |
-| OBL-C267 | CLOSED | The fee window's congestion factors were advanced only by a mining node's own mempool queue depths and never recomputed from applied blocks, so a syncing or boundary-losing node kept identity factors; the spec's identical-inputs premise was false and 13.1 contradicted FI-FLAG-2/3. The factors are now typed state derived on every applying node from the completed window's applied FeeV3 tiers, snapshotted per boundary and restored on disconnect. | `src/linear/src/fee_window.rs:next_snapshot` | `test_next_snapshot_is_deterministic` |
-| OBL-C268 | CLOSED | node1 set RPC_PORT=31346 while entrypoint.sh defaulted MANAGEMENT_PORT=31346, so both listeners targeted one port, the management server won, and blockchain.get_height was unreachable; Phase 9 reported height=0 as sync lag. node1 now has MANAGEMENT_PORT=31344 and MM_RPC_PORT=31350, and the entrypoint refuses any duplicate listener port. The 2026-10-25 run reports node1 height 38 then 1298 and its boundary matches node0. | `contrib/docker/darkwow-testnet/entrypoint.sh:MANAGEMENT_PORT` | `contrib/docker/darkwow-testnet/test_pipeline.sh` |
-| OBL-C269 | OPEN | The cumulative-commit singletons in the contracts tree and the supply-chain tree are written non-atomically on reorg (rollback under no lock, contracts undo in a separate sled write, WASM outside connect_lock), so a failed or concurrent reorg can leave them divergent; the retry path masks it by rewriting from the supply chain. Not evidenced as the 2026-10-24 trigger. | `bin/dwowd/src/block_acceptor.rs:rollback_cumulative_commit` | `—` |
-| OBL-C270 | CLOSED | L3-FW-2 compared each node's last boundary log line with no boundary-height check or convergence wait, and a field-poor extra line made L3-FW-1 report no boundary line while two were present. The gate now reads the last flagged line at node0's named boundary and waits for each node to reach it; the 2026-10-25 run passes L3-FW-1 and L3-FW-2 with node1 matching at boundary 20. | `contrib/docker/darkwow-testnet/lib/phase_fee_window.sh:_get_cf_at_height` | `contrib/docker/darkwow-testnet/test_pipeline.sh` |
-| OBL-C45 | OPEN | The contracts tree and the supply-chain tree are not reconciled against each other; the RPC returns stored state. | `bin/dwowd/src/rpc/blockchain.rs:blockchain_get_cumulative_supply` | `test_supply_chain_audit` |
-| OBL-C54 | OPEN | A stratum submit can be judged against a template a concurrent login has already replaced; writes are serialised but unversioned. | `bin/dwowd/src/rpc/stratum.rs:stratum_submit` | `—` |
-| OBL-C56 | OPEN | The sync-state check and the mining act are not atomic; a transition can land in the window before accept. | `bin/dwowd/src/lib.rs:miner_task` | `—` |
-| OBL-C74 | OPEN | 24 of 32 manifests declare no `required_barbs`/`note_schema`, and six declare no `[[capabilities]]`. | `src/contract/stablecoin/manifest.toml` | `—` |
-| OBL-C92 | OPEN | A stablecoin redemption releases the collateral it claims in the ledger but pays no collateral to the redeemer. | `src/contract/stablecoin/src/entrypoint.rs:process_redeem_stable_instruction` | `test_heavyweight_stablecoin` |
-| OBL-C97 | OPEN | The exit arm of a protected fund does not apply the fund's stored spend authority (the member-authorization design is OBL-C253). | `src/contract/drain_protection/src/entrypoint.rs:exit_process_instruction_v1` | `test_heavyweight_drain_protection` |
-| OBL-T22 | OPEN | The write path's encode step is unmodelled, so byte-identity of the Lean wallet state is proved in one direction only. | `proofs/lean/src/DarkFi/Capability/WalletState.lean:encodeConfirmed` | `scripts/check-lean-suite.sh` |
-| OBL-T24 | OPEN | The mempool's admission and expiry rules are modelled nowhere in the Lean wallet model. | `proofs/lean/src/DarkFi/Capability/WalletState.lean` | `—` |
-| OBL-Z12 | OPEN | A circuit's integer-quotient proof is about field residues unless the operand bound is established; the Lean theorem states the bound and nothing on chain establishes it. | `proofs/lean/src/DarkFi/BaseDivGadget.lean:qr_unique` | `scripts/check-circuit-instance-derivation.sh` |
-| OBL-Z18 | OPEN | 51 `constrain_equal_base` sites have no verifier-visible operand; each is adjudicated, but the sweep is not closed. | `scripts/check-pubkey-binding.sh` | `scripts/check-pubkey-binding.sh` |
-| OBL-Z23 | OPEN | 117 values a circuit computes reach no constraint (100 dead witnesses, 17 dead derivations); no undeclared one is in a genesis circuit. | `scripts/check-circuit-dead-values.sh` | `scripts/check-circuit-dead-values.sh` |
-| OBL-Z3 | OPEN | The circuit-domain gate accepts any `DOMAIN_`/`witness_base` token in a `poseidon_hash` call and never checks it is the right domain for that hash's purpose. | `scripts/check-circuit-domain-separation.sh` | `scripts/check-circuit-domain-separation.sh` |
+**Counts.** 45 decisions and interpretations live in [`decisions.md`](decisions.md); the gate checks
+this number.
+
+| ID | Status | Defect | Locus | Control | Risk |
+|---|---|---|---|---|---|
+| OBL-C102 | OPEN | A protected fund's holdings are inert bookkeeping (`total_funds: 0`); the payout is not bound to the fund's purse. | `src/contract/drain_protection/src/entrypoint.rs:init_fund_process_instruction_v1` | `test_heavyweight_drain_protection` | C/P |
+| OBL-C109 | OPEN | The Python maturity model keys by commitment while the code keys by nullifier; they are not the same source of truth. | `contrib/model/chain_model.py:is_commitment_mature` | `plan: model-vs-code maturity test` | H/P |
+| OBL-C130 | OPEN | The wallet selects a capability by asset id only, not by `ContractId` and barbs as §6.4.1 requires. | `bin/dww/src/dispatch.rs:dispatch_sync` | `scripts/check-wallet-kernel.sh` | H/P |
+| OBL-C136 | OPEN | A fixed 5-second wait, not wait-until-consistent, makes the event-graph DAG test fail under load with no stated cause. | `src/event_graph/tests.rs:bootstrap_nodes` | `plan: bounded condition poll in the DAG test` | L/D |
+| OBL-C160 | OPEN | A vote's capability secret is read from public call data, so the one-vote property rests on the group approval rather than a secret. | `src/contract/dao_escrow/src/entrypoint.rs:vote_claim_v1` | `test_heavyweight_dao_escrow` | H/P |
+| OBL-C202 | OPEN | An instrument is a gate only over what it was pointed at; the bearer_bond round-trip covers two arms and the spec covers five. | `src/contract/test-harness/tests/encode_roundtrip.rs` | `scripts/check-codec-size-derivation.sh` | M/D |
+| OBL-C205 | OPEN | No prove+verify control goes through native_token's burn arm; its vector is built by hand and can disagree with the circuit. | `src/contract/native_token/src/entrypoint/mod.rs:burn_get_metadata` | `plan: prove+verify burn-arm vector test` | M/D |
+| OBL-C206 | OPEN | A PI-7 block-hash mismatch is not reproducible under an identical configuration, so a single failure cannot be read as a verdict. | `bin/dwowd/src/tests/uniform_runner.rs:run_heavyweight_test` | `test_heavyweight_stablecoin` | M/P |
+| OBL-C214 | OPEN | The wallet's hardcoded contract registry is not compared with any `manifest.toml`; the three homes can drift. | `bin/dww/src/contract_metadata.rs:CONTRACT_METADATA_REGISTRY` | `plan: registry-vs-manifest comparison gate` | H/P |
+| OBL-C239 | OPEN | `validate_field_type`'s default arm accepts an unknown type the encoder then rejects. | `bin/dww/src/manifest_resolver.rs:validate_field_type` | `plan: unknown-type rejection test` | M/P |
+| OBL-C241 | OPEN | `Membership::derive_note` hashes a different preimage than the circuit and client, so the helper builds calls the circuit refuses. | `src/contract/dao_escrow/src/model/mod.rs:Membership::derive_note` | `plan: circuit/host/client preimage agreement test` | H/P |
+| OBL-C246 | OPEN | The same-block relayer `initialize`+`deploy_capital` arrangement was removed rather than repaired; no endpoint-named control covers it. | `bin/dwowd/src/tests/heavyweight_pipeline.rs:test_relayer_lifecycle_heavyweight` | `test_relayer_lifecycle_heavyweight` | M/P |
+| OBL-C248 | OPEN | `prove_coverage_v1` is unauthenticated and `total_staked` is never updated; only the empty-success half is fixed. | `src/contract/bearer_bond/src/entrypoint/mod.rs:verify_coverage_v1` | `test_heavyweight_bearer_bond` | C/P |
+| OBL-C253 | OPEN | An exit trusts the caller for member identity and weight, and the payout is not checked against the fund's purse. | `src/contract/drain_protection/src/entrypoint.rs:exit_process_instruction_v1` | `test_heavyweight_drain_protection` | C/P |
+| OBL-C259 | OPEN | A thread waiting on the RandomX VM lock blocks a smol executor thread (the residual of the C240 exclusivity fix; C240 is merged here). | `src/linear/src/chain_state.rs:CChainState::vm_cache` | `plan: async-aware VM lock and liveness test` | H/P |
+| OBL-C260 | OPEN | The generic manifest client constructs one proof per call, so a multi-proof arm (PN redeem/transfer/otc_swap) cannot be built; it now fails closed. | `src/sdk/src/contract_client.rs:ManifestCallPlan::prove` | `plan: multi-proof call plan and refusal test` | M/D |
+| OBL-C261 | CLOSED | The 400M gas exhaustion was in **DeployV1** at height 2: the local `wasm_content_commitment` ran one Poseidon hash per 64-byte chunk over the 292,574-byte drain_protection module (~4,571 hashes) inside the guest (`fn_code=0x01` was the call-tree length prefix, not the selector). The upstream port deleted the content commitment; the height-2 gas failure is the failing-before evidence and `test_heavyweight_deployooor` passes. evidence:f1c551ee9b | `src/contract/deployooor/src/entrypoint/deploy_v1.rs:deploy_process_instruction_v1` | `test_heavyweight_deployooor` | H/D |
+| OBL-C263 | CLOSED | The container build hand-duplicated the contract recipe as bare cargo commands: no `-C link-arg=--max-memory`, and strip/location-detail only for the first of 32 packages. The image's genesis artifacts declared no memory maximum and were refused at instantiation. The build now goes through the shared recipe with in-image gates; the artifact check's self-test is the failing-before control. evidence:24278c2508 | `contrib/docker/darkwow-testnet/Dockerfile:contracts` | `contrib/wasm_artifact_check.sh` | H/D |
+| OBL-C264 | CLOSED | The pipeline counted a `Restarting` node as running, passed mining from a startup banner, and reported the genesis refusal as a mining timeout; the true artifact error appeared only in the final log tail. Phase 9 now fails fast with the named artifact logs; the 2026-10-25 run passes. evidence:24278c2508 negative:2026-10-23 genesis refusal was reported as a mining timeout | `contrib/docker/darkwow-testnet/lib/phase_09_blocks.sh:phase_blocks` | `contrib/docker/darkwow-testnet/test_pipeline.sh` | M/D |
+| OBL-C265 | CLOSED | A wire VarInt length was reserved and zero-filled before its bytes were read, so one corrupt length (0xFE/0xFF) in scan call data or `DeployParamsV1` OOM-killed the wallet or node; the introducing commit `e42f2c1c1a`'s `try_reserve` bound is false under Linux overcommit. The control passes (`23 passed`) and its planted-defect run FAILED. evidence:e2b262e517 | `src/serial/src/lib.rs:u8::decode_vec` | `vec_u8_decode_rejects_length_one_over_cap` | H/D |
+| OBL-C266 | OPEN | PoW hashes in RandomX cache (light) mode on every path — no dataset is ever allocated — while consensus documents claim a ~4 GB dataset that forces memory-hard computation; either the property is not enforced or the documents are false. The audit records it as a decision required, not a residual. | `src/linear/src/chain_state.rs:get_vm` | `plan: decide cache-mode vs docs, then enforce or correct` | H/P |
+| OBL-C267 | CLOSED | The fee window's congestion factors were advanced only by a mining node's own mempool queue depths and never recomputed from applied blocks, so a syncing or boundary-losing node kept identity factors; the spec's identical-inputs premise was false and 13.1 contradicted FI-FLAG-2/3. The factors are now typed state derived on every applying node from the completed window's applied FeeV3 tiers, snapshotted per boundary and restored on disconnect. evidence:f2541499a5 | `src/linear/src/fee_window.rs:next_snapshot` | `test_next_snapshot_is_deterministic` | C/D |
+| OBL-C268 | CLOSED | node1 set RPC_PORT=31346 while MANAGEMENT_PORT defaulted to 31346; both listeners targeted one port, management won, and blockchain.get_height was unreachable, which Phase 9 reported as sync lag. node1 now has MANAGEMENT_PORT=31344 and MM_RPC_PORT=31350, and the entrypoint refuses duplicate listeners. The 2026-10-25 run reports node1 height 38 then 1298. evidence:9af26fb23a negative:2026-10-24 node1 get_height answered method-not-found | `contrib/docker/darkwow-testnet/entrypoint.sh:MANAGEMENT_PORT` | `contrib/docker/darkwow-testnet/test_pipeline.sh` | M/D |
+| OBL-C269 | OPEN | The cumulative-commit singletons in the contracts tree and the supply-chain tree are written non-atomically on reorg (rollback under no lock, contracts undo in a separate sled write, WASM outside connect_lock), so a failed or concurrent reorg can leave them divergent; the retry path masks it by rewriting from the supply chain. Not evidenced as the 2026-10-24 trigger. | `bin/dwowd/src/block_acceptor.rs:rollback_cumulative_commit` | `plan: fault-injection reorg control` | H/P |
+| OBL-C270 | CLOSED | L3-FW-2 compared each node's last boundary log line with no boundary-height check or convergence wait, and a field-poor extra line made L3-FW-1 report no boundary line while two were present. The gate now reads the last flagged line at node0's named boundary and waits for each node to reach it; the 2026-10-25 run passes with node1 matching at boundary 20. evidence:9af26fb23a negative:2026-10-24 L3-FW-1 false failure | `contrib/docker/darkwow-testnet/lib/phase_fee_window.sh:_get_cf_at_height` | `contrib/docker/darkwow-testnet/test_pipeline.sh` | M/D |
+| OBL-C45 | OPEN | The contracts tree and the supply-chain tree are not reconciled against each other; the RPC returns stored state. | `bin/dwowd/src/rpc/blockchain.rs:blockchain_get_cumulative_supply` | `test_supply_chain_audit` | H/P |
+| OBL-C54 | OPEN | A stratum submit can be judged against a template a concurrent login has already replaced; writes are serialised but unversioned. | `bin/dwowd/src/rpc/stratum.rs:stratum_submit` | `plan: template generation id checked at submit` | M/P |
+| OBL-C56 | OPEN | The sync-state check and the mining act are not atomic; a transition can land in the window before accept. | `bin/dwowd/src/lib.rs:miner_task` | `plan: atomic mining gate and test` | M/D |
+| OBL-C92 | OPEN | A stablecoin redemption releases the collateral it claims in the ledger but pays no collateral to the redeemer (C251 merged here). | `src/contract/stablecoin/src/entrypoint.rs:process_redeem_stable_instruction` | `test_heavyweight_stablecoin` | C/D |
+| OBL-C97 | OPEN | The exit arm of a protected fund does not apply the fund's stored spend authority (the member-authorization design is OBL-C253). | `src/contract/drain_protection/src/entrypoint.rs:exit_process_instruction_v1` | `test_heavyweight_drain_protection` | C/P |
+| OBL-Z12 | OPEN | A circuit's integer-quotient proof is about field residues unless the operand bound is established; the Lean theorem states the bound and nothing on chain establishes it. | `proofs/lean/src/DarkFi/BaseDivGadget.lean:qr_unique` | `scripts/check-circuit-instance-derivation.sh` | H/P |
+| OBL-Z18 | OPEN | 51 `constrain_equal_base` sites have no verifier-visible operand; each is adjudicated, but the sweep is not closed. | `scripts/check-pubkey-binding.sh` | `plan: external adjudication corpus (not the checker itself)` | M/D |
+| OBL-Z3 | OPEN | The circuit-domain gate accepts any `DOMAIN_`/`witness_base` token in a `poseidon_hash` call and never checks it is the right domain for that hash's purpose. | `scripts/check-circuit-domain-separation.sh` | `plan: purpose-specific domain token check` | H/P |
 
 ## Non-defects
 
-44 decisions, accepted risks and spec interpretations are in
+45 decisions, accepted risks and spec interpretations are in
 [`decisions.md`](decisions.md). They are not rows here and cannot green a defect.
 
 ## Settled ids (citation appendix)
@@ -330,8 +330,8 @@ citations elsewhere in the tree still resolve.
 | OBL-C233 | restated |
 | OBL-C234 | restated |
 | OBL-C32 | accepted |
-| OBL-C42 | accepted |
-| OBL-C66 | accepted |
+| OBL-C42 | residual (R-06, see residual-risk.md) |
+| OBL-C66 | residual (R-07, see residual-risk.md) |
 | OBL-C76 | decision |
 | OBL-C80 | accepted |
 | OBL-C82 | decision |
@@ -349,3 +349,11 @@ citations elsewhere in the tree still resolve.
 | OBL-Z5 | decision |
 | OBL-Z6 | decision |
 | OBL-Z8 | accepted |
+| OBL-C74 | residual (R-02, see residual-risk.md) |
+| OBL-C240 | merged into OBL-C259 |
+| OBL-C250 | decision (see decisions.md) |
+| OBL-C251 | merged into OBL-C92 |
+| OBL-C262 | residual (R-01, see residual-risk.md) |
+| OBL-T22 | residual (R-03, see residual-risk.md) |
+| OBL-T24 | residual (R-04, see residual-risk.md) |
+| OBL-Z23 | residual (R-05, see residual-risk.md) |
