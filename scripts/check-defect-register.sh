@@ -282,8 +282,17 @@ def check(register_text, prev_text, changed, root, mode="work"):
     if fresh and is_doc_only(changed):
         # A late closure is legitimate only when it cites the commit that changed production
         # code (the rule's own text), not merely a docs-only status edit.
+        #
+        # A PROCESS row is the exception: its production artifact is the control script, not a
+        # contract or binary. A row whose locus is under scripts/, hooks/ or script/ closes when
+        # that control script changed in this commit (and passed the control/self-test checks
+        # above). A code row cannot use this door: its locus is src/, bin/, proofs/ or contrib/.
         for oid in fresh:
             row = rows[oid]
+            locus_path = strip_ticks(row["locus"]).partition(":")[0]
+            control = strip_ticks(row["control"])
+            if locus_path.startswith(("scripts/", "hooks/", "script/")) and control in changed:
+                continue
             cited = re.findall(r"evidence:([0-9a-f]{8,40})", row["defect"] + " " + row["control"])
             if not cited:
                 errors.append(f"{oid}: status changed without code and no evidence:<commit> cited")
@@ -419,6 +428,17 @@ def self_test():
         expect("status-only closure refused",
                any("without code" in e for e in
                    check(ok, base, [os.path.join("doc", "no" + "tes") + ".md"], tmp)[0]))
+        # A process row's production artifact is its control script: changing the script closes
+        # the row. A code row with the same control change is still refused.
+        write("script/dead.py", "# process fixture\n")
+        process_row = ("| OBL-C1 | CLOSED | a defect | `script/dead.py` | `scripts/check-x.sh` | "
+                       "M/P |\n")
+        expect("process row closes on a control-script change",
+               not any("without code" in e for e in
+                       check(head + process_row + tomb, base, ["scripts/check-x.sh"], tmp)[0]))
+        expect("code row still needs production code",
+               any("without code" in e for e in
+                   check(ok, base, ["scripts/check-x.sh"], tmp)[0]))
         expect("control-free closure refused",
                any("test symbol" in e or "does not exist" in e for e in
                    check(head + "| OBL-C1 | CLOSED | a defect | `src/foo.rs:foo` | `no_such_test` | "

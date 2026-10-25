@@ -110,26 +110,24 @@ fi
 # record to the caller-supplied key, and one party's own secret could attest in another
 # party's name.
 #
-# REPORT-ONLY, exactly as `check-pubkey-binding.sh` was here until 2026-09-23. Measured
-# 2026-10-04 the tree carries 128 undeclared findings across 177 circuits (106 dead
-# witnesses, 22 dead derivations), and each has to be read circuit-and-host together before
-# this can block — a gate that fails on unadjudicated findings is a gate whose authority
-# cannot be defended yet, which is worse than a report. The attestation contract itself is
-# clean. When the list is adjudicated this becomes blocking the same way the one above did.
+# OBL-Z23 now BLOCKS with a frozen baseline: the 117 values adjudicated while the gate was
+# report-only are declared in script/circuit_dead_value_exceptions.txt. A new value is not in
+# that list, so the gate exits 1 and this hook refuses the commit. Adding a line is not a
+# disposition; removing one is the repair.
 DEAD_CHECKER="$REPO_ROOT/scripts/check-circuit-dead-values.sh"
 if [ -x "$DEAD_CHECKER" ]; then
+    DEAD_STATUS=0
     if [ "${#FILES[@]}" -eq 0 ]; then
-        DEAD_OUT="$(bash "$DEAD_CHECKER" --report-only 2>&1)"
+        DEAD_OUT="$(bash "$DEAD_CHECKER" 2>&1)" || DEAD_STATUS=$?
     else
-        DEAD_OUT="$(bash "$DEAD_CHECKER" --report-only "${FILES[@]}" 2>&1)"
+        DEAD_OUT="$(bash "$DEAD_CHECKER" "${FILES[@]}" 2>&1)" || DEAD_STATUS=$?
     fi
-    DEAD_N="$(printf '%s\n' "$DEAD_OUT" | grep -cE '^  DEAD-(WITNESS|DERIVATION)' || true)"
-    if [ "$DEAD_N" -gt 0 ]; then
+    if [ "$DEAD_STATUS" -ne 0 ]; then
         echo ""
-        echo "REPORT (not blocking): $DEAD_N value(s) the staged circuits compute that reach no"
-        echo "  constraint (OBL-Z23). A witness nothing derives from authorizes nothing; a hash"
-        echo "  computed and discarded is a check a reader believes was made. See"
-        echo "  script/circuit_dead_value_exceptions.txt and scripts/check-circuit-dead-values.sh."
+        echo "BLOCKED: a circuit computes a value that reaches no constraint (OBL-Z23):"
+        printf '%s\n' "$DEAD_OUT" | sed -n '/^FINDING:/,$p'
+        echo "  See script/circuit_dead_value_exceptions.txt and scripts/check-circuit-dead-values.sh."
+        exit 1
     fi
 fi
 # OBL-C196: a host-side `poseidon_hash` derivation carries a domain, like a circuit's — the circuit

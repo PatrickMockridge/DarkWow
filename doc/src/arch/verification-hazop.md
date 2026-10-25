@@ -44,7 +44,7 @@ lapsed bound fails the register gate; it is not re-dated silently.
 | codec | project lead | by:2026-11-04 | OBL-C205, OBL-C246 |
 | chain | project lead | by:2026-11-08 | OBL-C259 |
 | wallet | project lead | by:2026-11-08 | OBL-C130 |
-| models | project lead | by:2026-11-15 | OBL-C206, OBL-Z12, OBL-Z18, OBL-Z23, OBL-Z3 |
+| models | project lead | by:2026-11-15 | OBL-C206, OBL-Z12, OBL-Z18, OBL-Z3 |
 
 | ID | Status | Defect | Locus | Control | Risk |
 |---|---|---|---|---|---|
@@ -82,7 +82,7 @@ lapsed bound fails the register gate; it is not re-dated silently.
 | OBL-C97 | CLOSED | The exit arm applied no stored authority. The member-exit path is now refused (C102/C253, OBL-C271), so no exit-authority check is reachable; the remaining value path `TransferV1` applies `require_fund_authority` against the stored `spend_authority`, as `execute` and `update_config` do. Run: `exit_is_refused_before_any_state_read ... ok`. | `src/contract/drain_protection/src/entrypoint.rs:require_fund_authority` | `exit_is_refused_before_any_state_read` | C/P |
 | OBL-Z12 | OPEN | A circuit's integer-quotient proof is about field residues unless the operand bound is established; the Lean theorem states the bound and nothing on chain establishes it. | `proofs/lean/src/DarkFi/BaseDivGadget.lean:qr_unique` | `scripts/check-circuit-instance-derivation.sh` | H/P |
 | OBL-Z18 | OPEN | 51 `constrain_equal_base` sites have no verifier-visible operand; each is adjudicated, but the sweep is not closed. | `scripts/check-pubkey-binding.sh` | `plan: external adjudication corpus (not the checker itself)` | M/D |
-| OBL-Z23 | OPEN | 117 dead values are adjudicated, but the dead-value gate is report-only, so a newly introduced undeclared dead value does not fail anything. It was accepted as R-05; the process ALARP round withdrew that record because a blocking gate frozen against the adjudicated baseline is reasonably practicable. | `scripts/check-circuit-dead-values.sh` | `plan: blocking gate with a frozen baseline of the adjudicated dead values` | M/D |
+| OBL-Z23 | CLOSED | 117 dead values were adjudicated while the dead-value gate was report-only, so a newly introduced value failed nothing. The 117 are declared in `script/circuit_dead_value_exceptions.txt` as a frozen baseline, and the gate now blocks: a new value is undeclared and fails the umbrella and the pre-commit hook. Run: `check-circuit-dead-values.sh --self-test` OK, and the blocking gate `PASS` (177 files walked). | `script/circuit_dead_values.py` | `scripts/check-circuit-dead-values.sh` | M/D |
 | OBL-Z3 | OPEN | The circuit-domain gate accepts any `DOMAIN_`/`witness_base` token in a `poseidon_hash` call and never checks it is the right domain for that hash's purpose. | `scripts/check-circuit-domain-separation.sh` | `plan: purpose-specific domain token check` | H/P |
 
 ## Non-defects

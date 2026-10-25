@@ -492,7 +492,8 @@ run_gate "circuit pubkey binding"         bash "$SCRIPT_DIR/check-pubkey-binding
 # dead witnesses, 22 dead derivations) and each has to be read circuit-and-host together. The
 # attestation contract, whose defect the checker was written for, is clean. It becomes a blocking
 # gate in the same move the one above did, and `hooks/pre-commit` reports it in the meantime.
-run_gate "circuit dead values (report-only)" bash "$SCRIPT_DIR/check-circuit-dead-values.sh" --report-only
+run_gate "circuit dead values (blocking; OBL-Z23 baseline)" \
+    bash "$SCRIPT_DIR/check-circuit-dead-values.sh"
 # OBL-C196: a host-side `poseidon_hash` derivation carries a domain, like a circuit's. The circuit
 # domain gate walks `.zk` and cannot see Rust; `attestation`'s `attest_slash_v1` and
 # `commit_fee_schedule_v1` minted an id from an un-prefixed, same-arity hash. REPORT-ONLY until the

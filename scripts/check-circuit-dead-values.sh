@@ -47,10 +47,10 @@
 # root cause; do not add a compensating guard". A value whose host *does* read it is exposed by
 # `constrain_instance` and the host's own comparison, as `consume_claim.zk` already does.
 #
-# Wired as a REPORT until the list is adjudicated — see `hooks/pre-commit`, which is REPORT-ONLY
-# for this checker for the same reason it was report-only for `check-pubkey-binding.sh` until
-# 2026-09-23: a gate whose authority is not yet defensible is worse than a report. The register
-# row is `OBL-Z23`.
+# BLOCKING since 2026-10-25 (`OBL-Z23`): the 117 values adjudicated while this was a report are
+# declared in `script/circuit_dead_value_exceptions.txt`, and a value that is not declared fails
+# the umbrella and the pre-commit hook. A commit that adds a dead value cannot land; removing a
+# declared line is the repair. `--report-only` remains for diagnostics only.
 #
 # Usage:
 #   scripts/check-circuit-dead-values.sh                # all circuits
