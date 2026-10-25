@@ -12,6 +12,7 @@ use crate::args::{
     WalletCommand, WalletSubcmd,
 };
 use crate::config::WalletConfig;
+use crate::walletdb::CapRecord;
 use crate::{Dww, DwwPtr};
 
 /// Command classification — makes the async boundary explicit in the type system.
@@ -182,6 +183,67 @@ pub fn open_wallet(config: &WalletConfig) -> Result<Dww> {
 }
 
 /// Dispatch a synchronous command. Core commands implemented; remainder stubbed.
+/// Select the held capability for a generic transfer (`OBL-C130`).
+///
+/// A capability is identified by its `ContractId` and the capability it exercises
+/// (`capability_name`/`action` and its primitive/barbs identity), not by asset id alone
+/// (§6.4.1). Asset ids are not unique across contracts; picking the first match could route the
+/// spend to the wrong contract. The rules:
+///
+/// * no match → error;
+/// * matches span more than one contract → refuse, naming the contracts (the caller must say
+///   which);
+/// * within one contract, prefer records whose action/name is `transfer`; if the remaining
+///   records disagree on their capability identity (discriminant, primitive count, barb count or
+///   name), refuse as ambiguous.
+fn select_transfer_capability<'a>(
+    caps: &'a [CapRecord],
+    token_bytes: &[u8],
+) -> std::result::Result<&'a CapRecord, String> {
+    let matches: Vec<&CapRecord> = caps
+        .iter()
+        .filter(|c| c.asset_id.to_bytes().to_vec() == token_bytes)
+        .collect();
+    if matches.is_empty() {
+        return Err("no held capability found for this asset id".to_string())
+    }
+
+    let mut contracts: Vec<[u8; 32]> = matches.iter().map(|c| c.contract_id.to_bytes()).collect();
+    contracts.sort_unstable();
+    contracts.dedup();
+    if contracts.len() > 1 {
+        let names: Vec<String> = contracts.iter().map(|b| bs58::encode(b).into_string()).collect();
+        return Err(format!(
+            "asset id matches capabilities in {} contracts ({}); refusing to pick one — name \
+             the contract (OBL-C130)",
+            contracts.len(),
+            names.join(", ")
+        ))
+    }
+
+    let transfer_named: Vec<&CapRecord> = matches
+        .iter()
+        .copied()
+        .filter(|c| {
+            c.action.as_deref() == Some("transfer")
+                || c.capability_name.as_deref() == Some("transfer")
+        })
+        .collect();
+    let candidates = if transfer_named.is_empty() { matches } else { transfer_named };
+    let identity = |c: &CapRecord| {
+        (c.capability_discriminant, c.primitives.len(), c.barbs.len(), c.capability_name.clone())
+    };
+    let first = identity(candidates[0]);
+    if candidates.iter().any(|c| identity(c) != first) {
+        return Err(
+            "asset id matches capabilities of different kinds in one contract; refusing to pick \
+             one — the action's consumed capability is ambiguous (OBL-C130)"
+                .to_string(),
+        )
+    }
+    Ok(candidates[0])
+}
+
 pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
     // Deploy/transfer/broadcast require synced chain to confirm balances
     // and capabilities. Standard for all full-node wallets.
@@ -539,11 +601,9 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                     let all_caps = dww.wallet.get_held_capabilities(Some(false))
                         .map_err(|e| Error::Custom(format!("{:?}", e)))?;
                     let token_bytes = bs58::decode(&asset_id).into_vec().unwrap_or_default();
-                    let rec = all_caps.iter()
-                        .find(|c| c.asset_id.to_bytes().to_vec() == token_bytes)
-                        .ok_or_else(|| Error::Custom(format!(
-                            "no held capability found for asset_id '{}'", asset_id,
-                        )))?;
+                    // OBL-C130: ContractId + capability identity, not asset id alone.
+                    let rec = select_transfer_capability(&all_caps, &token_bytes)
+                        .map_err(|e| Error::Custom(format!("{e} (asset_id '{asset_id}')")))?;
                     let (contract_id, function_name) = dww.resolve_transfer_contract(rec, "transfer")
                         .map_err(|e| Error::Custom(e))?;
                     // The produce-side note's recipient (the new owner's key) —
@@ -1300,5 +1360,93 @@ mod tests {
     #[test]
     fn test_requires_sync_scan_is_false() {
         assert!(!requires_sync(&WalletCommand::Scan { reset: None, porcelain: false }));
+    }
+
+    // OBL-C130: capability selection is by ContractId and capability identity, not asset id
+    // alone.
+    use dwow_chain::Commitment;
+    use dwow_sdk::blockchain::BlockHeight;
+    use dwow_sdk::crypto::pasta_prelude::PrimeField;
+    use dwow_sdk::crypto::{AssetId, Blind, ContractId};
+    use dwow_sdk::pasta::pallas;
+
+    #[expect(clippy::expect_used, reason = "a fixed 32-byte fixture contract id is valid")]
+    fn cap(
+        id: &str,
+        contract_tag: u8,
+        asset: pallas::Base,
+        action: Option<&str>,
+        discriminant: Option<u8>,
+    ) -> CapRecord {
+        CapRecord {
+            cap_id: id.to_string(),
+            value: 10,
+            asset_id: AssetId::from_base(asset),
+            spend_hook: None,
+            user_data: None,
+            leaf_position: 0,
+            commitment: Commitment::from_base(asset),
+            contract_id: ContractId::from_bytes([contract_tag; 32])
+                .expect("fixture contract id"),
+            func_id: None,
+            capability_discriminant: discriminant,
+            cap_blind: Blind(pallas::Base::zero()),
+            value_blind: Blind(pallas::Scalar::zero()),
+            asset_blind: Blind(pallas::Base::zero()),
+            capability_name: action.map(|s| s.to_string()),
+            resource: None,
+            action: action.map(|s| s.to_string()),
+            primitives: vec![],
+            barbs: vec![],
+            revoked: false,
+            revoked_at_height: None,
+            created_at_height: BlockHeight::new(1),
+            status: None,
+            status_height: None,
+            key_coords: None,
+            spend_secret: None,
+            object_id: None,
+            state_nonce: None,
+        }
+    }
+
+    #[test]
+    fn transfer_selection_picks_the_single_contract() {
+        let asset = pallas::Base::from(7u64);
+        let caps = vec![cap("a", 0x11, asset, Some("transfer"), Some(1))];
+        let selected = select_transfer_capability(&caps, &asset.to_repr()).expect("selected");
+        assert_eq!(selected.cap_id, "a");
+    }
+
+    #[test]
+    fn transfer_selection_refuses_two_contracts() {
+        let asset = pallas::Base::from(7u64);
+        let caps = vec![
+            cap("a", 0x11, asset, Some("transfer"), Some(1)),
+            cap("b", 0x22, asset, Some("transfer"), Some(1)),
+        ];
+        let err = select_transfer_capability(&caps, &asset.to_repr())
+            .expect_err("two contracts must be refused");
+        assert!(err.contains("contracts"), "{err}");
+        assert!(err.contains("OBL-C130"), "{err}");
+    }
+
+    #[test]
+    fn transfer_selection_refuses_mixed_capability_kinds() {
+        let asset = pallas::Base::from(7u64);
+        let caps = vec![
+            cap("a", 0x11, asset, None, Some(1)),
+            cap("b", 0x11, asset, None, Some(2)),
+        ];
+        let err = select_transfer_capability(&caps, &asset.to_repr())
+            .expect_err("different capability kinds must be refused");
+        assert!(err.contains("different kinds"), "{err}");
+    }
+
+    #[test]
+    fn transfer_selection_refuses_no_match() {
+        let err = select_transfer_capability(&[], &pallas::Base::from(7u64).to_repr())
+            .expect_err("no capability must be refused");
+        assert!(err.contains("no held capability"), "{err}");
     }
 }
