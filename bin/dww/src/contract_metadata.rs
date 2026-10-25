@@ -159,3 +159,80 @@ impl Default for ContractMetadataRegistry {
 /// Global contract metadata registry singleton using lazy initialization
 pub static CONTRACT_METADATA_REGISTRY: std::sync::LazyLock<ContractMetadataRegistry> =
     std::sync::LazyLock::new(ContractMetadataRegistry::new);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// OBL-C214: the wallet's hardcoded registry and the contract `manifest.toml` are two homes
+    /// for the same function table. They were never compared, so either could drift silently.
+    ///
+    /// Two exceptions are declared in `register_known_contracts` and checked here as exceptions:
+    ///
+    /// * `native_token::mint` is declared in the manifest's enum but every dispatch arm refuses
+    ///   it, so no accepted block can carry one and the wallet registry omits it on purpose. If
+    ///   the manifest drops it, this test says so.
+    /// * `deployooor` is plaintext infrastructure with no `manifest.toml`; if one appears, the
+    ///   exception is stale and the comparison must be enabled for it.
+    #[test]
+    fn registry_matches_manifests() {
+        let registry = ContractMetadataRegistry::new();
+        let contracts_dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../src/contract");
+        let mut compared = 0usize;
+
+        for (name, meta) in &registry.contracts {
+            let manifest_path = contracts_dir.join(name).join("manifest.toml");
+            if *name == "deployooor" {
+                assert!(
+                    !manifest_path.is_file(),
+                    "deployooor now has a manifest; remove the exception and compare it"
+                );
+                continue;
+            }
+            let text = std::fs::read_to_string(&manifest_path).unwrap_or_else(|e| {
+                panic!("registry contract {name} has no readable manifest at {manifest_path:?}: {e}")
+            });
+            let manifest = dwow_sdk::manifest::ContractManifest::from_toml(&text)
+                .unwrap_or_else(|e| panic!("{name}/manifest.toml does not parse: {e}"));
+
+            for f in &manifest.functions {
+                if *name == "native_token" && f.name == "mint" {
+                    // The declared exception: present in the enum, refused by every arm.
+                    continue;
+                }
+                let sig = meta.get_function(&f.name).unwrap_or_else(|| {
+                    panic!("{name}: manifest function '{}' is missing from the wallet registry", f.name)
+                });
+                assert_eq!(sig.code, f.code, "{name}::{} code drift", f.name);
+                assert_eq!(
+                    sig.requires_proof, f.requires_proof,
+                    "{name}::{} requires_proof drift",
+                    f.name
+                );
+                // A multi-proof arm declares its ordered set; the registry's single
+                // `proof_circuit` is `None` for those by convention (OBL-C260 tracks the
+                // multi-proof call plan), so only single-circuit arms are compared here.
+                if f.proof_circuits.is_empty() {
+                    assert_eq!(
+                        sig.proof_circuit,
+                        f.proof_circuit.as_deref(),
+                        "{name}::{} proof circuit drift",
+                        f.name
+                    );
+                }
+            }
+            for sig in &meta.functions {
+                assert!(
+                    manifest.functions.iter().any(|f| f.name == sig.name),
+                    "{name}: registry function '{}' is missing from the manifest",
+                    sig.name
+                );
+            }
+            compared += 1;
+        }
+
+        // A comparison that compared nothing is not a control.
+        assert!(compared >= 1, "the registry comparison did not run");
+    }
+}

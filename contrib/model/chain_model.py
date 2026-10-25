@@ -367,36 +367,39 @@ class ChainState:
     blocks: dict = field(default_factory=dict)  # height → Block
     block_hashes: dict = field(default_factory=dict)  # height → hash
     commitment_set: dict = field(default_factory=dict)  # commitment → creation_height
+    # Nullifiers → creation height. The code's maturity rule reads this set, not the commitment
+    # set (`check_coinbase_maturity` over `nullifier_height`).
+    nullifier_set: dict = field(default_factory=dict)
 
-    def is_commitment_mature(self, commitment: bytes, current_height: int) -> bool:
-        """Whether this chain's commitment set records a commitment `COINBASE_MATURITY` blocks old.
+    def commitment_set_age_meets_maturity(self, commitment: bytes, current_height: int) -> bool:
+        """Whether the commitment set records a commitment `COINBASE_MATURITY` blocks old.
 
-        **This is not a mirror of the code's maturity rule, and the sentence that stood here said
-        it was** — "Mirrors src/linear/src/chain_state.rs:is_commitment_mature()" named a function
-        that does not exist (register `OBL-C109`). The code's rule is
-        `CChainState::check_coinbase_maturity` (`chain_state.rs:688`), and it differs in three ways
-        that no rename here can close:
-
-          * it is keyed by **nullifier**, through `nullifier_height` over the per-nullifier
-            `nullifier_set`, not by commitment;
-          * the code **rejected** a commitment-keyed rule deliberately, and its own docstring gives
-            the reason — such a lookup "would be a second source of truth for maturity (hazid `RC5`
-            class; `P2-9` Item 4 considered and rejected it)" — while `commitment_set` is pruned at
-            the maturity window (`retain(|_, h| *h >= prune_h)`), so it cannot answer "how old is
-            this?" for anything old enough to matter;
-          * it is a **block-level** rule over `tx.nullifiers`, in which a nullifier with no recorded
-            height is not the rule's business, whereas this predicate answers `False` for an unknown
-            commitment — for a caller that refuses on `False`, a stricter rule than the code's.
-
-        The last two are not reachable from here as written: this model has no `nullifiers` on
-        `Transaction` and no spend path at all, so the code's rule has no domain in it. What *is*
-        modelled is the rule's arithmetic, `current_height - created_at >= COINBASE_MATURITY`, and
-        that part is the code's. The deviation and the route to closing it are recorded in the
-        register rather than narrowed to what happens to be expressible here.
+        **This is not the consensus maturity rule** (`OBL-C109`). `CChainState::check_coinbase_maturity`
+        keys by nullifier through `nullifier_set`, and deliberately rejected a commitment-keyed rule:
+        the commitment set is pruned at the maturity window, so it cannot answer "how old is this?"
+        for anything old enough to matter. This helper is kept for the model's own bookkeeping and
+        must not be cited as a mirror of the code. The code's rule is `is_nullifier_mature` below.
         """
         created_at = self.commitment_set.get(commitment)
         if created_at is None:
             return False  # not a coinbase commitment
+        return current_height - created_at >= COINBASE_MATURITY
+
+    def track_nullifier(self, nullifier: bytes, height: int):
+        """Record a nullifier's creation height for maturity tracking."""
+        self.nullifier_set[nullifier] = height
+
+    def is_nullifier_mature(self, nullifier: bytes, current_height: int) -> bool:
+        """The code's coinbase-maturity predicate, keyed by nullifier.
+
+        Mirrors `CChainState::check_coinbase_maturity`: a nullifier with a recorded height is
+        refused when `current_height - created_at < COINBASE_MATURITY`; a nullifier with **no
+        recorded height** is not this rule's business (the replay gate judges it), so it passes.
+        This is the nullifier-keyed pin `OBL-C109` asked for.
+        """
+        created_at = self.nullifier_set.get(nullifier)
+        if created_at is None:
+            return True
         return current_height - created_at >= COINBASE_MATURITY
 
     def track_coinbase(self, commitment: bytes, height: int):
@@ -1430,11 +1433,11 @@ def test_coinbase_maturity_enforced():
     ).digest()
 
     # At height 1, commitment is immature (needs 100 blocks)
-    assert not chain.is_commitment_mature(commitment, 1), \
+    assert not chain.commitment_set_age_meets_maturity(commitment, 1), \
         "Commitment should be immature at creation height"
-    assert not chain.is_commitment_mature(commitment, 50), \
+    assert not chain.commitment_set_age_meets_maturity(commitment, 50), \
         "Commitment should be immature at height 50"
-    assert not chain.is_commitment_mature(commitment, 100), \
+    assert not chain.commitment_set_age_meets_maturity(commitment, 100), \
         "Commitment should be immature at height 100 (needs >100)"
 
     # Mine more blocks to pass maturity
@@ -1449,9 +1452,9 @@ def test_coinbase_maturity_enforced():
         chain.connect_block(block)
 
     # At height 102, commitment from height 1 has matured (102 - 1 = 101 >= 100)
-    assert chain.is_commitment_mature(commitment, 102), \
+    assert chain.commitment_set_age_meets_maturity(commitment, 102), \
         f"Commitment should be mature at height 102 (age={102-1})"
-    assert chain.is_commitment_mature(commitment, 200), \
+    assert chain.commitment_set_age_meets_maturity(commitment, 200), \
         "Commitment should remain mature"
 
     print("test_coinbase_maturity_enforced: PASSED")
@@ -1487,10 +1490,30 @@ def test_coinbase_maturity_tracks_all_caps():
     commitment_5 = hashlib.blake2b(
         struct.pack('<Q', 5) + b'coinbase', digest_size=32
     ).digest()
-    assert not chain.is_commitment_mature(commitment_5, 6), \
+    assert not chain.commitment_set_age_meets_maturity(commitment_5, 6), \
         "Commitment from height 5 should be immature at height 6"
 
     print("test_coinbase_maturity_tracks_all_caps: PASSED")
+
+
+def test_coinbase_maturity_is_nullifier_keyed():
+    """The consensus rule keys by nullifier, not commitment (OBL-C109)."""
+    chain = ChainState()
+    nullifier = b"\x11" * 32
+    # A nullifier with no recorded height is not the maturity rule's business; the replay gate
+    # judges it. The code passes it, and so must the model.
+    assert chain.is_nullifier_mature(nullifier, 1), \
+        "an unknown nullifier must not be refused by the maturity rule"
+    chain.track_nullifier(nullifier, 1)
+    assert not chain.is_nullifier_mature(nullifier, 1 + COINBASE_MATURITY - 1), \
+        "a recorded nullifier inside the window must be refused"
+    assert chain.is_nullifier_mature(nullifier, 1 + COINBASE_MATURITY), \
+        "a recorded nullifier at the boundary must pass"
+    # A commitment in the commitment set does not answer the nullifier-keyed rule.
+    chain.track_coinbase(b"\x22" * 32, 1)
+    assert chain.is_nullifier_mature(b"\x33" * 32, 1), \
+        "a commitment-keyed lookup must not make an untracked nullifier immature"
+    print("test_coinbase_maturity_is_nullifier_keyed: PASSED")
 
 
 # ============================================================================
@@ -1548,6 +1571,7 @@ if __name__ == "__main__":
         ("Accepts honest coinbase split (C1)", test_accepts_honest_split),
         ("Coinbase maturity enforced", test_coinbase_maturity_enforced),
         ("Coinbase maturity tracks all caps", test_coinbase_maturity_tracks_all_caps),
+        ("Coinbase maturity is nullifier-keyed", test_coinbase_maturity_is_nullifier_keyed),
         ("Native token metadata roundtrip", test_native_token_metadata_roundtrip),
     ]
 

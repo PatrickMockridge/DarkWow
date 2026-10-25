@@ -100,7 +100,9 @@ def resolve_control(cell, root):
     control = strip_ticks(cell)
     if control in ("", "—") or control.startswith("plan:"):
         return None  # OPEN-row plan; the status rule already permits it
-    if "/" in control and control.endswith(".sh"):
+    # A model test suite (`.py`) is a control too: `contrib/model/chain_model.py` runs its own
+    # tests and is wired into the umbrella. It has no `--self-test` flag; its suite is the test.
+    if "/" in control and control.endswith((".sh", ".py")):
         full = os.path.join(root, control)
         if not os.path.isfile(full):
             return f"control script '{control}' does not exist"
@@ -227,6 +229,7 @@ def check(register_text, prev_text, changed, root, mode="work"):
                     errors.append(
                         f"{oid}: script control has no --self-test — observed-failure prose "
                         "does not waive a control that can fail")
+            # A `.py` model control runs its own test suite; no separate --self-test flag exists.
 
     # Decisions and residuals cannot be live tracker rows.
     for did in decisions:

@@ -133,13 +133,20 @@ impl<'a> ManifestResolver<'a> {
     fn validate_field_type(param_type: &str, value: &serde_json::Value) -> bool {
         match param_type {
             "u64" => value.is_number() && value.as_u64().is_some(),
-            "pallas_base" | "pallas_scalar" | "public_key" | "contract_id" => {
+            "u32" => value.as_u64().map(|v| v <= u32::MAX as u64).unwrap_or(false),
+            "pallas_base" | "pallas_scalar" | "public_key" | "contract_id" | "asset_id" => {
                 value.as_str().map(|s| s.len() >= 32).unwrap_or(false)
             }
+            // A func id is a u8 on the wire; the JSON may carry it as a number or as the
+            // 32-byte hex form the manifest's other ids use.
+            "func_id" => value.is_number()
+                || value.as_str().map(|s| s.len() >= 32).unwrap_or(false),
             "bool" => value.is_boolean(),
             "string" => value.is_string(),
-            "bytes" => value.is_string() || value.is_array(),
-            _ => true, // Unknown types pass through
+            "bytes" | "proof" | "merkle_path" => value.is_string() || value.is_array(),
+            // An unknown type is a manifest/encoder divergence, not a pass: the encoder rejects
+            // it later, so accepting it here only hides which side is wrong (OBL-C239).
+            _ => false,
         }
     }
 
@@ -268,5 +275,33 @@ impl<'a> ManifestResolver<'a> {
         }
 
         lines.join("\n")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// OBL-C239: the default arm used to accept any unknown type, so a manifest/encoder
+    /// divergence passed validation and failed later at the encoder. An unknown type must be
+    /// refused here.
+    #[test]
+    fn unknown_field_type_is_rejected() {
+        assert!(!ManifestResolver::validate_field_type("u65", &json!(1)));
+        assert!(!ManifestResolver::validate_field_type("", &json!(1)));
+    }
+
+    #[test]
+    fn known_field_types_are_accepted() {
+        assert!(ManifestResolver::validate_field_type("u64", &json!(1)));
+        assert!(ManifestResolver::validate_field_type("u32", &json!(1)));
+        assert!(ManifestResolver::validate_field_type(
+            "pallas_base",
+            &json!("00".repeat(32))
+        ));
+        assert!(ManifestResolver::validate_field_type("merkle_path", &json!([])));
+        assert!(ManifestResolver::validate_field_type("proof", &json!("ab")));
+        assert!(ManifestResolver::validate_field_type("func_id", &json!(7)));
     }
 }

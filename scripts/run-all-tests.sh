@@ -915,6 +915,11 @@ run_gate "Python: supply chain model"      python3 contrib/model/supply_chain_mo
 # their reasons: `capability_discovery.py` is a report with no assertions and no exit, and
 # `generate_wallet_fixture.py` is a generator that needs an `--out`.
 run_gate "Python: chain model"              python3 contrib/model/chain_model.py
+# OBL-C109's control: the model's maturity predicate must be nullifier-keyed, like the consensus
+# rule. It lives beside the model, not in it, so the register gate does not accept a control that
+# is the locus itself.
+run_gate "control: chain model maturity is nullifier-keyed" \
+    python3 contrib/model/chain_model_test.py
 run_gate "Python: chain validation model"   python3 contrib/model/chain_validation_model.py
 run_gate "Python: dex lock model"           python3 contrib/model/dex_lock_model.py
 run_gate "Python: dockernet model"          python3 contrib/model/dockernet_model.py

@@ -23,7 +23,7 @@
 
 // cargo test --release --features=event-graph --lib eventgraph_propagation -- --include-ignored
 
-use std::{collections::HashMap, slice, sync::Arc};
+use std::{collections::HashMap, slice, sync::Arc, time::{Duration, Instant}};
 
 use rand::{prelude::SliceRandom, rngs::ThreadRng};
 use sled_overlay::sled;
@@ -159,10 +159,64 @@ async fn bootstrap_nodes(
         eg.p2p.clone().start().await.unwrap();
     }
 
-    info!("Waiting 5s until all peers connect");
-    sleep(5).await;
+    info!("Waiting (bounded) until all peers connect");
+    wait_for_peers(&eg_instances, Duration::from_secs(30)).await;
 
     eg_instances
+}
+
+/// Wait (bounded) until every node has at least `N_CONNS` connected peers.
+///
+/// `bootstrap_nodes` used a fixed 5s sleep. Under load a connection can take longer, and the
+/// failure then surfaced as a malformed DAG with no stated cause (OBL-C136).
+async fn wait_for_peers(eg_instances: &[Arc<EventGraph>], timeout: Duration) {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        if eg_instances.iter().all(|eg| eg.p2p.peers_count() >= N_CONNS) {
+            return;
+        }
+        sleep(100).await;
+    }
+}
+
+/// The non-panicking form of `assert_dags`'s condition: every node holds `expected_len` events
+/// and the same unreferenced tips.
+async fn dags_consistent(eg_instances: &[Arc<EventGraph>], expected_len: usize) -> bool {
+    let Some(reference) = eg_instances.first() else {
+        return false;
+    };
+    if reference.dag.len() != expected_len {
+        return false;
+    }
+    let reference_tips = {
+        let tips = reference.unreferenced_tips.read().await;
+        let Some((_, tips)) = tips.last_key_value() else {
+            return false;
+        };
+        tips.clone()
+    };
+    for eg in eg_instances.iter().skip(1) {
+        if eg.dag.len() != expected_len {
+            return false;
+        }
+        let tips = eg.unreferenced_tips.read().await;
+        match tips.last_key_value() {
+            Some((_, tips)) if *tips == reference_tips => {}
+            _ => return false,
+        }
+    }
+    true
+}
+
+/// Poll until the DAGs converge, or the bound expires. `assert_dags` then reports the cause.
+async fn wait_for_dags(eg_instances: &[Arc<EventGraph>], expected_len: usize, timeout: Duration) {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        if dags_consistent(eg_instances, expected_len).await {
+            return;
+        }
+        sleep(100).await;
+    }
 }
 
 async fn assert_dags(eg_instances: &[Arc<EventGraph>], expected_len: usize, rng: &mut ThreadRng) {
@@ -241,8 +295,8 @@ async fn eventgraph_propagation_real(ex: Arc<Executor<'static>>) {
     drop(tips_layers);
     info!("Broadcasting event {event_id}");
     random_node.p2p.broadcast(&EventPut(event)).await;
-    info!("Waiting 5s for event propagation");
-    sleep(5).await;
+    info!("Waiting (bounded) for event propagation");
+    wait_for_dags(&eg_instances, 2, Duration::from_secs(30)).await;
 
     // ====================================================
     // 3. Assert that everyone has the new event in the DAG
@@ -274,8 +328,8 @@ async fn eventgraph_propagation_real(ex: Arc<Executor<'static>>) {
     info!("Broadcasting event {event2_id}");
     info!("Event chain: {event_chain:#?}");
     random_node.p2p.broadcast(&EventPut(event2)).await;
-    info!("Waiting 5s for event propagation");
-    sleep(5).await;
+    info!("Waiting (bounded) for event propagation");
+    wait_for_dags(&eg_instances, 5, Duration::from_secs(30)).await;
 
     // ==========================================
     // 5. Assert that everyone has all the events
@@ -332,8 +386,8 @@ async fn eventgraph_propagation_real(ex: Arc<Executor<'static>>) {
     node3.dag_insert(slice::from_ref(&event2_3)).await.unwrap();
     node3.p2p.broadcast(&EventPut(event2_3)).await;
 
-    info!("Waiting 5s for events propagation");
-    sleep(5).await;
+    info!("Waiting (bounded) for events propagation");
+    wait_for_dags(&eg_instances, 14, Duration::from_secs(30)).await;
 
     // ==========================================
     // 7. Assert that everyone has all the events
@@ -366,8 +420,8 @@ async fn eventgraph_propagation_real(ex: Arc<Executor<'static>>) {
 
         event_graph.p2p.clone().start().await.unwrap();
 
-        info!("Waiting 5s for new node connection");
-        sleep(5).await;
+        info!("Waiting (bounded) for new node connection");
+        wait_for_peers(&eg_instances, Duration::from_secs(30)).await;
 
         event_graph.dag_sync().await.unwrap()
     }
@@ -412,8 +466,8 @@ async fn eventgraph_chaotic_propagation_real(ex: Arc<Executor<'static>>) {
         random_node.dag_insert(slice::from_ref(&event)).await.unwrap();
         random_node.p2p.broadcast(&EventPut(event)).await;
     }
-    info!("Waiting 5s for events propagation");
-    sleep(5).await;
+    info!("Waiting (bounded) for events propagation");
+    wait_for_dags(&eg_instances, n_events + 1, Duration::from_secs(300)).await;
 
     // ==========================================
     // 3. Assert that everyone has all the events
@@ -445,8 +499,8 @@ async fn eventgraph_chaotic_propagation_real(ex: Arc<Executor<'static>>) {
 
         event_graph.p2p.clone().start().await.unwrap();
 
-        info!("Waiting 5s for new node connection");
-        sleep(5).await;
+        info!("Waiting (bounded) for new node connection");
+        wait_for_peers(&eg_instances, Duration::from_secs(30)).await;
 
         event_graph.dag_sync().await.unwrap()
     }

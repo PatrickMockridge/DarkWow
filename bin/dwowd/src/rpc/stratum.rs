@@ -185,7 +185,12 @@ impl DwowNode {
 
         // Collect uncles from previous height — matches Python miner_cycle.
         // Save original blocks for error recovery (validate-then-mutate pattern).
-        let (uncles, competing_originals) = match chain_state.get_latest_block() {
+        //
+        // OBL-C42: the restore must write back at the height the take used. Writing at the
+        // *current* tip was the remaining window: if a block connected during template
+        // generation, the competing blocks were re-inserted under the new height and the
+        // uncle candidate was lost.
+        let (uncles, competing_originals, take_height) = match chain_state.get_latest_block() {
             Ok(latest) => {
                 let latest_height = latest.header.height;
                 let competing = chain_state.take_competing_blocks(latest_height);
@@ -196,9 +201,9 @@ impl DwowNode {
                     uncle.accept_pin(); // "rejection is strictly dominated" — always accept
                     uncle
                 }).collect();
-                (uncle_blocks, competing)
+                (uncle_blocks, competing, latest_height)
             }
-            Err(_) => (vec![], vec![]),
+            Err(_) => (vec![], vec![], chain_state.get_height()),
         };
 
         // Generate block template with collected uncles
@@ -217,8 +222,7 @@ impl DwowNode {
                 // previously the take was lost, forfeiting the competing miner's
                 // uncle reward)
                 if !competing_originals.is_empty() {
-                    let latest = chain_state.get_height();
-                    chain_state.put_competing_blocks(latest, competing_originals);
+                    chain_state.restore_competing_blocks(take_height, competing_originals);
                 }
                 return JsonResponse::new(JsonValue::from(HashMap::new()), id).into()
             }

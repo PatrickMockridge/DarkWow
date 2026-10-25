@@ -906,6 +906,17 @@ impl CChainState {
     /// blocks were destructively removed by `take_competing_blocks()` and
     /// must be restored so the competing miner doesn't lose their uncle
     /// reward opportunity.
+    /// Restore blocks that were taken at `taken_at` to that same height (OBL-C42).
+    ///
+    /// The stratum and merge-mining template paths take destructively before the fallible
+    /// template build and restore on failure. They used to restore at the *current* tip: if a
+    /// block connected during template generation, the blocks landed under the wrong height and
+    /// the uncle candidate was lost. The named parameter is the contract: restore where the take
+    /// was, not where the tip now is.
+    pub fn restore_competing_blocks(&self, taken_at: BlockHeight, blocks: Vec<Block>) {
+        self.put_competing_blocks(taken_at, blocks);
+    }
+
     pub fn put_competing_blocks(&self, height: BlockHeight, blocks: Vec<Block>) {
         if blocks.is_empty() {
             return;
@@ -3173,6 +3184,38 @@ mod tests {
     ///
     /// This is the sequence the miner's own path performs — peek, take, and (on the next height) offer
     /// blocks again — so the test is the real shape rather than a synthetic one.
+    /// OBL-C42 control: a restore writes at the height the take used, never at the current tip.
+    /// The stratum and merge-mining template paths restore on a failed template build; writing at
+    /// `get_height()` lost the uncle candidate when a block connected in between.
+    #[test]
+    fn competing_blocks_restore_at_the_take_height() {
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let cs = CChainState::new(
+            Arc::new(db),
+            120,
+            BlockTarget::MAX,
+            BlockTarget::new(1),
+            BlockTarget::MAX,
+            FinalityConfig::default(),
+        )
+        .unwrap();
+        let taken_at = BlockHeight::new(1);
+        let block = dr_block(1, BlockTarget::MAX, blake3::hash(b"restore"), 11);
+        cs.store_competing_block(&block, taken_at).unwrap();
+        let taken = cs.take_competing_blocks(taken_at);
+        assert_eq!(taken.len(), 1, "the take must return the stored block");
+        cs.restore_competing_blocks(taken_at, taken);
+        assert_eq!(
+            cs.peek_competing_blocks(taken_at).len(),
+            1,
+            "the restore must land at the take height"
+        );
+        assert!(
+            cs.peek_competing_blocks(BlockHeight::new(2)).is_empty(),
+            "the restore must not land at another height"
+        );
+    }
+
     #[test]
     fn competing_block_can_be_re_stored_after_being_taken() {
         let db = sled::Config::new().temporary(true).open().unwrap();
