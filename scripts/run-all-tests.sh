@@ -494,6 +494,13 @@ run_gate "circuit pubkey binding"         bash "$SCRIPT_DIR/check-pubkey-binding
 # gate in the same move the one above did, and `hooks/pre-commit` reports it in the meantime.
 run_gate "circuit dead values (blocking; OBL-Z23 baseline)" \
     bash "$SCRIPT_DIR/check-circuit-dead-values.sh"
+# OBL-Z12: the Lean `qr_unique` bound is integer-only; every known quotient operand must carry
+# the in-circuit `range_check` that makes it an integer. The manifest is the reviewed list; a new
+# quotient circuit joins it in the same change.
+run_gate "circuit quotient bounds (OBL-Z12)" \
+    bash "$REPO_ROOT/scripts/check-circuit-quotient-bounds.sh"
+run_gate "control: quotient bounds can fail" \
+    bash "$REPO_ROOT/scripts/check-circuit-quotient-bounds.sh" --self-test
 # OBL-C196: a host-side `poseidon_hash` derivation carries a domain, like a circuit's. The circuit
 # domain gate walks `.zk` and cannot see Rust; `attestation`'s `attest_slash_v1` and
 # `commit_fee_schedule_v1` minted an id from an un-prefixed, same-arity hash. REPORT-ONLY until the

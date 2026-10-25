@@ -1,0 +1,13 @@
+# Quotient-bound operands (OBL-Z12).
+#
+# The Lean theorem `qr_unique` (`proofs/lean/src/DarkFi/BaseDivGadget.lean`) gives quotient and
+# remainder uniqueness only over integers. A circuit that forms a quotient from field elements
+# without establishing their integer bound proves a statement about field residues instead.
+# `range_check` is the on-chain establishment of that bound.
+#
+# Format: <circuit path> : <operand> <operand> ...
+# A new quotient-remainder circuit is added here in the same change; the gate fails if a listed
+# operand loses its range check.
+src/contract/bearer_bond/proof/prove_coverage.zk : reserve_amount total_outstanding total_interest_obligation coverage_ratio_bps
+src/contract/stablecoin/proof/governance_report.zk : total_collateral total_debt outstanding rate_per_second time_elapsed collateral_ratio_bps interest_accrued
+src/contract/stablecoin/proof/accrue_interest.zk : old_total_debt new_total_debt rate_per_second time_elapsed interest_amount
