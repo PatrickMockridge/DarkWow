@@ -1312,22 +1312,10 @@ fn vote_claim_get_metadata(
         Err(_) => return Ok(vec![]),
     };
 
-    let cap_secret_fp = pallas::Base::from_repr(params.capability_proof.capability_secret)
-        .into_option()
-        .unwrap_or(pallas::Base::zero());
-
-    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
-    let (voter_pub_x, voter_pub_y) = params.voter_pubkey.xy().expect("pk not identity");
-
-    // vote_nullifier = poseidon_hash(DOMAIN_NULLIFIER, capability_secret, proposal_id,
-    //                                 voter_pub_x, voter_pub_y)
-    let vote_nullifier = poseidon_hash([
-        pallas::Base::from(1u64), // DOMAIN_NULLIFIER
-        cap_secret_fp,
-        params.claim_id.inner(),
-        voter_pub_x,
-        voter_pub_y,
-    ]);
+    // OBL-C160: the params carry the value the `VoteClaimV2` proof instances from its private
+    // witness; the secret is not in call data. Publishing any other value fails proof verification,
+    // so the host can read the nullifier here rather than re-deriving it from a public secret.
+    let vote_nullifier = params.vote_nullifier;
 
     // `tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)` with
     // `DOMAIN_TX_BINDING = 3` (`src/sdk/src/crypto/constants.rs:57`). This contract's tx pair is
@@ -1648,23 +1636,11 @@ fn vote_claim_v1(
         model::governance_message(model::governance_role::VOTE_CLAIM, vote_id),
     )?;
 
-    // The voter's nullifier, derived here so that it **is** the value the `VoteClaimV2` proof publishes.
-    //
-    // It used to be `params.capability_proof.nullifier` taken verbatim — a caller-chosen value that the
-    // proof never bound, so the tree's double-vote guard keyed on whatever the caller wrote, and
-    // `capability_proof.capability_secret`, its only claimed secret, is public call data
-    // (`OBL-C160`). The derivation matches `vote_claim_get_metadata` and `proof/vote_claim.zk:37-43`
-    // term for term, so the key this writes is the one the proof constrains.
-    let cap_secret_fp = pallas::Base::from_repr(params.capability_proof.capability_secret)
-        .into_option()
-        .unwrap_or(pallas::Base::zero());
-    let vote_nullifier = poseidon_hash([
-        pallas::Base::from(1u64), // DOMAIN_NULLIFIER
-        cap_secret_fp,
-        params.claim_id.inner(),
-        voter_x,
-        voter_y,
-    ]);
+    // The voter's nullifier is the value `VoteClaimV2` instances from the witness
+    // `poseidon(1, capability_secret, claim_id, voter_pub_x, voter_pub_y)`; the secret itself is
+    // not in call data (`OBL-C160`). The metadata publishes this same value, so a caller that
+    // writes a different one fails proof verification rather than choosing the double-vote key.
+    let vote_nullifier = params.vote_nullifier;
     // The read stays in exec — `↓nullify` is an `exec` barb (contract-wasm-type-system.md §A.2.1) — and
     // the *write* moves to apply, carried in the update.
     let nullifiers_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_NULLIFIERS_TREE)?;

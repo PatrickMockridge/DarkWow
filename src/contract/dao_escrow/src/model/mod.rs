@@ -620,6 +620,10 @@ pub struct VoteClaimParamsV1 {
     pub vote: VoteType,
     /// Voter's public key
     pub voter_pubkey: PublicKey,
+    /// `poseidon_hash(1, capability_secret, claim_id, voter_pub_x, voter_pub_y)` — the value
+    /// `VoteClaimV2` instances from its private witness and the host records for the one-vote check
+    /// (`OBL-C160`). The secret itself is not in this call data.
+    pub vote_nullifier: pallas::Base,
     /// Capability proof for member_vote
     pub capability_proof: CapabilityProof,
 }
@@ -726,20 +730,16 @@ pub struct TreasurySpendUpdateV1 {
 
 /// A capability proof from the Identity contract.
 ///
-/// **One field of this struct is load-bearing, and it is not a capability proof's.** `VoteClaimV1`
-/// reads `capability_secret` to derive the `vote_nullifier` that `vote_claim_get_metadata` publishes,
-/// so the value the contract records in its nullifiers tree is the value the `VoteClaimV2` proof
-/// constrains (`entrypoint.rs`, `vote_claim_v1`). The rest — `capability_id`, `nullifier`, `issuer_pub`,
-/// `predicate_result`, `proof` — is read by nothing, and `capability_secret` is public call data: the
-/// name promises a secret that the struct carrying it publishes. That is `OBL-C160`, recorded and not
-/// yet fixed; the field is kept because removing it moves `VoteClaimParamsV1`'s codec and the circuit's
-/// instance set together, which is a unit of its own.
+/// **It carries no secret.** `VoteClaimV1` used to read a `capability_secret` field to derive the
+/// vote nullifier, which made the "secret" public call data and rested the one-vote property on the
+/// group approval rather than on knowledge of a secret (`OBL-C160`). The secret now lives only in
+/// the `VoteClaimV2` witness map; the params carry the derived `vote_nullifier`, which the circuit
+/// instances, and the host records and compares that value. The remaining fields are the Identity
+/// capability proof's own.
 #[derive(Debug, Clone, )]
 pub struct CapabilityProof {
     /// Capability identifier (from Identity contract)
     pub capability_id: [u8; 32],
-    /// Holder's capability secret
-    pub capability_secret: [u8; 32],
     /// Nullifier to prevent replay
     pub nullifier: IntentNullifier,
     /// Issuer's public key
@@ -974,7 +974,7 @@ impl WithdrawParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_
 impl ProposeClaimParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(136); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.claim_id.to_bytes()); b.extend_from_slice(&self.value.to_le_bytes()); b.extend_from_slice(&self.recipient_pubkey.to_bytes()); b.extend_from_slice(&self.claim_blind.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 136 { return Err(ContractError::IoError(format!("ProposeClaimParamsV1: expected 136 got {}", data.len()))); } Ok(ProposeClaimParamsV1 { dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ProposeClaimParamsV1: invalid dao_escrow_bulla".into()))?), claim_id: ClaimId(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ProposeClaimParamsV1: invalid claim_id".into()))?), value: u64::from_le_bytes(data[64..72].try_into().unwrap()), recipient_pubkey: PublicKey::from_bytes(data[72..104].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ProposeClaimParamsV1: invalid recipient_pubkey: {}", e)))?, claim_blind: Option::<pallas::Base>::from(pallas::Base::from_repr(data[104..136].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ProposeClaimParamsV1: invalid claim_blind".into()))? }) } }
 
 #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
-impl VoteClaimParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let cp = self.capability_proof.encode()?; let mut b = Vec::with_capacity(98+cp.len()); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.claim_id.to_bytes()); b.push(self.vote as u8); b.extend_from_slice(&self.voter_pubkey.to_bytes()); b.extend_from_slice(&cp); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 98 { return Err(ContractError::IoError("VoteClaimParamsV1: too short".into())); } Ok(VoteClaimParamsV1 { dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("VoteClaimParamsV1: invalid dao_escrow_bulla".into()))?), claim_id: ClaimId(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("VoteClaimParamsV1: invalid claim_id".into()))?), vote: VoteType::decode(&data[64..65])?, voter_pubkey: PublicKey::from_bytes(data[65..97].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("VoteClaimParamsV1: invalid voter_pubkey: {}", e)))?, capability_proof: CapabilityProof::decode(&data[97..])? }) } }
+impl VoteClaimParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let cp = self.capability_proof.encode()?; let mut b = Vec::with_capacity(130+cp.len()); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.claim_id.to_bytes()); b.push(self.vote as u8); b.extend_from_slice(&self.voter_pubkey.to_bytes()); b.extend_from_slice(&self.vote_nullifier.to_repr()); b.extend_from_slice(&cp); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 130 { return Err(ContractError::IoError("VoteClaimParamsV1: too short".into())); } Ok(VoteClaimParamsV1 { dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("VoteClaimParamsV1: invalid dao_escrow_bulla".into()))?), claim_id: ClaimId(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("VoteClaimParamsV1: invalid claim_id".into()))?), vote: VoteType::decode(&data[64..65])?, voter_pubkey: PublicKey::from_bytes(data[65..97].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("VoteClaimParamsV1: invalid voter_pubkey: {}", e)))?, vote_nullifier: Option::<pallas::Base>::from(pallas::Base::from_repr(data[97..129].try_into().unwrap())).ok_or_else(|| ContractError::IoError("VoteClaimParamsV1: invalid vote_nullifier".into()))?, capability_proof: CapabilityProof::decode(&data[129..])? }) } }
 
 #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
 impl EndowmentWithdrawParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(72); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.recipient_pubkey.to_bytes()); b.extend_from_slice(&self.value.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 72 { return Err(ContractError::IoError(format!("EndowmentWithdrawParamsV1: expected 72 got {}", data.len()))); } Ok(EndowmentWithdrawParamsV1 { dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("EndowmentWithdrawParamsV1: invalid dao_escrow_bulla".into()))?), recipient_pubkey: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("EndowmentWithdrawParamsV1: invalid recipient_pubkey: {}", e)))?, value: u64::from_le_bytes(data[64..72].try_into().unwrap()) }) } }
@@ -989,15 +989,9 @@ impl ExecuteClaimParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::w
 impl CancelClaimParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(64); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.claim_id.to_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("CancelClaimParamsV1: expected 64 got {}", data.len()))); } Ok(CancelClaimParamsV1 { dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CancelClaimParamsV1: invalid dao_escrow_bulla".into()))?), claim_id: ClaimId(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CancelClaimParamsV1: invalid claim_id".into()))?) }) } }
 
 #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
-impl CapabilityProof { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let pl = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(164+self.proof.len()); b.extend_from_slice(&self.capability_id); b.extend_from_slice(&self.capability_secret); b.extend_from_slice(&self.nullifier.to_bytes()); b.extend_from_slice(&self.issuer_pub); b.extend_from_slice(&self.predicate_result); b.extend_from_slice(&pl.to_le_bytes()); b.extend_from_slice(&self.proof); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 164 { return Err(ContractError::IoError("CapabilityProof: too short".into())); } let proof_len = SerializedLen::from_le_bytes(data[160..164].try_into().unwrap()).to_usize(); // An EQUALITY, and it is exact because the field is now last. It used to be a minimum, for a reason
-// that no longer holds: `EndowmentWithdrawParamsV1` carried a trailing `has_pid` byte and an optional
-// `proposal_id` *after* the proof, so the buffer handed here was not the end of the frame and demanding
-// equality made every governance-path call undecodable — `OBL-C150`'s class (an encoder and its decoder
-// disagreeing about the length they describe) in its third instance. `EndowmentWithdrawParamsV1` no
-// longer carries a `CapabilityProof` at all, and the one container that still does
-// (`VoteClaimParamsV1`) puts it last, so the remainder of the frame is exactly the proof and a minimum
-// would accept trailing bytes the caller appended.
-let expected = proof_len.saturating_add(164); if data.len() != expected { return Err(ContractError::IoError(format!("CapabilityProof: expected {} got {}", expected, data.len()))); } Ok(CapabilityProof { capability_id: data[0..32].try_into().unwrap(), capability_secret: data[32..64].try_into().unwrap(), nullifier: IntentNullifier::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CapabilityProof: invalid nullifier: {}", e)))?, issuer_pub: data[96..128].try_into().unwrap(), predicate_result: data[128..160].try_into().unwrap(), proof: data[164..164+proof_len].to_vec() }) } }
+impl CapabilityProof { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let pl = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(132+self.proof.len()); b.extend_from_slice(&self.capability_id); b.extend_from_slice(&self.nullifier.to_bytes()); b.extend_from_slice(&self.issuer_pub); b.extend_from_slice(&self.predicate_result); b.extend_from_slice(&pl.to_le_bytes()); b.extend_from_slice(&self.proof); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 132 { return Err(ContractError::IoError("CapabilityProof: too short".into())); } let proof_len = SerializedLen::from_le_bytes(data[128..132].try_into().unwrap()).to_usize(); // An EQUALITY, and it is exact because the field is last: `VoteClaimParamsV1` is the only
+// container and it puts the proof at the end of the frame.
+let expected = proof_len.saturating_add(132); if data.len() != expected { return Err(ContractError::IoError(format!("CapabilityProof: expected {} got {}", expected, data.len()))); } Ok(CapabilityProof { capability_id: data[0..32].try_into().unwrap(), nullifier: IntentNullifier::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CapabilityProof: invalid nullifier: {}", e)))?, issuer_pub: data[64..96].try_into().unwrap(), predicate_result: data[96..128].try_into().unwrap(), proof: data[132..132+proof_len].to_vec() }) } }
 
 // --- Bridge update structs ---
 

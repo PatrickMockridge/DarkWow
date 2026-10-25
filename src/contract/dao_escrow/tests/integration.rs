@@ -65,7 +65,6 @@ fn make_blind(seed: u64) -> BaseBlind {
 fn make_capability_proof() -> CapabilityProof {
     CapabilityProof {
         capability_id: [7u8; 32],
-        capability_secret: [9u8; 32],
         nullifier: dwow_sdk::crypto::IntentNullifier::from_base(pallas::Base::from(31u64)),
         issuer_pub: [11u8; 32],
         predicate_result: [13u8; 32],
@@ -598,6 +597,7 @@ fn test_vote_claim_params_round_trip() {
             claim_id: ClaimId(pallas::Base::from(2)),
             vote,
             voter_pubkey: make_pubkey(1),
+            vote_nullifier: pallas::Base::from(3u64),
             capability_proof: make_capability_proof(),
         };
 
@@ -607,8 +607,8 @@ fn test_vote_claim_params_round_trip() {
         assert_eq!(decoded.claim_id, params.claim_id);
         assert_eq!(decoded.vote, vote);
         assert_eq!(decoded.voter_pubkey, params.voter_pubkey);
+        assert_eq!(decoded.vote_nullifier, params.vote_nullifier);
         assert_eq!(decoded.capability_proof.capability_id, params.capability_proof.capability_id);
-        assert_eq!(decoded.capability_proof.capability_secret, params.capability_proof.capability_secret);
         assert_eq!(decoded.capability_proof.nullifier, params.capability_proof.nullifier);
         assert_eq!(decoded.capability_proof.issuer_pub, params.capability_proof.issuer_pub);
         assert_eq!(decoded.capability_proof.predicate_result, params.capability_proof.predicate_result);
@@ -777,11 +777,11 @@ fn test_proposal_refuses_a_wrong_length() {
 fn test_capability_proof_refuses_trailing_bytes() {
     let proof = make_capability_proof();
     let encoded = proof.encode().unwrap();
-    assert_eq!(encoded.len(), 164 + 5);
+    assert_eq!(encoded.len(), 132 + 5);
 
     let decoded = CapabilityProof::decode(&encoded).unwrap();
     assert_eq!(decoded.proof, proof.proof);
-    assert_eq!(decoded.capability_secret, proof.capability_secret);
+    assert_eq!(decoded.nullifier, proof.nullifier);
 
     let mut longer = encoded.clone();
     longer.push(0xff);
@@ -790,7 +790,36 @@ fn test_capability_proof_refuses_trailing_bytes() {
         "the frame is the proof and nothing after it — trailing bytes must be refused, not ignored",
     );
 
-    assert!(CapabilityProof::decode(&encoded[..164]).is_err(), "a truncated frame must be refused");
+    assert!(
+        CapabilityProof::decode(&encoded[..encoded.len() - 1]).is_err(),
+        "a truncated frame must be refused"
+    );
+}
+
+/// OBL-C160 control: the frame no longer has a slot for the capability secret, and an old-format
+/// frame that carries one is refused rather than misparsed.
+#[test]
+fn test_capability_proof_frame_has_no_secret_slot() {
+    let proof = make_capability_proof();
+    let encoded = proof.encode().unwrap();
+    assert_eq!(
+        encoded.len(),
+        132 + proof.proof.len(),
+        "the frame is capability_id, nullifier, issuer_pub, predicate_result, length and proof"
+    );
+
+    let mut old = Vec::new();
+    old.extend_from_slice(&[7u8; 32]); // capability_id
+    old.extend_from_slice(&[9u8; 32]); // the removed capability_secret
+    old.extend_from_slice(&proof.nullifier.to_bytes());
+    old.extend_from_slice(&[11u8; 32]); // issuer_pub
+    old.extend_from_slice(&[13u8; 32]); // predicate_result
+    old.extend_from_slice(&5u32.to_le_bytes());
+    old.extend_from_slice(&proof.proof);
+    assert!(
+        CapabilityProof::decode(&old).is_err(),
+        "an old frame carrying the removed secret must be refused, not misparsed"
+    );
 }
 
 // ============================================================================

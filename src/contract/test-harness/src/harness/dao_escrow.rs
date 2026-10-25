@@ -526,11 +526,15 @@ impl DaoEscrowHarness {
             vote_blind,
         );
 
+        // OBL-C160: the params carry the nullifier the circuit instances from the private
+        // witness, not the witness's secret.
+        let vote_nullifier = input.compute_public_inputs().vote_nullifier;
         let params = VoteClaimParamsV1 {
             dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
             claim_id: ClaimId(claim_id),
             vote: if vote_yes { VoteType::Yes } else { VoteType::No },
             voter_pubkey,
+            vote_nullifier,
             capability_proof,
         };
 
