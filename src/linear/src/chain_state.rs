@@ -659,9 +659,16 @@ impl CChainState {
 
     #[cfg(feature = "pow")]
     pub fn get_vm(&self, key: [u8; 32]) -> Result<Arc<std::sync::Mutex<RandomXVM>>> {
-        let mut cache = self.vm_cache.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(vm) = cache.get(&key) {
-            return Ok(vm.clone());
+        // OBL-C259: the map lookup and the RandomX construction must not share one lock hold.
+        // Building a cache is a 256 MB allocation; holding `vm_cache` across it made every
+        // other requester — including smol executor threads — wait on a std mutex for the whole
+        // construction. Take the lock for the lookup, release it, build, then re-check under
+        // the lock in case another thread inserted the same key meanwhile.
+        {
+            let cache = self.vm_cache.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(vm) = cache.get(&key) {
+                return Ok(vm.clone());
+            }
         }
         let flags = RandomXFlags::get_recommended_flags() & !RandomXFlags::JIT;
         let rx_cache = randomx::RandomXCache::new(flags, &key)
@@ -670,6 +677,11 @@ impl CChainState {
             RandomXVM::new(flags, Some(rx_cache), None)
                 .map_err(|e| LinearError::RandomXError(format!("Failed to create RandomX VM: {e}")))?,
         ));
+        let mut cache = self.vm_cache.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(existing) = cache.get(&key) {
+            // Another requester built it while this one did; prefer the one already published.
+            return Ok(existing.clone());
+        }
         cache.insert(key, vm.clone());
         // Eviction picks the lexicographically smallest key, not the oldest insertion —
         // the keys are `blake3(height)`, so their order carries no recency. A needed key
@@ -696,13 +708,20 @@ impl CChainState {
     /// happens ONCE per key, not once per operation.
     #[cfg(feature = "pow")]
     pub fn get_cache(&self, key: [u8; 32]) -> Result<RandomXCache> {
-        let mut pool = self.cache_pool.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(cache) = pool.get(&key) {
-            return Ok(cache.clone());
+        // OBL-C259: same rule as `get_vm` — the 256 MB construction happens outside the lock.
+        {
+            let pool = self.cache_pool.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(cache) = pool.get(&key) {
+                return Ok(cache.clone());
+            }
         }
         let flags = RandomXFlags::get_recommended_flags() & !RandomXFlags::JIT;
         let cache = randomx::RandomXCache::new(flags, &key)
             .map_err(|e| LinearError::RandomXError(format!("Failed to create RandomX cache: {e}")))?;
+        let mut pool = self.cache_pool.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(existing) = pool.get(&key) {
+            return Ok(existing.clone());
+        }
         pool.insert(key, cache.clone());
         // Same key-order eviction as `vm_cache` (keys are hashes, not sequence numbers).
         // A dropped cache is rebuilt on demand; correctness does not depend on the choice.

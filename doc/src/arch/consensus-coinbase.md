@@ -38,10 +38,13 @@ minting authorizations, no token-holder votes that can change issuance.
 
 ### RandomX PoW (Monero)
 
-CPU-optimized proof-of-work. ~4 GB dataset forces memory-hard computation —
-ASICs and GPUs can't get a meaningful advantage. Anyone with a consumer laptop
-can mine. This keeps mining distributed rather than concentrated in industrial
-farms.
+CPU-optimized proof-of-work. Nodes run RandomX in **cache (light) mode**: each height's key
+derives a 256 MB cache and hashes are computed from it, without allocating the ~2 GB dataset that
+RandomX's fast mode would build. The memory-hardness is therefore bounded by the cache, not the
+dataset; the design choice is low-memory nodes over maximum ASIC resistance (`OBL-C266`, decided in
+[`decisions.md`](decisions.md)). The earlier "~4 GB dataset forces memory-hard computation" claim
+was false for every path in this tree (`get_vm`/`get_cache` use `RandomXCache`). ASICs and GPUs
+still gain far less than on SHA-256, and anyone with a consumer laptop can mine.
 
 ### Tail Emission (Monero)
 

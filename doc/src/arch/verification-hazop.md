@@ -29,7 +29,7 @@ and verifies the approval's `scope_sha256` over the acceptance boundary and its
 `appendix_baseline_sha256` over the frozen historical tombstones. `CLOSED` still means impossible in
 current code with a failing-before control (the nine conditions in `hazop-rules.md`).
 
-**Counts.** 46 decisions and interpretations live in [`decisions.md`](decisions.md); the gate checks
+**Counts.** 47 decisions and interpretations live in [`decisions.md`](decisions.md); the gate checks
 this number.
 
 ## Fix cycles
@@ -42,7 +42,7 @@ lapsed bound fails the register gate; it is not re-dated silently.
 |---|---|---|---|
 | custody | project lead | by:2026-11-08 | OBL-C160 |
 | codec | project lead | by:2026-11-04 | OBL-C205, OBL-C246 |
-| chain | project lead | by:2026-11-08 | OBL-C259, OBL-C266 |
+| chain | project lead | by:2026-11-08 | OBL-C259 |
 | wallet | project lead | by:2026-11-08 | OBL-C130, OBL-C260 |
 | models | project lead | by:2026-11-15 | OBL-C206, OBL-Z12, OBL-Z18, OBL-Z23, OBL-Z3 |
 
@@ -70,7 +70,6 @@ lapsed bound fails the register gate; it is not re-dated silently.
 | OBL-C263 | CLOSED | The container build hand-duplicated the contract recipe as bare cargo commands: no `-C link-arg=--max-memory`, and strip/location-detail only for the first of 32 packages. The image's genesis artifacts declared no memory maximum and were refused at instantiation. The build now goes through the shared recipe with in-image gates; the artifact check's self-test is the failing-before control. evidence:24278c2508 | `contrib/docker/darkwow-testnet/Dockerfile:contracts` | `contrib/wasm_artifact_check.sh` | H/D |
 | OBL-C264 | CLOSED | The pipeline counted a `Restarting` node as running, passed mining from a startup banner, and reported the genesis refusal as a mining timeout; the true artifact error appeared only in the final log tail. Phase 9 now fails fast with the named artifact logs; the 2026-10-25 run passes. evidence:24278c2508 negative:2026-10-23 genesis refusal was reported as a mining timeout | `contrib/docker/darkwow-testnet/lib/phase_09_blocks.sh:phase_blocks` | `contrib/docker/darkwow-testnet/test_pipeline.sh` | M/D |
 | OBL-C265 | CLOSED | A wire VarInt length was reserved and zero-filled before its bytes were read, so one corrupt length (0xFE/0xFF) in scan call data or `DeployParamsV1` OOM-killed the wallet or node; the introducing commit `e42f2c1c1a`'s `try_reserve` bound is false under Linux overcommit. The control passes (`23 passed`) and its planted-defect run FAILED. evidence:e2b262e517 | `src/serial/src/lib.rs:u8::decode_vec` | `vec_u8_decode_rejects_length_one_over_cap` | H/D |
-| OBL-C266 | OPEN | PoW hashes in RandomX cache (light) mode on every path — no dataset is ever allocated — while consensus documents claim a ~4 GB dataset that forces memory-hard computation; either the property is not enforced or the documents are false. The audit records it as a decision required, not a residual. | `src/linear/src/chain_state.rs:get_vm` | `plan: decide cache-mode vs docs, then enforce or correct` | H/P |
 | OBL-C267 | CLOSED | The fee window's congestion factors were advanced only by a mining node's own mempool queue depths and never recomputed from applied blocks, so a syncing or boundary-losing node kept identity factors; the spec's identical-inputs premise was false and 13.1 contradicted FI-FLAG-2/3. The factors are now typed state derived on every applying node from the completed window's applied FeeV3 tiers, snapshotted per boundary and restored on disconnect. evidence:f2541499a5 | `src/linear/src/fee_window.rs:next_snapshot` | `test_next_snapshot_is_deterministic` | C/D |
 | OBL-C268 | CLOSED | node1 set RPC_PORT=31346 while MANAGEMENT_PORT defaulted to 31346; both listeners targeted one port, management won, and blockchain.get_height was unreachable, which Phase 9 reported as sync lag. node1 now has MANAGEMENT_PORT=31344 and MM_RPC_PORT=31350, and the entrypoint refuses duplicate listeners. The 2026-10-25 run reports node1 height 38 then 1298. evidence:9af26fb23a negative:2026-10-24 node1 get_height answered method-not-found | `contrib/docker/darkwow-testnet/entrypoint.sh:MANAGEMENT_PORT` | `contrib/docker/darkwow-testnet/test_pipeline.sh` | M/D |
 | OBL-C269 | CLOSED | The cumulative-commit singletons in the contracts tree and the supply-chain tree were written non-atomically on reorg (rollback under no lock, contracts undo in a separate sled write, WASM outside connect_lock), so a failed or concurrent reorg could leave them divergent. The disconnect now commits both trees atomically under the apply lock; the fault-injection control passes and failed under a planted pre-fix mutation (supply entry removed). | `bin/dwowd/src/block_acceptor.rs:rollback_cumulative_commit` | `test_disconnect_undo_failure_leaves_the_trees_consistent` | H/P |
@@ -340,6 +339,7 @@ a new row may not use one, and the set is hashed by the approval manifest
 | OBL-Z22 | settled |
 | OBL-Z7 | settled |
 | OBL-Z9 | settled |
+| OBL-C266 | decision (see decisions.md) |
 | OBL-C11 | restated |
 | OBL-C113 | decision |
 | OBL-C125 | decision |
