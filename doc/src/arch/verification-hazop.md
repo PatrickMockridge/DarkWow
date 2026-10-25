@@ -43,7 +43,7 @@ lapsed bound fails the register gate; it is not re-dated silently.
 | custody | project lead | by:2026-11-08 | OBL-C160 |
 | codec | project lead | by:2026-11-04 | OBL-C205, OBL-C246 |
 | chain | project lead | by:2026-11-08 | OBL-C259 |
-| wallet | project lead | by:2026-11-08 | OBL-C130, OBL-C260 |
+| wallet | project lead | by:2026-11-08 | OBL-C130 |
 | models | project lead | by:2026-11-15 | OBL-C206, OBL-Z12, OBL-Z18, OBL-Z23, OBL-Z3 |
 
 | ID | Status | Defect | Locus | Control | Risk |
@@ -65,7 +65,6 @@ lapsed bound fails the register gate; it is not re-dated silently.
 | OBL-C276 | CLOSED | `total_staked` was never updated after registration, so `request_interest_v1` computed interest against zero (the TODO in `apply_issue_stake`). The arm now refuses with `AuthorityModelUnavailable` before any state read; persisted series totals come with the redesign. Run: `disabled_authority_arms_are_refused_before_any_state_read ... ok`. | `src/contract/bearer_bond/src/entrypoint/mod.rs:process_instruction` | `disabled_authority_arms_are_refused_before_any_state_read` | M/P |
 | OBL-C253 | CLOSED | An exit took member identity and weight from the caller (`params.contribution_weight`); `MemberWeight` carried no identity, `members` was never populated, and `exit.zk` constrained none of its membership witnesses. The arm now refuses before any state read, so no caller-supplied identity or weight reaches an arithmetic path. Run: `exit_is_refused_before_any_state_read ... ok`. | `src/contract/drain_protection/src/entrypoint.rs:process_instruction` | `exit_is_refused_before_any_state_read` | C/P |
 | OBL-C259 | OPEN | A thread waiting on the RandomX VM lock blocks a smol executor thread (the residual of the C240 exclusivity fix; C240 is merged here). | `src/linear/src/chain_state.rs:CChainState::vm_cache` | `plan: async-aware VM lock and liveness test` | H/P |
-| OBL-C260 | OPEN | The generic manifest client constructs one proof per call, so a multi-proof arm (PN redeem/transfer/otc_swap) cannot be built; it now fails closed. | `src/sdk/src/contract_client.rs:ManifestCallPlan::prove` | `plan: multi-proof call plan and refusal test` | M/D |
 | OBL-C261 | CLOSED | The 400M gas exhaustion was in **DeployV1** at height 2: the local `wasm_content_commitment` ran one Poseidon hash per 64-byte chunk over the 292,574-byte drain_protection module (~4,571 hashes) inside the guest (`fn_code=0x01` was the call-tree length prefix, not the selector). The upstream port deleted the content commitment; the height-2 gas failure is the failing-before evidence and `test_heavyweight_deployooor` passes. evidence:f1c551ee9b | `src/contract/deployooor/src/entrypoint/deploy_v1.rs:deploy_process_instruction_v1` | `test_heavyweight_deployooor` | H/D |
 | OBL-C263 | CLOSED | The container build hand-duplicated the contract recipe as bare cargo commands: no `-C link-arg=--max-memory`, and strip/location-detail only for the first of 32 packages. The image's genesis artifacts declared no memory maximum and were refused at instantiation. The build now goes through the shared recipe with in-image gates; the artifact check's self-test is the failing-before control. evidence:24278c2508 | `contrib/docker/darkwow-testnet/Dockerfile:contracts` | `contrib/wasm_artifact_check.sh` | H/D |
 | OBL-C264 | CLOSED | The pipeline counted a `Restarting` node as running, passed mining from a startup banner, and reported the genesis refusal as a mining timeout; the true artifact error appeared only in the final log tail. Phase 9 now fails fast with the named artifact logs; the 2026-10-25 run passes. evidence:24278c2508 negative:2026-10-23 genesis refusal was reported as a mining timeout | `contrib/docker/darkwow-testnet/lib/phase_09_blocks.sh:phase_blocks` | `contrib/docker/darkwow-testnet/test_pipeline.sh` | M/D |
@@ -366,6 +365,7 @@ a new row may not use one, and the set is hashed by the approval manifest
 | OBL-C234 | restated |
 | OBL-C32 | accepted |
 | OBL-C66 | residual (R-07, see residual-risk.md) |
+| OBL-C260 | residual (R-08, see residual-risk.md) |
 | OBL-C76 | decision |
 | OBL-C80 | accepted |
 | OBL-C82 | decision |
