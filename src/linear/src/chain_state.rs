@@ -51,6 +51,12 @@
 //! `competing_blocks` + `competing_seen` (never `connect_lock`),
 //! which cannot deadlock with `connect_block` because the latter
 
+/// Test-only flag for `OBL-C259`'s control: set while `get_vm` is constructing a RandomX cache,
+/// which must happen with `vm_cache` released. Compiled out of every non-test build.
+#[cfg(test)]
+pub(crate) static VM_BUILD_IN_PROGRESS: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// Outcome of connecting a block to the chain.
 ///
 /// `connect_block` previously returned `Result<()>` for three semantically
@@ -671,12 +677,16 @@ impl CChainState {
             }
         }
         let flags = RandomXFlags::get_recommended_flags() & !RandomXFlags::JIT;
+        #[cfg(test)]
+        VM_BUILD_IN_PROGRESS.store(true, std::sync::atomic::Ordering::SeqCst);
         let rx_cache = randomx::RandomXCache::new(flags, &key)
             .map_err(|e| LinearError::RandomXError(format!("Failed to create RandomX cache: {e}")))?;
         let vm = Arc::new(std::sync::Mutex::new(
             RandomXVM::new(flags, Some(rx_cache), None)
                 .map_err(|e| LinearError::RandomXError(format!("Failed to create RandomX VM: {e}")))?,
         ));
+        #[cfg(test)]
+        VM_BUILD_IN_PROGRESS.store(false, std::sync::atomic::Ordering::SeqCst);
         let mut cache = self.vm_cache.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(existing) = cache.get(&key) {
             // Another requester built it while this one did; prefer the one already published.
@@ -2296,6 +2306,57 @@ mod tests {
         let competing = cs.take_competing_blocks(h1);
         assert!(!competing.is_empty(), "competing_blocks must contain the second block");
         assert_eq!(competing[0].header.nonce, 1, "retrieved competing block must match");
+    }
+
+    /// OBL-C259 control: the cache lock is free while a RandomX VM is being constructed. The
+    /// test-only `VM_BUILD_IN_PROGRESS` flag marks the construction; `try_lock` must succeed.
+    /// A mutant that puts the construction back under the lock sets the flag while holding it,
+    /// and this test fails on the `try_lock`.
+    #[test]
+    fn vm_construction_does_not_hold_the_cache_lock() {
+        use std::sync::atomic::Ordering;
+
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let state = Arc::new(
+            CChainState::new(
+                Arc::new(db),
+                120,
+                BlockTarget::MAX,
+                BlockTarget::new(1),
+                BlockTarget::MAX,
+                FinalityConfig::default(),
+            )
+            .unwrap(),
+        );
+        super::VM_BUILD_IN_PROGRESS.store(false, Ordering::SeqCst);
+        let thread_state = state.clone();
+        let key = Miner::derive_key_from_height(BlockHeight::new(1));
+        let worker = std::thread::spawn(move || thread_state.get_vm(key));
+
+        let started = std::time::Instant::now();
+        while !super::VM_BUILD_IN_PROGRESS.load(Ordering::SeqCst)
+            && started.elapsed() < std::time::Duration::from_secs(10)
+        {
+            std::thread::yield_now();
+        }
+        assert!(
+            super::VM_BUILD_IN_PROGRESS.load(Ordering::SeqCst),
+            "the fixture did not reach RandomX construction"
+        );
+        assert!(
+            state.vm_cache.try_lock().is_ok(),
+            "the cache lock must be free while the 256 MB cache is being built (OBL-C259)"
+        );
+        worker.join().expect("the VM build thread").expect("the VM build");
+
+        // Negative twin: with the lock actually held, the same `try_lock` fails — so the
+        // assertion above is evidence about the lock, not about `try_lock` always succeeding.
+        let guard = state.vm_cache.lock().unwrap_or_else(|e| e.into_inner());
+        assert!(
+            state.vm_cache.try_lock().is_err(),
+            "a held cache lock must make try_lock fail; otherwise the control above is vacuous"
+        );
+        drop(guard);
     }
 
     /// The VM cache honours its bound, and an evicted key rebuilds to a VM that hashes
