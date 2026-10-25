@@ -37,12 +37,13 @@
 //! | Lock endowment funds | 2/3 total vote | Max 7 days, renewable |
 //! | Unlock funds | 2/3 total vote | + 24hr timelock |
 //! | Change spend authority | 2/3 total vote | + 48hr timelock |
-//! | Member exit | 1/3 haircut | Any time, block-height-weighted |
+//! | Member exit | — | **Refused** (`CustodyModelUnavailable`); no parent-verifiable custody primitive |
 //!
 //! ## Provisional Status
 //!
 //! This contract is EXPERIMENTAL. The protections are provisionally specified
-//! and require full implementation and security audit.
+//! and require full implementation and security audit. `ExitV1` is disabled (OBL-C271):
+//! the fund is a governance wrapper over notes its authority holds, not a custodian.
 
 use dwow_sdk::{
     crypto::{constants::DRK_POSEIDON_DOMAIN_TX_BINDING, pasta_prelude::PrimeField, poseidon_hash, BOX_CONTRACT_ID, ContractId, MULTISIG_CONTRACT_ID, PURSE_CONTRACT_ID},
@@ -374,8 +375,32 @@ fn drain_protection_exit_get_metadata_v1(
 
 /// Verify state transition and produce update if valid
 fn process_instruction(cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult {
-    let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>> = deserialize(ix)?;
+
+    // OBL-C102 / OBL-C253 / OBL-C97: the member-exit arm is refused **before** the host is asked
+    // which call is ours, before any parameter decode and before any state read.
+    //
+    // The arm trusted the caller for member identity and weight (`MemberWeight` had no identity,
+    // `ProtectedFund.members` had no population path, and `params.contribution_weight` was the
+    // caller's number), computed a payout from a `total_funds` that is always zero, and accepted
+    // any `promissory_note::transfer_v1` child whose value commitment matched that zero. The
+    // circuit it proved against (`exit.zk`) instances only the transaction pair; it constrains
+    // none of its declared membership witnesses. There is no custody primitive a parent can use to
+    // verify a member's share: `Purse` keeps its amounts off-wire. Until one exists, the only
+    // sound state for this path is refusal. `TransferV1` remains the governance path over notes the
+    // fund authority holds, and applies the stored spend authority.
+    //
+    // The placement is deliberate: it is a host-testable refusal that performs no state read, so
+    // the control can be an ordinary unit test rather than a chain run.
+    if calls.iter().any(|c| {
+        c.data.contract_id == cid
+            && c.data.data.first().copied() == Some(DrainProtectionFunction::ExitV1 as u8)
+    }) {
+        msg!("[drain_protection::ExitV1] refused: the member-exit custody model is not implemented");
+        return Err(DrainProtectionError::CustodyModelUnavailable.into())
+    }
+
+    let call_idx = wasm::util::get_call_index()? as usize;
     let self_ = &calls[call_idx];
     let func = DrainProtectionFunction::try_from(self_.data.data[0])?;
 
@@ -432,32 +457,9 @@ fn process_instruction(cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> Contract
             let _ = wasm::util::set_return_data(&update);
         }
         DrainProtectionFunction::ExitV1 => {
-            // Validate children_indexes for token payout
-            if self_.children_indexes.len() != 1 {
-                msg!("[drain_protection::ExitV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}", self_.children_indexes.len());
-                return Err(DrainProtectionError::InvalidChildrenIndexes.into())
-            }
-            let child_idx = self_.children_indexes[0];
-            let child_call = &calls[child_idx].data;
-            if child_call.data[0] != 0x04 {
-                msg!("[drain_protection::ExitV1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}", child_call.data[0]);
-                return Err(DrainProtectionError::InvalidChildCall.into())
-            }
-
-            // Validate child call targets promissory_note (prevent cross-contract routing)
-            let info_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_INFO_TREE)?;
-            let promissory_note_bytes = wasm::db::db_get(info_db, DRAIN_PROTECTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
-                .ok_or(DrainProtectionError::InvalidChildCall)?;
-            let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-            // HAZOP H-11: fail-closed — reject if promissory_note not configured
-            if promissory_note_cid == ContractId::ZERO {
-                return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
-            }
-            validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
-
-            let params= ExitParamsV1::decode(&self_.data.data[1..])?;
-            let update = exit_process_instruction_v1(cid, params, &child_call.data)?;
-            let _ = wasm::util::set_return_data(&update);
+            // Unreachable: the pre-check at the top of this function refuses any ExitV1 call.
+            // Kept fail-closed so removing the pre-check does not silently re-enable the arm.
+            return Err(DrainProtectionError::CustodyModelUnavailable.into())
         }
         DrainProtectionFunction::TransferV1 => {
             // Validate children_indexes for token transfer
@@ -744,55 +746,6 @@ fn execute_process_instruction_v1(
 }
 
 /// `process_instruction` for ExitV1
-fn exit_process_instruction_v1(
-    cid: dwow_sdk::crypto::ContractId,
-    params: ExitParamsV1,
-    child_call_data: &[u8],
-) -> Result<Vec<u8>, ContractError> {
-    msg!("[ExitV1] Processing member exit");
-
-    let funds_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE)?;
-    let exits_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_EXITS_TREE)?;
-
-    // Find the fund by its ID
-    let fund_data = wasm::db::db_get(funds_db, &params.fund_id.to_repr())?
-        .ok_or(DrainProtectionError::MemberNotFound)?;
-    let fund: ProtectedFund = ProtectedFund::decode(&fund_data)?;
-
-    // Calculate exit value with haircut
-    // exit_value = (weight / total_weight) × total_funds × 0.666
-    let total_weight: u64 = fund.members.iter().map(|m| m.effective_weight(params.current_block)).sum();
-    let member_weight = params.contribution_weight;
-
-    if member_weight == 0 {
-        return Err(DrainProtectionError::ZeroContributionWeight.into())
-    }
-
-    let haircut_bps = 3333; // 33.33%
-    let exit_value = (member_weight * fund.total_funds / total_weight.max(1)) * (10_000 - haircut_bps) / 10_000;
-
-    let exit_id = dwow_sdk::crypto::poseidon_hash([
-        fund.id,
-        pallas::Base::from(params.current_block),
-    ]);
-
-    // Validate child transfer amount using value_commit comparison
-    let value_blind = poseidon_hash([
-        pallas::Base::from(exit_value),
-        params.fund_id,
-    ]);
-    validate_child_value_commit(child_call_data, exit_value, value_blind)?;
-
-    // The exit marker is written in apply (`OBL-C73`); the update already carries the id it is keyed on.
-    let update = ExitUpdateV1 {
-        exit_id,
-        member_pubkey: params.member_pubkey,
-        payout_value: exit_value,
-        haircut_collected: (member_weight * fund.total_funds / total_weight.max(1)) * haircut_bps / 10_000,
-    };
-    encode_exit_update_v1(&update)
-}
-
 /// `process_instruction` for TransferV1
 fn transfer_process_instruction_v1(
     cid: dwow_sdk::crypto::ContractId,
@@ -1006,14 +959,6 @@ fn encode_execute_update_v1(update: &crate::model::ExecuteUpdateV1) -> Result<Ve
     let inner = update.encode();
     let mut buf = Vec::with_capacity(1 + inner.len());
     buf.push(DrainProtectionFunction::ExecuteV1 as u8);
-    buf.extend_from_slice(&inner);
-    Ok(buf)
-}
-
-fn encode_exit_update_v1(update: &crate::model::ExitUpdateV1) -> Result<Vec<u8>, ContractError> {
-    let inner = update.encode();
-    let mut buf = Vec::with_capacity(1 + inner.len());
-    buf.push(DrainProtectionFunction::ExitV1 as u8);
     buf.extend_from_slice(&inner);
     Ok(buf)
 }
@@ -1250,3 +1195,47 @@ fn check_rate_limit(
 // ============================================================================
 // VoteAction replaced by MultiSig composition — see MultiSig contract
 // ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn call_set(cid: ContractId, selector: u8) -> Vec<u8> {
+        let leaf = dwow_sdk::dark_tree::DarkLeaf {
+            data: ContractCall { contract_id: cid, data: vec![selector] },
+            parent_index: None,
+            children_indexes: vec![],
+        };
+        dwow_serial::serialize(&vec![leaf])
+    }
+
+    /// R8 control for OBL-C102 / OBL-C253 / OBL-C97: the exit arm is refused before the host is
+    /// asked which call is ours, so this executes on a host unit test with no wasm runtime.
+    ///
+    /// Before the fix the arm reached `get_call_index()` — a host call — and exited with
+    /// `IoError("wasm host function unavailable")` on the host, which this assertion rejects.
+    #[test]
+    fn exit_is_refused_before_any_state_read() {
+        let cid = ContractId::ZERO;
+        let err = process_instruction(cid, &call_set(cid, DrainProtectionFunction::ExitV1 as u8))
+            .expect_err("ExitV1 must be refused");
+        assert!(
+            matches!(err, ContractError::Custom(24)),
+            "ExitV1 must be refused with CustodyModelUnavailable (Custom(24)), got {err:?}"
+        );
+    }
+
+    /// The negative twin: a non-exit selector is not caught by the refusal, so the guard is
+    /// specific to the disabled arm rather than a blanket refusal of every call.
+    #[test]
+    fn initialize_is_not_refused_by_the_exit_guard() {
+        let cid = ContractId::ZERO;
+        let err =
+            process_instruction(cid, &call_set(cid, DrainProtectionFunction::InitializeV1 as u8))
+                .expect_err("a non-exit call reaches the host index on the host");
+        assert!(
+            !matches!(err, ContractError::Custom(24)),
+            "the refusal must be ExitV1-specific, got {err:?}"
+        );
+    }
+}

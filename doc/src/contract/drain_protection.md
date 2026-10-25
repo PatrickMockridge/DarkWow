@@ -4,6 +4,25 @@
 
 Governance-level protections for endowment/treasury funds against malicious DAO actions or mass exit attacks.
 
+## Status: the member-exit value path is disabled (2026-10-25)
+
+`ExitV1` (opcode `0x04`) is **refused** with `CustodyModelUnavailable` before any state read. The
+arm trusted the caller for member identity and weight, computed a payout from a `total_funds` that
+is always zero, and accepted any `promissory_note::transfer_v1` child whose value commitment matched
+that zero; `exit.zk` instances only the transaction pair and constrains none of its declared
+membership witnesses. There is also no custody primitive a parent contract can use to check a
+member's share: the genesis `Purse` keeps its amounts off-wire (`derived_purse_id` is the only
+public field), and `ProtectedFund.members` has no identity or population path. Rather than keep a
+path that pays nothing and proves nothing, the contract refuses it. The design decision is recorded
+as `OBL-C271` in [`decisions.md`](../arch/decisions.md); register rows `OBL-C102`, `OBL-C253` and
+`OBL-C97` close on the refusal.
+
+`TransferV1` remains the governance path: the fund authority spends notes it holds, the stored spend
+authority is applied, and the rate limit is strict while `total_funds` is zero (every transfer then
+needs the configured proposal path). The fund is a governance wrapper over externally-held notes,
+**not a custodian**. A future custody model needs a primitive that exposes a parent-verifiable
+withdrawal amount; that is a protocol change, not a contract patch.
+
 ## Composition
 
 **Not implemented as the design describes.** `InitializeV1` writes the genesis
@@ -31,7 +50,7 @@ See [Purse](purse.md) and [Box](box.md) for the genesis primitives.
 | ProposeV1 | `0x01` | Propose a governance action (large withdrawal, lock, authority change) |
 | VoteV1 | `0x02` | Cast a vote on an active proposal |
 | ExecuteV1 | `0x03` | Execute a concluded proposal after voting period ends |
-| ExitV1 | `0x04` | Exit the fund with a haircut penalty (any member, any time) |
+| ExitV1 | `0x04` | **Refused** (`CustodyModelUnavailable`): the member-exit custody model is not implemented; see Status above |
 | TransferV1 | `0x05` | Transfer funds from the protected pool (rate-limited) |
 | LockV1 | `0x06` | Emergency lock of funds |
 | UnlockV1 | `0x07` | Unlock previously locked funds |

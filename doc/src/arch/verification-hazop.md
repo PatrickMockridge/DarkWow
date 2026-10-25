@@ -29,7 +29,7 @@ and verifies the approval's `scope_sha256` over the acceptance boundary and its
 `appendix_baseline_sha256` over the frozen historical tombstones. `CLOSED` still means impossible in
 current code with a failing-before control (the nine conditions in `hazop-rules.md`).
 
-**Counts.** 44 decisions and interpretations live in [`decisions.md`](decisions.md); the gate checks
+**Counts.** 45 decisions and interpretations live in [`decisions.md`](decisions.md); the gate checks
 this number.
 
 ## Fix cycles
@@ -40,7 +40,7 @@ lapsed bound fails the register gate; it is not re-dated silently.
 
 | Cycle | Owner | Bound | Rows |
 |---|---|---|---|
-| custody | project lead | by:2026-11-08 | OBL-C102, OBL-C160, OBL-C253, OBL-C97 |
+| custody | project lead | by:2026-11-08 | OBL-C160 |
 | stablecoin | project lead | by:2026-11-12 | OBL-C92 |
 | bearer-bond | project lead | by:2026-11-12 | OBL-C248 |
 | codec | project lead | by:2026-11-04 | OBL-C202, OBL-C205, OBL-C239, OBL-C241, OBL-C246 |
@@ -50,7 +50,7 @@ lapsed bound fails the register gate; it is not re-dated silently.
 
 | ID | Status | Defect | Locus | Control | Risk |
 |---|---|---|---|---|---|
-| OBL-C102 | OPEN | A protected fund's holdings are inert bookkeeping (`total_funds: 0`); the payout is not bound to the fund's purse. | `src/contract/drain_protection/src/entrypoint.rs:init_fund_process_instruction_v1` | `test_heavyweight_drain_protection` | C/P |
+| OBL-C102 | CLOSED | A protected fund's payout was inert bookkeeping: `initialize` stored `total_funds: 0` and no members, and `ExitV1` paid a share of that zero from a caller-supplied weight. The exit arm now refuses with `CustodyModelUnavailable` before any host call or state read; the contract is governance-only (OBL-C271) and the spec states it. Run: `exit_is_refused_before_any_state_read ... ok`; twin `initialize_is_not_refused_by_the_exit_guard ... ok`. | `src/contract/drain_protection/src/entrypoint.rs:process_instruction` | `exit_is_refused_before_any_state_read` | C/P |
 | OBL-C109 | OPEN | The Python maturity model keys by commitment while the code keys by nullifier; they are not the same source of truth. | `contrib/model/chain_model.py:is_commitment_mature` | `plan: model-vs-code maturity test` | H/P |
 | OBL-C130 | OPEN | The wallet selects a capability by asset id only, not by `ContractId` and barbs as §6.4.1 requires. | `bin/dww/src/dispatch.rs:dispatch_sync` | `scripts/check-wallet-kernel.sh` | H/P |
 | OBL-C136 | OPEN | A fixed 5-second wait, not wait-until-consistent, makes the event-graph DAG test fail under load with no stated cause. | `src/event_graph/tests.rs:bootstrap_nodes` | `plan: bounded condition poll in the DAG test` | L/D |
@@ -63,7 +63,7 @@ lapsed bound fails the register gate; it is not re-dated silently.
 | OBL-C241 | OPEN | `Membership::derive_note` hashes a different preimage than the circuit and client, so the helper builds calls the circuit refuses. | `src/contract/dao_escrow/src/model/mod.rs:Membership::derive_note` | `plan: circuit/host/client preimage agreement test` | H/P |
 | OBL-C246 | OPEN | The same-block relayer `initialize`+`deploy_capital` arrangement was removed rather than repaired; no endpoint-named control covers it. | `bin/dwowd/src/tests/heavyweight_pipeline.rs:test_relayer_lifecycle_heavyweight` | `test_relayer_lifecycle_heavyweight` | M/P |
 | OBL-C248 | OPEN | `prove_coverage_v1` is unauthenticated and `total_staked` is never updated; only the empty-success half is fixed. | `src/contract/bearer_bond/src/entrypoint/mod.rs:verify_coverage_v1` | `test_heavyweight_bearer_bond` | C/P |
-| OBL-C253 | OPEN | An exit trusts the caller for member identity and weight, and the payout is not checked against the fund's purse. | `src/contract/drain_protection/src/entrypoint.rs:exit_process_instruction_v1` | `test_heavyweight_drain_protection` | C/P |
+| OBL-C253 | CLOSED | An exit took member identity and weight from the caller (`params.contribution_weight`); `MemberWeight` carried no identity, `members` was never populated, and `exit.zk` constrained none of its membership witnesses. The arm now refuses before any state read, so no caller-supplied identity or weight reaches an arithmetic path. Run: `exit_is_refused_before_any_state_read ... ok`. | `src/contract/drain_protection/src/entrypoint.rs:process_instruction` | `exit_is_refused_before_any_state_read` | C/P |
 | OBL-C259 | OPEN | A thread waiting on the RandomX VM lock blocks a smol executor thread (the residual of the C240 exclusivity fix; C240 is merged here). | `src/linear/src/chain_state.rs:CChainState::vm_cache` | `plan: async-aware VM lock and liveness test` | H/P |
 | OBL-C260 | OPEN | The generic manifest client constructs one proof per call, so a multi-proof arm (PN redeem/transfer/otc_swap) cannot be built; it now fails closed. | `src/sdk/src/contract_client.rs:ManifestCallPlan::prove` | `plan: multi-proof call plan and refusal test` | M/D |
 | OBL-C261 | CLOSED | The 400M gas exhaustion was in **DeployV1** at height 2: the local `wasm_content_commitment` ran one Poseidon hash per 64-byte chunk over the 292,574-byte drain_protection module (~4,571 hashes) inside the guest (`fn_code=0x01` was the call-tree length prefix, not the selector). The upstream port deleted the content commitment; the height-2 gas failure is the failing-before evidence and `test_heavyweight_deployooor` passes. evidence:f1c551ee9b | `src/contract/deployooor/src/entrypoint/deploy_v1.rs:deploy_process_instruction_v1` | `test_heavyweight_deployooor` | H/D |
@@ -80,7 +80,7 @@ lapsed bound fails the register gate; it is not re-dated silently.
 | OBL-C54 | OPEN | A stratum submit can be judged against a template a concurrent login has already replaced; writes are serialised but unversioned. | `bin/dwowd/src/rpc/stratum.rs:stratum_submit` | `plan: template generation id checked at submit` | M/P |
 | OBL-C56 | OPEN | The sync-state check and the mining act are not atomic; a transition can land in the window before accept. | `bin/dwowd/src/lib.rs:miner_task` | `plan: atomic mining gate and test` | M/D |
 | OBL-C92 | OPEN | A stablecoin redemption releases the collateral it claims in the ledger but pays no collateral to the redeemer (C251 merged here). | `src/contract/stablecoin/src/entrypoint.rs:process_redeem_stable_instruction` | `test_heavyweight_stablecoin` | C/D |
-| OBL-C97 | OPEN | The exit arm of a protected fund does not apply the fund's stored spend authority (the member-authorization design is OBL-C253). | `src/contract/drain_protection/src/entrypoint.rs:exit_process_instruction_v1` | `test_heavyweight_drain_protection` | C/P |
+| OBL-C97 | CLOSED | The exit arm applied no stored authority. The member-exit path is now refused (C102/C253, OBL-C271), so no exit-authority check is reachable; the remaining value path `TransferV1` applies `require_fund_authority` against the stored `spend_authority`, as `execute` and `update_config` do. Run: `exit_is_refused_before_any_state_read ... ok`. | `src/contract/drain_protection/src/entrypoint.rs:require_fund_authority` | `exit_is_refused_before_any_state_read` | C/P |
 | OBL-Z12 | OPEN | A circuit's integer-quotient proof is about field residues unless the operand bound is established; the Lean theorem states the bound and nothing on chain establishes it. | `proofs/lean/src/DarkFi/BaseDivGadget.lean:qr_unique` | `scripts/check-circuit-instance-derivation.sh` | H/P |
 | OBL-Z18 | OPEN | 51 `constrain_equal_base` sites have no verifier-visible operand; each is adjudicated, but the sweep is not closed. | `scripts/check-pubkey-binding.sh` | `plan: external adjudication corpus (not the checker itself)` | M/D |
 | OBL-Z23 | OPEN | 117 dead values are adjudicated, but the dead-value gate is report-only, so a newly introduced undeclared dead value does not fail anything. It was accepted as R-05; the process ALARP round withdrew that record because a blocking gate frozen against the adjudicated baseline is reasonably practicable. | `scripts/check-circuit-dead-values.sh` | `plan: blocking gate with a frozen baseline of the adjudicated dead values` | M/D |

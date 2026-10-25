@@ -14,20 +14,15 @@
 //!     `multisig_group_id`, which `initialize` stores as zero and `execute` requires (`OBL-C98`).
 //!   * `propose` derives the proposal id that `vote` and `execute` name
 //!     (`poseidon_hash([fund.id, message_hash])`).
-//!   * `exit` needs a **payment child** — a `promissory_note::transfer_v1`. It failed, and the
-//!     failure was measured, not inferred: the block at height 10 (the `exit` block — the exec
-//!     order in the `DWOW_TEST_LOGS=1` output is Initialize → UpdateConfig → UpdateConfig →
-//!     Propose → Vote → Execute → Exit) was rejected *after* `[ExitV1::apply] Exit recorded`, at
-//!     the L2 proof verify, `invalid proof: call[0] namespace 'Revoke_V2'`. The cause was this
-//!     fixture, and it was a real one: the exit's payout is zero by arithmetic (no members, no
-//!     funds), and the fixture had concluded that a zero *payout* needs a zero-valued *note* spent.
-//!     **A zero-value spend is unprovable** — `revoke.zk:69` constrains `less_than_strict(ZERO,
-//!     value)`, so its proof can never be satisfied, and `zero_cond(value, coin)` would fold the
-//!     empty leaf where the client folds the real commitment. A zero *payout* needs no such thing:
-//!     `validate_child_value_commit` accepts **any** output whose `value_commit` equals
-//!     `pedersen(payout, blind)`, so a payout-plus-change child satisfies the parent while spending a
-//!     non-zero note — which is exactly what `pn_transfer_payout_child` is for, and what the
-//!     gambling specs already use for their zero payouts (`darktoshi_dice_spec.rs:156`).
+//!   * `exit` is **refused** (`CustodyModelUnavailable`, `Custom(24)`) before any state read
+//!     (`entrypoint.rs`, the dispatch pre-check). The arm trusted the caller for member identity and
+//!     weight, paid a zero payout from an always-zero `total_funds`, and proved against an
+//!     `exit.zk` that instances only the transaction pair. The register rows C102/C253/C97 close on
+//!     that refusal, and this endpoint is the chain-level twin of the host unit control: if the
+//!     refusal is removed, the endpoint succeeds and the spec fails. The former fixture's
+//!     zero-payout child is retained to show the rejected shape; a zero *spend* remains unprovable
+//!     (`revoke.zk:69`), which is why the child spends a non-zero member note and pays zero plus
+//!     change.
 //!   * `transfer` builds its child the same way and was **never reached** in the run that recorded the
 //!     exit's failure: the runner aborts at the first failing endpoint, and `exit` precedes it. Its
 //!     child is a plain one-in/one-out transfer of the `params.amount` the fixture sends, which is
@@ -391,32 +386,38 @@ pub fn drain_protection_test_spec() -> ContractTestSpec<'static> {
                     }
                 }),
             },
-            mk_ep("exit", true, Box::new({
-                let notes = notes.clone();
-                move || {
-                    let parent = h.exit_prepare().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    let parent_contract_call = mk_call(drain_cid, &parent.call_data);
-                    let n = notes.lock().unwrap();
-                    let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                    // The pool has neither members nor funds — `initialize` stores an empty member
-                    // list and `total_funds: 0`, and nothing raises either — so the exit's payout is
-                    // **zero by arithmetic**: `member_weight * total_funds / max(total_weight, 1)`
-                    // is 0 of 0, times the 66.67% the contract keeps after its 33.33% haircut. The
-                    // parent looks for an output whose value commitment is
-                    // `pedersen(0, fp_mod_fv(blind))` with `blind = poseidon_hash([exit_value,
-                    // fund_id])` (`entrypoint.rs:691-694`, `validation.rs:63-69`), and a payout
-                    // child over the member's note provides exactly that as its first output while
-                    // the rest returns as change — the only shape that leaves the spent note
-                    // non-zero, and therefore the only one that can be proven at all.
-                    let blind_seed = poseidon_hash([pallas::Base::zero(), pallas::Base::from(1u64)]);
-                    let (child_contract_call, child_plan, child_nonce) = pn_transfer_payout_prepare(&n[1], 1000, 0, blind_seed)?;
-                    let commitment = dwow_sdk::crypto::util::tx_commitment([&child_contract_call, &parent_contract_call]);
-                    let child_debris = child_plan.prove(commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    let proof = parent.prove(commitment, pallas::Base::zero()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_contract_call.data, proofs: child_debris.proofs, children: vec![] };
-                    Ok(EndpointResult { children: vec![child], call_data: parent_contract_call.data, proofs: vec![proof] })
-                }
-            })),
+            // NEGATIVE — the exit arm is disabled by design (OBL-C271). The generated call still
+            // carries the former zero-payout child and a real proof; what must stop it is the
+            // dispatch refusal, before any state read. If that refusal is removed this endpoint
+            // starts succeeding and the four closures it controls are gone.
+            EndpointSpec {
+                name: "exit_disabled", is_zk: true,
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(24))"]),
+                generate_with_coinbase: None,
+                verify_state: None,
+                generate: Box::new({
+                    let notes = notes.clone();
+                    move || {
+                        let parent = h.exit_prepare().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let parent_contract_call = mk_call(drain_cid, &parent.call_data);
+                        let n = notes.lock().unwrap();
+                        let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
+                        // The rejected shape: the old arm computed a zero payout from a
+                        // caller-supplied weight over an always-zero `total_funds`, and accepted a
+                        // child whose value commitment matched it. The child spends a non-zero
+                        // member note and pays zero plus change — a zero-value *spend* is
+                        // unprovable (`revoke.zk:69`), so this is the only shape that can be
+                        // proven at all. The dispatch refuses before any of it is reached.
+                        let blind_seed = poseidon_hash([pallas::Base::zero(), pallas::Base::from(1u64)]);
+                        let (child_contract_call, child_plan, child_nonce) = pn_transfer_payout_prepare(&n[1], 1000, 0, blind_seed)?;
+                        let commitment = dwow_sdk::crypto::util::tx_commitment([&child_contract_call, &parent_contract_call]);
+                        let child_debris = child_plan.prove(commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let proof = parent.prove(commitment, pallas::Base::zero()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_contract_call.data, proofs: child_debris.proofs, children: vec![] };
+                        Ok(EndpointResult { children: vec![child], call_data: parent_contract_call.data, proofs: vec![proof] })
+                    }
+                }),
+            },
             mk_ep("transfer", true, Box::new({
                 let notes = notes.clone();
                 move || {

@@ -85,6 +85,15 @@ pub enum DrainProtectionError {
 
     #[error("Invalid child call")]
     InvalidChildCall,
+
+    /// The member-exit path needs a custody primitive whose withdrawal amount a parent contract
+    /// can verify. The genesis `Purse` keeps its amounts off-wire for privacy (`DerivedPurseId`
+    /// is the only public field), so a parent cannot check a member's share against the balance;
+    /// and `ProtectedFund.members` has no identity or population path. `ExitV1` therefore refuses
+    /// before any state read. `TransferV1` remains the governance path over notes the authority
+    /// holds; see the contract specification.
+    #[error("Custody model unavailable: member exits are disabled until a parent-verifiable custody primitive exists")]
+    CustodyModelUnavailable,
 }
 
 impl From<DrainProtectionError> for ContractError {
@@ -110,6 +119,7 @@ impl From<DrainProtectionError> for ContractError {
             DrainProtectionError::ConfigurationError(_) => Self::Custom(21),
             DrainProtectionError::InvalidChildrenIndexes => Self::Custom(22),
             DrainProtectionError::InvalidChildCall => Self::Custom(23),
+            DrainProtectionError::CustodyModelUnavailable => Self::Custom(24),
         }
     }
 }

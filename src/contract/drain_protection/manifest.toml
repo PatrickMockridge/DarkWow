@@ -1,7 +1,7 @@
 [contract]
 name = "drain_protection"
 category = "DAO"
-description = "Drain protection contract — fund locking, transfer proposals, member voting, exit mechanism."
+description = "Drain protection contract — fund locking, transfer proposals and member voting; member exit is refused (OBL-C271: no parent-verifiable custody primitive)."
 version = "2.0.0"
 dependencies = ["promissory_note", "native_token_v1"]
 
@@ -34,6 +34,7 @@ name = "exit"
 code = 4
 requires_proof = true
 proof_circuit = "ExitProofV2"
+description = "Refused: the member-exit custody model is unavailable (OBL-C271); the call returns CustodyModelUnavailable before any state read."
 
 [[functions]]
 name = "transfer"

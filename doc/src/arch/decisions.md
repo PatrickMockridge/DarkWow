@@ -8,6 +8,7 @@ land; nothing here can be cited to green a defect. The full analysis of each ent
 | ID | Kind | Statement of record |
 |---|---|---|
 | OBL-C11 | restated | No two outputs in one call carry the same commitment |
+| OBL-C271 | decision | The protected-fund member exit is disabled: a parent contract cannot verify a member's share over the genesis `Purse` (its amounts are off-wire; `derived_purse_id` is the only public field), and `ProtectedFund.members` has no identity or population path. `ExitV1` refuses with `CustodyModelUnavailable`; the fund is a governance wrapper over externally-held notes, not a custodian. Custody requires a primitive with a parent-verifiable withdrawal amount. |
 | OBL-C113 | decision | The authority one subscription operation consumes is not the authority another has not yet used — a recurring payment can be paid again |
 | OBL-C125 | decision | A binary in this tree compiles, or a gate says it does not |
 | OBL-C128 | restated | A manifest's `proof_circuit` names a circuit that exists — the field the SDK loads a proving key by |

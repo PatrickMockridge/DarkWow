@@ -426,6 +426,10 @@ pub struct ExecuteUpdateV1 {
     pub proposal_id: pallas::Base,
 }
 
+/// The former member-exit parameters. `ExitV1` is **refused** before decoding (OBL-C271): the
+/// contract has no parent-verifiable custody primitive, so there is no sound way to compute or
+/// check a member's share. The type is kept because the client and harness still build the call,
+/// and the spec exercises the refusal.
 #[derive(Debug, Clone,)]
 pub struct ExitParamsV1 {
     pub fund_id: FundId,
