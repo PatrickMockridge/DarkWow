@@ -43,7 +43,7 @@ lapsed bound fails the register gate; it is not re-dated silently.
 | custody | project lead | by:2026-11-08 | OBL-C160 |
 | codec | project lead | by:2026-11-04 | OBL-C205, OBL-C246 |
 | chain | project lead | by:2026-11-08 | OBL-C259 |
-| models | project lead | by:2026-11-15 | OBL-C206, OBL-Z12, OBL-Z18, OBL-Z3 |
+| models | project lead | by:2026-11-15 | OBL-C206, OBL-Z12, OBL-Z18 |
 
 | ID | Status | Defect | Locus | Control | Risk |
 |---|---|---|---|---|---|
@@ -82,7 +82,7 @@ lapsed bound fails the register gate; it is not re-dated silently.
 | OBL-Z12 | OPEN | A circuit's integer-quotient proof is about field residues unless the operand bound is established; the Lean theorem states the bound and nothing on chain establishes it. | `proofs/lean/src/DarkFi/BaseDivGadget.lean:qr_unique` | `scripts/check-circuit-instance-derivation.sh` | H/P |
 | OBL-Z18 | OPEN | 51 `constrain_equal_base` sites have no verifier-visible operand; each is adjudicated, but the sweep is not closed. | `scripts/check-pubkey-binding.sh` | `plan: external adjudication corpus (not the checker itself)` | M/D |
 | OBL-Z23 | CLOSED | 117 dead values were adjudicated while the dead-value gate was report-only, so a newly introduced value failed nothing. The 117 are declared in `script/circuit_dead_value_exceptions.txt` as a frozen baseline, and the gate now blocks: a new value is undeclared and fails the umbrella and the pre-commit hook. Run: `check-circuit-dead-values.sh --self-test` OK, and the blocking gate `PASS` (177 files walked). | `script/circuit_dead_values.py` | `scripts/check-circuit-dead-values.sh` | M/D |
-| OBL-Z3 | OPEN | The circuit-domain gate accepts any `DOMAIN_`/`witness_base` token in a `poseidon_hash` call and never checks it is the right domain for that hash's purpose. | `scripts/check-circuit-domain-separation.sh` | `plan: purpose-specific domain token check` | H/P |
+| OBL-Z3 | CLOSED | The domain gate's role rule requires a derivation whose name declares a purpose to carry that purpose's domain (by role, not a conventional value); the self-test plants a `commitment = poseidon_hash(DOMAIN_NULLIFIER, …)` mismatch and requires it named. Inline `witness_base(N)` tokens have no name and remain under the presence rule. Run: `check-circuit-domain-separation.sh --self-test` PASS; live PASS (4 adjudicated). | `script/circuit_domain_separation.py:role_of` | `scripts/check-circuit-domain-separation.sh` | H/P |
 
 ## Non-defects
 
