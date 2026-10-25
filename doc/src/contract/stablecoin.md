@@ -4,6 +4,19 @@
 
 *Privacy-preserving collateralized stablecoin with configurable models and multi-collateral support.*
 
+## Status: redemption disabled (2026-10-25)
+
+`RedeemStableV1` (opcode `0x0A`) is **refused** with `CustodyModelUnavailable` before any state
+read. The arm decremented `total_collateral` by a proportional return and recorded the redemption,
+but its only child was a `promissory_note::redeem_v1` that burns the redeemer's stablecoin note:
+no child paid the collateral. The pool does not custody collateral — `OpenPositionV1` accepts any
+PN transfer whose value commitment matches and never checks the recipient — so `total_collateral`
+is bookkeeping over notes someone else holds. Paying it needs a custody primitive that exposes a
+parent-verifiable payout amount; the genesis `Purse` keeps its amounts off-wire. Disabling the arm
+prevents a redeemer from burning stablecoins and releasing a ledger entry they are not paid for.
+The design decision is `OBL-C272` in [`decisions.md`](../arch/decisions.md); register row
+`OBL-C92` closes on the refusal.
+
 ## Token Movement
 
 Stablecoin uses [PromissoryNote](promissory_note.md) `TransferV1` (0x04) child calls
@@ -75,7 +88,7 @@ contract does. Recorded as `OBL-C231`.
 | `UpdateConfigV1` | `0x07` | Update configuration parameters |
 | `GovernanceReportV1` | `0x08` | Precise collateral/outstanding ratio — verifies on-chain state, enforces no fractional reserve (quotient-remainder, cold) |
 | `AccrueInterestV1` | `0x09` | Precise interest accrual (quotient-remainder, cold) |
-| `RedeemStableV1` | `0x0A` | Redeem stablecoins for underlying collateral via PN::RedeemV1 |
+| `RedeemStableV1` | `0x0A` | **Refused** (`CustodyModelUnavailable`): the pool does not custody collateral; see Status above |
 | `SpendHookCallback` | `0x0B` | Process spend_hook callback from PN burn (internal) |
 
 ## Promissory Note Lifecycle Integration
@@ -89,7 +102,7 @@ The stablecoin is the **sole issuer** in the Promissory Note ecosystem. It creat
 | **Mint** | TransferV1 (0x04) | `MintStableV1` — issues stablecoins to borrower | Implemented |
 | **Transfer** | TransferV1 (0x04) | All collateral movements, repayments, liquidations | Implemented |
 | **Burn** | RevokeV1 (0x03) | `PN::RevokeV1` — direct burn with spend_hook callback | Implemented |
-| **Redeem** | RedeemV1 (0x01) | `RedeemStableV1` — redeem stablecoins for collateral | Implemented |
+| **Redeem** | RedeemV1 (0x01) | `RedeemStableV1` — **refused**; the pool does not custody collateral | Disabled |
 
 ### Architecture Note: PN Lifecycle Usage
 
@@ -97,9 +110,9 @@ MintStableV1 and RepayStableV1 use TransferV1 (0x04) — stablecoins are pre-min
 to the contract during initialization and transferred out/in. However, the full PN
 lifecycle is increasingly used:
 
-- **RedeemV1 (0x01)**: `RedeemStableV1` calls PN::RedeemV1 to release collateral
-  proportionally when stablecoins are redeemed. `total_redeemed` is atomically
-  incremented.
+- **RedeemV1 (0x01)**: `RedeemStableV1` is **refused** (`CustodyModelUnavailable`). It used to
+  call PN::RedeemV1 and decrement `total_collateral` while no child paid the redeemer; see Status
+  above.
 - **RevokeV1 (0x03)**: Direct burns via PN::RevokeV1 with `spend_hook = stablecoin_cid`
   trigger the `__spend_hook` callback. The callback records nullifiers and
   increments `total_redeemed` in the same overlay for atomicity.
@@ -196,8 +209,8 @@ used here since the RC4 pass replaced it.
 ### Cross-Contract Validation
 
 All child calls to PN use `validate_child_contract_id` to prevent routing attacks
-and `validate_child_value_commit` to verify transfer amounts. `RedeemStableV1`
-uses `validate_child_redeem_v1` for RedeemV1 child call validation.
+and `validate_child_value_commit` to verify transfer amounts. `RedeemStableV1` is refused before
+any child validation (see Status above).
 
 ## ZK Circuits
 

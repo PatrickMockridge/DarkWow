@@ -117,6 +117,13 @@ pub enum StablecoinError {
 
     #[error("Not authorized: governance signature required")]
     NotAuthorized,
+
+    /// Redemption would decrement the pool's ledger without paying the redeemer: the contract
+    /// does not custody the collateral (deposits are PN transfers whose recipient the parent
+    /// cannot check), and no custody primitive exposes a parent-verifiable payout amount. The
+    /// arm refuses before any state read. See OBL-C272.
+    #[error("Custody model unavailable: stablecoin redemption is disabled until the pool custodies collateral verifiably")]
+    CustodyModelUnavailable,
 }
 
 impl From<StablecoinError> for ContractError {
@@ -153,6 +160,7 @@ impl From<StablecoinError> for ContractError {
             StablecoinError::InvalidReceiptCoin => Self::Custom(29),
             StablecoinError::ConfigError(_) => Self::Custom(30),
             StablecoinError::NotAuthorized => Self::Custom(31),
+            StablecoinError::CustodyModelUnavailable => Self::Custom(32),
         }
     }
 }

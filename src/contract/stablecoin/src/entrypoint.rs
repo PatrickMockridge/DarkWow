@@ -40,8 +40,8 @@
 use dwow_sdk::{
     crypto::{
         pasta_prelude::{Curve, CurveAffine, PrimeField},
-        pedersen_commitment_u64, util::fp_mod_fv, Blind, ContractId, IntentCommitment,
-        IntentNullifier, Nullifier, poseidon_hash, PublicKey, PURSE_CONTRACT_ID, SecretKey,
+        ContractId, IntentCommitment, IntentNullifier, Nullifier, poseidon_hash, PublicKey,
+        PURSE_CONTRACT_ID, SecretKey,
     },
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
@@ -51,9 +51,9 @@ use dwow_sdk::{
 };
 use dwow_serial::{deserialize, Encodable};
 
-use dwow_promissory_note_contract::model::{RevokeSpendHookPayload, RedeemParamsV1, TransferParamsV1};
+use dwow_promissory_note_contract::model::{RevokeSpendHookPayload, TransferParamsV1};
 use dwow_promissory_note_contract::validation::{
-    validate_child_contract_id, validate_child_redeem_v1, validate_child_value_commit,
+    validate_child_contract_id, validate_child_value_commit,
 };
 
 use crate::{
@@ -62,7 +62,7 @@ use crate::{
         AddCollateralUpdateV1, AccrueInterestParams, AccrueInterestUpdateV1, CollateralType,
         DeadManAction, DeadManSwitchConfig, DepositCollateralParams, GovernanceReportParams,
         GovernanceReportUpdateV1, InitializeParams, LiquidateParams, LiquidateUpdateV1,
-        MintStableParams, MintStableUpdateV1, OpenPositionUpdateV1, RedeemStableParamsV1,
+        MintStableParams, MintStableUpdateV1, OpenPositionUpdateV1,
         RedeemStableUpdateV1, RemoveCollateralUpdateV1, RepayStableParams, RepayStableUpdateV1,
         SpendHookCallbackUpdateV1, StablecoinModel, UpdateConfigParams, UpdateConfigUpdateV1,
         WithdrawCollateralParams,
@@ -560,8 +560,29 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
 /// Verify state transition and produce update if valid
 fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
-    let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
+
+    // OBL-C92 / OBL-C251 / OBL-C272: redemption is refused before the host is asked which call
+    // is ours, before any parameter decode and before any state read.
+    //
+    // The arm decremented `total_collateral` by a proportional return and recorded the redemption
+    // while the only child was a `promissory_note::redeem_v1` that burns the redeemer's
+    // stablecoin note — no child paid the collateral. The pool does not custody collateral:
+    // `OpenPositionV1` accepts any PN transfer whose value commitment matches and never checks the
+    // recipient, so `total_collateral` is bookkeeping over notes someone else holds. Paying it
+    // needs a custody primitive that exposes a parent-verifiable payout; the genesis `Purse`
+    // keeps amounts off-wire. The only sound state is refusal.
+    //
+    // The placement makes the control a host unit test: no state read, no host call.
+    if calls.iter().any(|c| {
+        c.data.contract_id == cid
+            && c.data.data.first().copied() == Some(StablecoinFunction::RedeemStableV1 as u8)
+    }) {
+        msg!("[stablecoin::RedeemStableV1] refused: the collateral custody model is not implemented");
+        return Err(StablecoinError::CustodyModelUnavailable.into())
+    }
+
+    let call_idx = wasm::util::get_call_index()? as usize;
     let self_ = &calls[call_idx].data;
     let func_byte = self_.data[0];
     let func = StablecoinFunction::try_from(func_byte)?;
@@ -614,7 +635,9 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             process_accrue_interest_instruction(cid, call_idx, calls)?
         }
         StablecoinFunction::RedeemStableV1 => {
-            process_redeem_stable_instruction(cid, call_idx, calls)?
+            // Unreachable: the pre-check at the top of this function refuses any RedeemStableV1
+            // call. Kept fail-closed so removing the pre-check does not silently re-enable the arm.
+            return Err(StablecoinError::CustodyModelUnavailable.into())
         }
         StablecoinFunction::SpendHookCallback => {
             msg!("[stablecoin::process_instruction] SpendHookCallback cannot be called via exec");
@@ -1957,159 +1980,6 @@ fn apply_accrue_interest_update(cid: ContractId, update: AccrueInterestUpdateV1)
 ///
 /// Calls PN::RedeemV1 (0x01) as a child call — the first application-layer
 /// consumer of RedeemV1. Burns stablecoins and returns proportional collateral.
-fn process_redeem_stable_instruction(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
-) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params = RedeemStableParamsV1::decode(&self_.data[1..])?;
-
-    // The caller's `total_debt`/`total_collateral` are not read; the stored totals are, below.
-    // This line used to print the caller's claim as though it were the pool's state.
-    msg!("[stablecoin::process_instruction] RedeemStable: amount={}", params.redeem_amount);
-
-    // Validate child call is promissory_note::redeem_v1 (0x01)
-    let this_call = &calls[call_idx];
-    if this_call.children_indexes.len() != 1 {
-        msg!("[RedeemStableV1] Error: Expected 1 child call (promissory_note::redeem_v1), got {}",
-            this_call.children_indexes.len());
-        return Err(StablecoinError::InvalidChildrenIndexes.into())
-    }
-    let child_idx = this_call.children_indexes[0];
-    let child_call = &calls[child_idx].data;
-    if child_call.data[0] != 0x01 {
-        msg!("[RedeemStableV1] Error: Expected promissory_note::redeem_v1 (0x01), got 0x{:02x}",
-            child_call.data[0]);
-        return Err(StablecoinError::InvalidChildCall.into())
-    }
-
-    // Validate child call targets promissory_note
-    let info_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_INFO_TREE)?;
-    let promissory_note_bytes = wasm::db::db_get(info_db, STABLECOIN_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
-        .ok_or(StablecoinError::InvalidChildCall)?;
-    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
-
-    // Validate the redeem child call and get the receipt coin for inspection.
-    // The ZK circuit constrains coin_value = 0 as a public input, so we trust
-    // the host's proof verification for the zero-value property.
-    let (_receipt_value_commit, _receipt_token_commit) =
-        validate_child_redeem_v1(&child_call.data)?;
-
-    // Validate receipt coin's spend_hook is bound to this contract.
-    // Receipt coins must be non-transferable — only the issuer can interact
-    // with them. The ZK circuit exposes coin_spend_hook as a public input;
-    // this is defense-in-depth on the contract side.
-    let expected_spend_hook = cid.inner();
-    let redeem_params = RedeemParamsV1::decode(&child_call.data[1..])?;
-    if redeem_params.output.spend_hook.inner() != expected_spend_hook {
-        msg!("[RedeemStableV1] Error: Receipt coin spend_hook does not match stablecoin contract ID");
-        return Err(StablecoinError::InvalidChildCall.into())
-    }
-
-    // `OBL-C92`: bind the public `redeem_amount` to the note the child actually burns.
-    //
-    // The child's `RedeemParamsV1.input.value_commit` is in its params and the child's own
-    // proof pins it, but a Pedersen commitment cannot be opened without its blind — and the
-    // amount here is public, so the redeemer supplies the blind and the parent recomputes the
-    // commitment. Before this check `redeem_amount` was a free caller choice: a note of any
-    // value could be burned while the parent paid the collateral return for a different figure.
-    // The burned note must be exactly the redeemed amount; over-paying is a burn of the excess,
-    // which is the redeemer's own loss, but it is refused rather than silently accepted.
-    #[expect(clippy::expect_used, reason = "type-system.md §2.3 — base field < scalar field, conversion guaranteed valid")]
-    let value_blind = Blind(fp_mod_fv(params.redeem_value_blind)
-        .expect("base field to scalar: mathematically guaranteed valid"));
-    let expected_value_commit = pedersen_commitment_u64(params.redeem_amount, value_blind);
-    if redeem_params.input.value_commit != expected_value_commit {
-        msg!(
-            "[RedeemStableV1] Error: burned note's value commitment does not match redeem_amount={}",
-            params.redeem_amount
-        );
-        return Err(StablecoinError::CommitmentMismatch.into())
-    }
-
-    // Get current total debt and collateral
-    let config_db = wasm::db::db_lookup(cid, "config")?;
-    let total_debt_bytes = wasm::db::db_get(config_db, CDP_TOTAL_DEBT_KEY)?
-        .ok_or_else(|| ContractError::IoError("Total debt not found".to_string()))?;
-    let total_debt = u64::from_le_bytes(
-        total_debt_bytes.as_slice().try_into()
-            .map_err(|_| ContractError::IoError("Failed to read total debt".to_string()))?,
-    );
-    let total_collateral_bytes = wasm::db::db_get(config_db, CDP_TOTAL_COLLATERAL_KEY)?
-        .ok_or_else(|| ContractError::IoError("Total collateral not found".to_string()))?;
-    let total_collateral = u64::from_le_bytes(
-        total_collateral_bytes.as_slice().try_into()
-            .map_err(|_| ContractError::IoError("Failed to read total collateral".to_string()))?,
-    );
-
-    // Get current total redeemed
-    let total_redeemed_bytes = wasm::db::db_get(config_db, STABLECOIN_CONTRACT_TOTAL_REDEEMED)?
-        .ok_or_else(|| ContractError::IoError("Total redeemed not found".to_string()))?;
-    let total_redeemed = u64::from_le_bytes(
-        total_redeemed_bytes.as_slice().try_into()
-            .map_err(|_| ContractError::IoError("Failed to read total redeemed".to_string()))?,
-    );
-
-    if params.redeem_amount > total_debt {
-        msg!("[stablecoin::process_instruction] ERROR: Redeem exceeds debt");
-        return Err(StablecoinError::RedeemExceedsDebt.into())
-    }
-
-    // Calculate proportional collateral return
-    let collateral_return = if total_debt > 0 {
-        (params.redeem_amount as u128 * total_collateral as u128 / total_debt as u128) as u64
-    } else {
-        0
-    };
-
-    let new_total_debt = total_debt.saturating_sub(params.redeem_amount);
-    let new_total_collateral = total_collateral.saturating_sub(collateral_return);
-    let new_total_redeemed = total_redeemed.saturating_add(params.redeem_amount);
-
-    // The replay anchor is the child's burned note, not a tuple of caller-chosen figures.
-    //
-    // It used to be `poseidon(redeem_amount, asset_id, total_debt)`: two redemptions of the same
-    // size at the same pool totals shared a nullifier, and the same burned note could be
-    // redeemed under a different amount/size choice. The burned nullifier is unique per note and
-    // is itself checked by the PN tree; domain 12 namespaces this contract's tree.
-    let redeem_nullifier = poseidon_hash([
-        pallas::Base::from(12u64),
-        redeem_params.input.nullifier.inner(),
-    ]);
-
-    // ↓nullify: reject a replay here, in exec. This check used to live in apply, where it both
-    // performed validation in the phase that may not validate (§B.2.2: apply "SHALL only write
-    // state; it SHALL NOT perform validation") and issued a `db_contains_key` the ACL denies in
-    // `Update` (register OBL-C72) — so it could never have run. Apply still performs the
-    // `db_mark_spent`; the check moves to where the other contracts put it
-    // (`native_token`, `promissory_note`).
-    let nullifiers_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE)?;
-    if wasm::db::db_contains_key(nullifiers_db, &redeem_nullifier.to_repr())? {
-        msg!("[stablecoin::process_redeem_stable_instruction] Error: Duplicate redeem nullifier");
-        return Err(StablecoinError::DuplicateNullifier.into())
-    }
-
-    // The receipt coin is the child's output commitment. This used to serialize the whole
-    // `DarkLeaf` and require it to be 32 bytes — a value that is never 32 bytes, so the arm
-    // could not return an update even once it was reachable. The commitment is the value the
-    // child's redeem proof created, and it is exactly `CapCommitment::ENCODED_SIZE`.
-    let receipt_coin = redeem_params.output.commitment.to_bytes();
-
-    let update = RedeemStableUpdateV1 {
-        redeem_nullifier,
-        receipt_coin,
-        redeem_amount: params.redeem_amount,
-        new_total_debt,
-        new_total_collateral,
-        new_total_redeemed,
-        collateral_return,
-    };
-
-    Ok(update.encode())
-}
-
 /// Apply redeem stablecoin update
 fn apply_redeem_stable_update(cid: ContractId, update: RedeemStableUpdateV1) -> ContractResult {
     let nullifiers_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE)?;
@@ -2145,6 +2015,7 @@ fn apply_redeem_stable_update(cid: ContractId, update: RedeemStableUpdateV1) -> 
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use dwow_sdk::crypto::pasta_prelude::{Curve, CurveAffine};
     use dwow_sdk::pasta::{group::GroupEncoding, pallas};
 
@@ -2165,6 +2036,46 @@ mod tests {
         assert!(
             point.to_affine().coordinates().into_option().is_none(),
             "the identity has no affine coordinates; process_spend_hook must reject it, not panic"
+        );
+    }
+
+    fn call_set(cid: ContractId, selector: u8) -> Vec<u8> {
+        let leaf = dwow_sdk::dark_tree::DarkLeaf {
+            data: ContractCall { contract_id: cid, data: vec![selector] },
+            parent_index: None,
+            children_indexes: vec![],
+        };
+        dwow_serial::serialize(&vec![leaf])
+    }
+
+    /// R8 control for OBL-C92 / OBL-C251 / OBL-C272: redemption is refused before the host is
+    /// asked which call is ours, so this executes on a host unit test with no wasm runtime.
+    ///
+    /// Before the fix the arm reached `get_call_index()` — a host call — and exited with
+    /// `IoError("wasm host function unavailable")` on the host, which this assertion rejects.
+    #[test]
+    fn redeem_is_refused_before_any_state_read() {
+        let cid = ContractId::ZERO;
+        let err = process_instruction(
+            cid,
+            &call_set(cid, StablecoinFunction::RedeemStableV1 as u8),
+        )
+        .expect_err("RedeemStableV1 must be refused");
+        assert!(
+            matches!(err, ContractError::Custom(32)),
+            "RedeemStableV1 must be refused with CustodyModelUnavailable (Custom(32)), got {err:?}"
+        );
+    }
+
+    /// The negative twin: a non-redeem selector is not caught by the refusal.
+    #[test]
+    fn initialize_is_not_refused_by_the_redeem_guard() {
+        let cid = ContractId::ZERO;
+        let err = process_instruction(cid, &call_set(cid, StablecoinFunction::InitializeV1 as u8))
+            .expect_err("a non-redeem call reaches the host index on the host");
+        assert!(
+            !matches!(err, ContractError::Custom(32)),
+            "the refusal must be RedeemStableV1-specific, got {err:?}"
         );
     }
 }

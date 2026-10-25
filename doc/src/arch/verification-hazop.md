@@ -29,7 +29,7 @@ and verifies the approval's `scope_sha256` over the acceptance boundary and its
 `appendix_baseline_sha256` over the frozen historical tombstones. `CLOSED` still means impossible in
 current code with a failing-before control (the nine conditions in `hazop-rules.md`).
 
-**Counts.** 45 decisions and interpretations live in [`decisions.md`](decisions.md); the gate checks
+**Counts.** 46 decisions and interpretations live in [`decisions.md`](decisions.md); the gate checks
 this number.
 
 ## Fix cycles
@@ -41,7 +41,7 @@ lapsed bound fails the register gate; it is not re-dated silently.
 | Cycle | Owner | Bound | Rows |
 |---|---|---|---|
 | custody | project lead | by:2026-11-08 | OBL-C160 |
-| stablecoin | project lead | by:2026-11-12 | OBL-C92 |
+| stablecoin-custody | project lead | by:2026-11-12 | OBL-C273 |
 | bearer-bond | project lead | by:2026-11-12 | OBL-C248 |
 | codec | project lead | by:2026-11-04 | OBL-C202, OBL-C205, OBL-C239, OBL-C241, OBL-C246 |
 | chain | project lead | by:2026-11-08 | OBL-C42, OBL-C45, OBL-C54, OBL-C56, OBL-C259, OBL-C266 |
@@ -79,7 +79,8 @@ lapsed bound fails the register gate; it is not re-dated silently.
 | OBL-C45 | OPEN | The contracts tree and the supply-chain tree are not reconciled against each other; the RPC returns stored state. | `bin/dwowd/src/rpc/blockchain.rs:blockchain_get_cumulative_supply` | `test_supply_chain_audit` | H/P |
 | OBL-C54 | OPEN | A stratum submit can be judged against a template a concurrent login has already replaced; writes are serialised but unversioned. | `bin/dwowd/src/rpc/stratum.rs:stratum_submit` | `plan: template generation id checked at submit` | M/P |
 | OBL-C56 | OPEN | The sync-state check and the mining act are not atomic; a transition can land in the window before accept. | `bin/dwowd/src/lib.rs:miner_task` | `plan: atomic mining gate and test` | M/D |
-| OBL-C92 | OPEN | A stablecoin redemption releases the collateral it claims in the ledger but pays no collateral to the redeemer (C251 merged here). | `src/contract/stablecoin/src/entrypoint.rs:process_redeem_stable_instruction` | `test_heavyweight_stablecoin` | C/D |
+| OBL-C273 | OPEN | `OpenPositionV1` accepts any `promissory_note::transfer_v1` whose value commitment matches `collateral_amount` and never checks the recipient, so the pool does not hold the deposited note — the depositor can keep it and mint stablecoins against `total_collateral` bookkeeping. The fixture pays a third-party address, which is how the gap went unnoticed. | `src/contract/stablecoin/src/entrypoint.rs:process_open_position_instruction` | `plan: bind the deposit recipient to a stored pool address and add a refusal test` | C/D |
+| OBL-C92 | CLOSED | A stablecoin redemption released the collateral it claimed in the ledger but paid none to the redeemer (C251 merged here): the only child burned the stablecoin note and the pool custodies no collateral. `RedeemStableV1` now refuses with `CustodyModelUnavailable` before any state read (OBL-C272); spec and manifest record it. Run: `redeem_is_refused_before_any_state_read ... ok`. | `src/contract/stablecoin/src/entrypoint.rs:process_instruction` | `redeem_is_refused_before_any_state_read` | C/D |
 | OBL-C97 | CLOSED | The exit arm applied no stored authority. The member-exit path is now refused (C102/C253, OBL-C271), so no exit-authority check is reachable; the remaining value path `TransferV1` applies `require_fund_authority` against the stored `spend_authority`, as `execute` and `update_config` do. Run: `exit_is_refused_before_any_state_read ... ok`. | `src/contract/drain_protection/src/entrypoint.rs:require_fund_authority` | `exit_is_refused_before_any_state_read` | C/P |
 | OBL-Z12 | OPEN | A circuit's integer-quotient proof is about field residues unless the operand bound is established; the Lean theorem states the bound and nothing on chain establishes it. | `proofs/lean/src/DarkFi/BaseDivGadget.lean:qr_unique` | `scripts/check-circuit-instance-derivation.sh` | H/P |
 | OBL-Z18 | OPEN | 51 `constrain_equal_base` sites have no verifier-visible operand; each is adjudicated, but the sweep is not closed. | `scripts/check-pubkey-binding.sh` | `plan: external adjudication corpus (not the checker itself)` | M/D |

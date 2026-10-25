@@ -73,15 +73,14 @@ proof_circuit = "AccrueInterestV2"
 # **no redeem circuit at all**, so `RedeemStableV1` named something that does not exist. `OBL-C91`
 # closed the manifest half; `OBL-C92` (2026-10-21) closed the metadata half as well — the arm
 # published a namespace for that non-existent circuit and died at proof-metadata lookup before
-# exec. The endpoint is now proofless and host-checked: the burned note's Pedersen commitment is
-# bound to `redeem_amount` with a caller-supplied blind, the replay anchor is the burned
-# nullifier, and the redemption report is stored in the `redemptions` tree. What remains open is
-# the custody half — the collateral return is computed and reported but not paid, because there
-# is no primitive that lets this contract hold and spend a purse without an owner secret
-# (`OBL-C251`).
+# exec. The endpoint then released the ledger entry without paying the redeemer; the custody half
+# is a primitive gap — there is no primitive that lets this contract hold and spend a purse
+# without an owner secret (`OBL-C251`). It is now **refused before any state read** (OBL-C272):
+# burning stablecoins for a ledger entry the redeemer is not paid for is worse than refusing.
 [[functions]]
 name = "redeem_stable"
 code = 10
+description = "Refused: the pool does not custody collateral; CustodyModelUnavailable before any state read (OBL-C272)."
 
 [[functions]]
 name = "spend_hook_callback"
