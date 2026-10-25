@@ -1,7 +1,7 @@
 [contract]
 name = "bearer_bond"
 category = "Finance"
-description = "Bearer bond contract — bond issuance, staking, interest payments, emergency unstaking. Supports spend_hook callbacks."
+description = "Bearer bond contract — bond issuance, staking and transfers; the issuer-authority arms (issue, interest, coverage) are refused until an authority model exists (OBL-C248/C275/C276)."
 version = "1.0.0"
 dependencies = ["promissory_note", "native_token_v1"]
 
@@ -10,6 +10,7 @@ name = "issue_stake"
 code = 0
 requires_proof = true
 proof_circuit = "BlindOutput_V2"
+description = "Refused: the series issuer is a caller-supplied ContractId with no proof of control (AuthorityModelUnavailable, OBL-C275)."
 
 [[functions]]
 name = "transfer_stake"
@@ -22,6 +23,7 @@ name = "request_interest"
 code = 2
 requires_proof = true
 proof_circuit = "Burn_V2"
+description = "Refused: total_staked is never updated, so interest computes against zero (AuthorityModelUnavailable, OBL-C276)."
 
 [[functions]]
 name = "emergency_unstake"
@@ -46,6 +48,7 @@ name = "prove_coverage"
 code = 6
 requires_proof = true
 proof_circuit = "ProveCoverage_V2"
+description = "Refused: the report is unauthenticated; any caller could post it and void a series (AuthorityModelUnavailable, OBL-C248)."
 
 [[functions]]
 name = "verify_coverage"

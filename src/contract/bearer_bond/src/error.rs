@@ -133,6 +133,14 @@ pub enum BearerBondError {
 
     #[error("Invalid bond series parameters")]
     InvalidSeriesParams,
+
+    /// The series authority is a caller-supplied `ContractId` with no proof that the caller
+    /// controls it: `issue_stake_v1` and `prove_coverage_v1` accept it from anyone, and
+    /// `total_staked` is never updated, so `request_interest_v1` computes against zero. The three
+    /// arms refuse before any state read until a key-based (or contract-composition) authority
+    /// model exists. See OBL-C248 / OBL-C275 / OBL-C276.
+    #[error("Authority model unavailable: the series issuer has no proven identity; issue, interest and coverage are disabled")]
+    AuthorityModelUnavailable,
 }
 
 impl BearerBondError {
@@ -176,6 +184,7 @@ impl BearerBondError {
             // renumbering the wire-visible codes above it.
             BearerBondError::SeriesAlreadyExists => 6,
             BearerBondError::InvalidSeriesParams => 23,
+            BearerBondError::AuthorityModelUnavailable => 35,
         }
     }
 }

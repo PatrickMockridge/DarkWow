@@ -6,17 +6,29 @@ commitment. Interest is computed deterministically from on-chain state — no
 issuer reporting, no self-declared profits. Coverage is verifiable by anyone.
 If coverage falls below 100%, the terms void and holders can exit early.
 
+## Status: the issuer-authority arms are disabled (2026-10-25)
+
+`IssueStakeV1` (`0x00`), `RequestInterestV1` (`0x02`) and `ProveCoverageV1` (`0x06`) are
+**refused** with `AuthorityModelUnavailable` before any state read. A series stores
+`issuer_contract: ContractId`, but `issue_stake_v1` and `prove_coverage_v1` take that id from the
+caller's params and compare it with the stored one: anyone who reads the public series record
+passes the check. A coverage report was therefore unauthenticated (it can void a series and open
+emergency unstake), and issuance was unauthenticated (anyone could mint obligations).
+`total_staked` is never updated after registration, so interest was computed against zero. None of
+the three has a sound control without an authority model; all three refuse until one exists. The
+register rows `OBL-C248`, `OBL-C275` and `OBL-C276` close on the refusal.
+
 ## Functions
 
 | Opcode | Function | Who | Does | ZK Circuits |
 |--------|----------|-----|------|-------------|
-| `0x00` | IssueStakeV1 | Issuer | Create staking pool, mint stake commitments to staker | BlindOutput_V2 |
+| `0x00` | IssueStakeV1 | **Refused** | `AuthorityModelUnavailable`: the issuer is a caller-supplied `ContractId` with no proof of control | *(none)* |
 | `0x01` | TransferStakeV1 | Holder | Transfer stake to new holder. `last_claim_block` preserved — unclaimed interest travels with the commitment | Burn_V2, BlindOutput_V2 |
-| `0x02` | RequestInterestV1 | Holder | Request interest payment. Proves bond ownership (Burn_V2), provides fresh payment key. Like presenting a physical bond coupon. | Burn_V2 |
+| `0x02` | RequestInterestV1 | **Refused** | `AuthorityModelUnavailable`: `total_staked` is never updated, so interest computes against zero | *(none)* |
 | `0x03` | EmergencyUnstakeV1 | Holder | Exit before maturity when coverage < 100% | Burn_V2, Redeem_V2 |
 | `0x04` | UnstakeV1 | Holder | Withdraw principal at or after maturity. Rejects if `current_block < maturity_block` | Burn_V2, Redeem_V2 |
 | `0x05` | BurnStakeV1 | Issuer | Retire staking pool, destroy remaining stake commitments | Burn_V2 |
-| `0x06` | ProveCoverageV1 | Issuer/Holder | Submit ZK proof that reserves cover principal + interest obligations | ProveCoverage_V1 |
+| `0x06` | ProveCoverageV1 | **Refused** | `AuthorityModelUnavailable`: the report is unauthenticated; anyone could post it | *(none)* |
 | `0x07` | VerifyCoverageV1 | Holder | Read latest coverage report from `bonds_info` tree (read-only, no state change) | *(none)* |
 | `0x08` | PayInterestV1 | Issuer | Pay a pending interest claim. Creates fresh payment commitment (BlindOutput_V2) to holder's payment key. Updates `last_claim_block`, marks claim Paid. | BlindOutput_V2 |
 | `0x09` | RegisterSeriesV1 | Anyone | **Create the bond series record every other state-changing endpoint reads.** Keyed by `series_asset_id`; sets the series' `interest_rate_bps`, `maturity_block` and `issuer_contract`. Must be the first call on a fresh chain — `IssueStakeV1` requires the record it writes. | *(none)* |
@@ -28,8 +40,10 @@ If coverage falls below 100%, the terms void and holders can exit early.
 > fresh chain `IssueStakeV1` — the row above calling itself *"Create staking pool"* — answered
 > `StakeNotFound` (error code 1), and every endpoint downstream of a stake inherited that. The
 > registration is plaintext and first-come: a caller claims an unused `series_asset_id` and becomes
-> its issuer for the series' life. There is no registry of legitimate issuers to check against, so
-> the consequence is stated rather than guarded.
+> its issuer for the series' life. There is no registry of legitimate issuers to check against, and
+> the issuer id is not proven: `issue_stake_v1` and `prove_coverage_v1` accepted it from any caller
+> that could read the public record. Those arms are now refused (`OBL-C248`/`OBL-C275`/`OBL-C276`);
+> a key-based or contract-composition authority model is the redesign.
 
 ### Parameters
 
@@ -112,10 +126,13 @@ public input of the proof, because the host has to know them. What the proof add
 *is* the quotient of the three amounts — `coverage_ratio_bps` was a plain witness until 2026-09-20,
 so the number that decides whether a series is voided was asserted by the issuer and proven by
 nothing. What it does not add is secrecy, and it cannot: the reserves are off-chain, so nothing on
-chain can check the amounts either. The coverage report is an **issuer attestation** — the issuer's
-claim about its own books, made arithmetically consistent by the proof — and `is_coverage_voided` is
-an issuer-controlled switch until the series holds reserves the contract can total itself. The
-individual stakes (below) are commitments; the aggregate report is not.
+chain can check the amounts either. The coverage report was an **issuer attestation** — the
+issuer's claim about its own books, made arithmetically consistent by the proof — and
+`is_coverage_voided` is an issuer-controlled switch until the series holds reserves the contract can
+total itself. The individual stakes (below) are commitments; the aggregate report is not.
+
+An attestation nobody authenticates is not an issuer attestation: before the disable, any caller
+could post the claim and void a series. `ProveCoverageV1` is now refused (see Status).
 
 ## Interest Claim Flow — Two-Step Request → Pay
 

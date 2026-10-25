@@ -580,19 +580,53 @@ fn pay_interest_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
 // ============================================================================
 
 fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
-    let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
+
+    // OBL-C248 / OBL-C275 / OBL-C276: the issuer-authority arms are refused before the host is
+    // asked which call is ours, before any parameter decode and before any state read.
+    //
+    // A series stores `issuer_contract: ContractId`, but `issue_stake_v1` and `prove_coverage_v1`
+    // take that id from the caller's params and compare it with the stored one: anyone who reads
+    // the public series record passes the check. A coverage report is therefore unauthenticated
+    // (it can void a series and open emergency unstake), and issuance is unauthenticated (anyone
+    // can mint obligations). `total_staked` is never updated after registration, so interest is
+    // computed against zero. None of the three has a sound control without an authority model;
+    // all three refuse until it exists.
+    //
+    // The placement makes the control a host unit test: no state read, no host call.
+    if calls.iter().any(|c| {
+        c.data.contract_id == cid
+            && matches!(
+                c.data.data.first().copied(),
+                Some(x) if x == BearerBondFunction::IssueStakeV1 as u8
+                    || x == BearerBondFunction::RequestInterestV1 as u8
+                    || x == BearerBondFunction::ProveCoverageV1 as u8
+            )
+    }) {
+        msg!("[bearer_bond] refused: the series-issuer authority model is not implemented");
+        return Err(BearerBondError::AuthorityModelUnavailable.into())
+    }
+
+    let call_idx = wasm::util::get_call_index()? as usize;
     let self_ = &calls[call_idx].data;
     let func = BearerBondFunction::try_from(self_.data[0])?;
 
     match func {
-        BearerBondFunction::IssueStakeV1 => issue_stake_v1(cid, call_idx, calls),
+        BearerBondFunction::IssueStakeV1 => {
+            // Unreachable: the pre-check refuses it. Fail-closed so removing the pre-check does
+            // not silently re-enable the arm.
+            return Err(BearerBondError::AuthorityModelUnavailable.into())
+        }
         BearerBondFunction::TransferStakeV1 => transfer_stake_v1(cid, call_idx, calls),
-        BearerBondFunction::RequestInterestV1 => request_interest_v1(cid, call_idx, calls),
+        BearerBondFunction::RequestInterestV1 => {
+            return Err(BearerBondError::AuthorityModelUnavailable.into())
+        }
         BearerBondFunction::EmergencyUnstakeV1 => emergency_unstake_v1(cid, call_idx, calls),
         BearerBondFunction::UnstakeV1 => unstake_v1(cid, call_idx, calls),
         BearerBondFunction::BurnStakeV1 => burn_stake_v1(cid, call_idx, calls),
-        BearerBondFunction::ProveCoverageV1 => prove_coverage_v1(cid, call_idx, calls),
+        BearerBondFunction::ProveCoverageV1 => {
+            return Err(BearerBondError::AuthorityModelUnavailable.into())
+        }
         BearerBondFunction::VerifyCoverageV1 => verify_coverage_v1(cid, call_idx, calls),
         BearerBondFunction::PayInterestV1 => pay_interest_v1(cid, call_idx, calls),
         BearerBondFunction::RegisterSeriesV1 => register_series_v1(cid, call_idx, calls),
@@ -713,6 +747,7 @@ fn apply_register_series(cid: ContractId, update: RegisterSeriesUpdateV1) -> Con
 // EXECUTION: ISSUE STAKE
 // ============================================================================
 
+#[expect(dead_code, reason = "disabled by OBL-C248/C275/C276; kept for the authority-model redesign")]
 fn issue_stake_v1(
     cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
@@ -815,6 +850,7 @@ fn transfer_stake_v1(
 // EXECUTION: REQUEST INTEREST
 // ============================================================================
 
+#[expect(dead_code, reason = "disabled by OBL-C248/C275/C276; kept for the authority-model redesign")]
 fn request_interest_v1(
     cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
@@ -1124,6 +1160,7 @@ fn burn_stake_v1(
 // EXECUTION: PROVE COVERAGE
 // ============================================================================
 
+#[expect(dead_code, reason = "disabled by OBL-C248/C275/C276; kept for the authority-model redesign")]
 fn prove_coverage_v1(
     cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
@@ -1270,11 +1307,10 @@ fn apply_issue_stake(cid: ContractId, update: IssueStakeUpdateV1) -> ContractRes
         // looked it up under another, and the lookup answered `StakeNotFound`.
         wasm::db::db_set(commitment_set, &commitment.commitment.to_repr(), &commitment.encode())?;
     }
-    // TODO(#12): Increment series_info.total_staked in the bonds_info tree.
-    // Currently total_staked is never updated after series creation, causing
-    // request_interest_v1 to compute interest against stale values.
-    // Fix requires: adding series_info to IssueStakeUpdateV1, reading/updating
-    // in issue_stake_v1 instruction handler, and persisting here.
+    // OBL-C276: `total_staked` is never updated after series creation, so `request_interest_v1`
+    // computed interest against zero. That arm is now refused; persisting the series totals here
+    // (adding `series_info` to `IssueStakeUpdateV1`, reading and updating it in exec) is part of
+    // the authority-model redesign. This is a record, not a silent omission.
     Ok(())
 }
 
@@ -1440,6 +1476,54 @@ mod tests {
         assert!(
             point_coords(pallas::Point::identity()).is_err(),
             "the identity point must be rejected with an error, never panic"
+        );
+    }
+
+    fn call_set(cid: ContractId, selector: u8) -> Vec<u8> {
+        let leaf = dwow_sdk::dark_tree::DarkLeaf {
+            data: ContractCall { contract_id: cid, data: vec![selector] },
+            parent_index: None,
+            children_indexes: vec![],
+        };
+        dwow_serial::serialize(&vec![leaf])
+    }
+
+    /// R8 control for OBL-C248 / OBL-C275 / OBL-C276: the three unauthenticated issuer arms are
+    /// refused before the host is asked which call is ours, so this executes on a host unit test.
+    ///
+    /// Before the fix each arm reached `get_call_index()` — a host call — and exited with
+    /// `IoError("wasm host function unavailable")`, which the Custom(35) assertion rejects.
+    #[test]
+    fn disabled_authority_arms_are_refused_before_any_state_read() {
+        let cid = ContractId::ZERO;
+        for f in [
+            BearerBondFunction::IssueStakeV1,
+            BearerBondFunction::RequestInterestV1,
+            BearerBondFunction::ProveCoverageV1,
+        ] {
+            let selector = f as u8;
+            let err = process_instruction(cid, &call_set(cid, selector))
+                .expect_err("the disabled arm must be refused");
+            assert!(
+                matches!(err, ContractError::Custom(35)),
+                "selector 0x{selector:02x} must be refused with AuthorityModelUnavailable \
+                 (Custom(35)), got {err:?}"
+            );
+        }
+    }
+
+    /// The negative twin: a non-disabled selector is not caught by the refusal.
+    #[test]
+    fn register_series_is_not_refused_by_the_authority_guard() {
+        let cid = ContractId::ZERO;
+        let err = process_instruction(
+            cid,
+            &call_set(cid, BearerBondFunction::RegisterSeriesV1 as u8),
+        )
+        .expect_err("a non-disabled call reaches the host index on the host");
+        assert!(
+            !matches!(err, ContractError::Custom(35)),
+            "the refusal must be limited to the disabled arms, got {err:?}"
         );
     }
 }
