@@ -122,7 +122,14 @@ cleanup_on_exit() {
         _container_death_diagnostics
     fi
 
-    if [ "${FAIL:-0}" -gt 0 ]; then
+    if [ "${PREFLIGHT_REFUSED:-0}" -eq 1 ]; then
+        # The refusal happens before phase 1, so no container exists to preserve, and the
+        # container-preservation banner below would be a false statement.
+        echo ""
+        echo "==========================================="
+        echo "  Pipeline refused before any phase — no container was created or changed."
+        echo "==========================================="
+    elif [ "${FAIL:-0}" -gt 0 ]; then
         echo ""
         echo "==========================================="
         echo "  Pipeline failed — containers preserved."

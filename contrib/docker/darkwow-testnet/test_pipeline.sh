@@ -205,8 +205,9 @@ _PHASE_FAIL_BEFORE=0
 # ══════════════════════════════════════════════════════════════════════════════
 if ! bash "$REPO_ROOT/scripts/check-tracker-settled.sh" \
         --ref "origin/${PIPELINE_BRANCH}" --require-clean; then
-    error "Refusing to run: the defect register has undecided findings."
-    error "Legal exits: CLOSED with a failing-before control, or RESIDUAL with an ALARP record."
+    PREFLIGHT_REFUSED=1
+    error "Refusing to run: the defect register has undecided findings." || true
+    error "Legal exits: CLOSED with a failing-before control, or RESIDUAL with an ALARP record." || true
     exit 1
 fi
 

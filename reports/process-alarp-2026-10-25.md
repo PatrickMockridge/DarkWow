@@ -125,8 +125,12 @@ The full table is `risk-management.md` §10.2. The load-bearing cells:
   parse.
 - `entrypoint.sh --self-test`: PASS.
 - `run-all-tests.sh --self-test`: PASS; `--tier 2` now parses to Tier 2.
-- `run-all-tests.sh --tier 2` on the live tree: refused at the preflight (uncommitted tracker
-  edits); after commit it refuses on the 27 undecided rows. It does not reach Docker.
+- `run-all-tests.sh --tier 2` on the live tree: refused at the preflight before any gate (the
+  gate-time log gained no line) on the 27 undecided rows.
+- `test_pipeline.sh --mode native --with-wallet 2` at `origin/linear-master`: refused at the
+  preflight before phase 1, naming all 27 rows. Zero dwow containers exist afterwards, and the exit
+  banner states that no container was created or changed rather than the container-preservation
+  banner used for a phase failure.
 
 ## 8. What this round did not establish
 
