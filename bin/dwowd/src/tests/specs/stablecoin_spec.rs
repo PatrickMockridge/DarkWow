@@ -1,621 +1,75 @@
-use dwow_contract_test_harness::harness::{wire_instances, ContractHarness, PromissoryNoteHarness, StablecoinHarness};
-use dwow_sdk::crypto::{
-    poseidon_hash, pasta_prelude::PrimeField, BaseBlind, MerkleNode, MerkleTree, PublicKey, SecretKey,
-    PROMISSORY_NOTE_CONTRACT_ID,
-};
+//! ContractTestSpec for stablecoin — chain-level controls for the disabled custody arms.
+//!
+//! The contract does not custody collateral: a deposit is a `promissory_note::transfer_v1` whose
+//! recipient the parent cannot check (the wire `Output` carries only commitments and an encrypted
+//! note), so a depositor could keep the note and mint against `total_collateral` bookkeeping.
+//! `OpenPositionV1`, `AddCollateralV1`, `MintStableV1`, `LiquidateV1` and `RedeemStableV1` are
+//! refused with `CustodyModelUnavailable` before any state read (`OBL-C92`/`C272`/`C273`). This
+//! spec is the chain-level twin of the host unit control in the contract crate: every disabled
+//! selector must be rejected with `ContractError(Custom(32))`, and an enabled arm must not be
+//! caught by the guard (it proceeds to its own business logic).
+//!
+//! The former success-flow endpoints (open, mint, repay, liquidate, governance, collateral
+//! add/remove) were removed with the arms they exercised. The rows they controlled were
+//! pre-migration `settled` entries. The live row that cites this spec (`OBL-C206`) needs the
+//! heavyweight harness to run deterministically, which this refusal list preserves. The disabled
+//! exec functions remain in the contract for the custody-model redesign.
+use dwow_contract_test_harness::harness::StablecoinHarness;
+use dwow_sdk::crypto::pasta_prelude::{Field, PrimeField};
 use dwow_sdk::pasta::pallas;
-use dwow_stablecoin_contract::model::{DeadManAction, DeadManSwitchConfig, InitializeParams, StablecoinModel};
-use dwow_stablecoin_contract::{
-    CDP_BASE_RATE, CDP_LIQUIDATION_PENALTY, CDP_LIQUIDATION_THRESHOLD,
-    CDP_MIN_COLLATERALIZATION_RATIO, CDP_PI_KI, CDP_PI_KP, CDP_PRICE_DEVIATION_THRESHOLD,
-    CDP_PRICE_FEED_TWAP_WINDOW,
-};
-use std::sync::{Arc, Mutex};
-use crate::tests::modules::child_calls::pn_transfer_prepare;
-use crate::tests::uniform_runner::*;
-use super::helpers::mk_ep;
+use dwow_stablecoin_contract::StablecoinFunction;
 
-/// Build a PN TransferV1 child call spending an issued note, with the output
-/// value_commit blind derived from `blind_seed` so it matches the parent's
-/// validate_child_value_commit(amount, blind_seed). `note` is
-/// (coin commitment, leaf pos, merkle path, asset_id, commitment_blind).
-///
-/// `OBL-C198`: the child is **prepared** by `modules::child_calls::pn_transfer_prepare`, which
-/// stops short of the proof — the commitment is a derivation over the whole ordered call set, so
-/// the child's proof has to bind to the same value its parent does, and that value does not exist
-/// until the parent's call data does (the local `pn_transfer_child` this replaced proved over the
-/// child's own call alone, which was correct only while the parent's proof bound to nothing).
+use super::helpers::mk_ep_rejecting_naming;
+use crate::tests::uniform_runner::*;
+
+/// A disabled custody arm, called with the selector and no params. The refusal is selector-level
+/// and happens before any parameter decode, so the empty tail is the honest minimal call.
+fn refusal(name: &'static str, func: StablecoinFunction) -> EndpointSpec<'static> {
+    let selector = func as u8;
+    mk_ep_rejecting_naming(
+        name,
+        false,
+        &["ContractError(Custom(32))"],
+        Box::new(move || {
+            Ok(EndpointResult { children: vec![], call_data: vec![selector], proofs: vec![] })
+        }),
+    )
+}
 
 pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
-    // `OBL-C198`: the harness must know the id its calls will carry, because the transaction
-    // commitment is derived over the call *including* the contract id. `deploy_with_ix` assigns
-    // `derive_contract_id_from_name(name)` — a pure function of the name — so the spec computes
-    // exactly the id the pipeline will use rather than a placeholder.
     let cid = crate::tests::blockchain::derive_contract_id_from_name("stablecoin");
     let harness = Box::leak(Box::new(StablecoinHarness::spawn(cid)));
-    let h: &StablecoinHarness = harness;
     let wasm = include_bytes!("../../../../../src/contract/stablecoin/dwow_stablecoin_contract.wasm");
-    let sk = pallas::Base::from(10u64);
-
-    // Issued PN capabilities (one per child endpoint), shared between setup and the
-    // child-call endpoints: (coin commitment, leaf pos, merkle path, asset_id, commitment_blind).
-    let notes: Arc<Mutex<Option<Vec<(pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Base)>>>> =
-        Arc::new(Mutex::new(None));
-
-    // Runtime-captured commitments for verify_state (cross-block state check).
-    let position_commitment: Arc<Mutex<Option<pallas::Base>>> = Arc::new(Mutex::new(None));
-    let mint_commitment: Arc<Mutex<Option<pallas::Base>>> = Arc::new(Mutex::new(None));
-    // The second position in the mint chain (`MintStableV1Large`'s output), which the
-    // below-minimum mint below it acts on (`OBL-C119`).
-    let mint_commitment_2: Arc<Mutex<Option<pallas::Base>>> = Arc::new(Mutex::new(None));
-
-    // OBL-Z14: the governance authority must be the identity that files reports —
-    // this fixture's `sk` (10), which `GovernanceReportV1` below passes as the
-    // reporter. The host compares the report's exposed reporter pair against this
-    // stored point, so declaring any other key would (correctly) reject the report.
-    let gov_pub = PublicKey::from_secret(SecretKey::from_base(sk));
-    let (governance_pub_x, governance_pub_y) = gov_pub.xy().expect("pk not identity");
-
-    // Deployment init ix: store the PN contract id so validate_child_contract_id passes.
-    let deploy_ix = InitializeParams {
-        model: StablecoinModel::PooledDebt,
-        min_collateralization_ratio: CDP_MIN_COLLATERALIZATION_RATIO,
-        liquidation_threshold: CDP_LIQUIDATION_THRESHOLD,
-        liquidation_penalty: CDP_LIQUIDATION_PENALTY,
-        base_rate: CDP_BASE_RATE,
-        pi_kp: CDP_PI_KP,
-        pi_ki: CDP_PI_KI,
-        twap_window: CDP_PRICE_FEED_TWAP_WINDOW,
-        price_deviation_threshold: CDP_PRICE_DEVIATION_THRESHOLD,
-        collateral_params: vec![],
-        dead_man_switch: DeadManSwitchConfig {
-            enabled: false,
-            timeout_blocks: 0,
-            action: DeadManAction::DisableMinting,
-            last_action_block: 0,
-        },
-        token_authority_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(1u64))),
-        create_token: false,
-        token_symbol: [0u8; 32],
-        deployer_auth: pallas::Base::zero(),
-        promissory_note_contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
-        governance_pub_x,
-        governance_pub_y,
-        // `OBL-C198`: `tx_binding` left the params — it is derived from the transaction commitment,
-        // which covers the call data. The deploy carries no transaction to bind, so the nonce is
-        // zero and the arm derives.
-        tx_nonce: pallas::Base::zero(),
-    }
-    .encode()
-    .expect("encode stablecoin InitializeParams");
-
     ContractTestSpec {
         name: "stablecoin",
         is_genesis: false,
         contract_id: cid,
-        harness: h,
+        harness,
         wasm_bytes: Some(wasm),
         has_initialize: false,
         initialize: None,
         needs_coinbase_coordination: false,
-        setup: Some(Box::new({
-            let notes = notes.clone();
-            move |chain| {
-                let pn = PromissoryNoteHarness::spawn();
-                let pn_cid = *PROMISSORY_NOTE_CONTRACT_ID;
-                let owner_secret = pallas::Base::from(100u64);
-                let owner_addr = poseidon_hash([pallas::Base::from(7u64), owner_secret]);
-                let issue_secret = pallas::Base::from(100u64);
-                let token0 = pn
-                    .register_type(
-                        issue_secret,
-                        pallas::Base::from(2u64),
-                        pallas::Base::from(3u64),
-                        owner_addr,
-                        10000,
-                        pallas::Base::zero(),
-                        pallas::Base::zero(),
-                        pallas::Base::from(6u64),
-                    )
-                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                smol::block_on(
-                    chain
-                        .block()?
-                        .with_call(pn_cid, &pn, &token0.call_data, token0.token_proofs.clone())?
-                        .submit(),
-                )?;
-                let asset_id = token0.asset_id;
-                let mut tree = MerkleTree::new(1);
-                tree.append(MerkleNode::from_base(pallas::Base::zero()));
-                tree.append(MerkleNode::from_base(token0.commitment.inner()));
-                let mark0 = tree.mark().expect("tree.mark");
-                let path0: Vec<MerkleNode> = tree.witness(mark0, 0).expect("tree.witness");
-                let mut issued = vec![(token0.commitment.inner(), u64::from(mark0), path0, asset_id, pallas::Base::from(6u64))];
-                // OBL-C119: the note the below-minimum mint spends is the 500 the repay endpoint
-                // spends below it — and because that mint is refused, the note stays unspent and
-                // the repay still finds it. The value is also what keeps the two children apart:
-                // `pn_transfer_child` fixes every field of its output commitment but the value and
-                // the spend_hook, so a below-minimum mint of 1000 with this contract's hook would
-                // reproduce the positive mint's output commitment and be turned away by the
-                // promissory note for *that* reason instead of by the ratio check.
-                for (value, cb) in [(5000u64, 11u64), (1000, 12), (1000, 13), (500, 14), (5500, 15)] {
-                    let n = pn
-                        .issue(issue_secret, asset_id, value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(cb))
-                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    smol::block_on(
-                        chain.block()?.with_call(pn_cid, &pn, &n.call_data, n.proofs.clone())?.submit(),
-                    )?;
-                    tree.append(MerkleNode::from_base(n.commitment.inner()));
-                    let mark = tree.mark().expect("tree.mark");
-                    let path: Vec<MerkleNode> = tree.witness(mark, 0).expect("tree.witness");
-                    issued.push((n.commitment.inner(), u64::from(mark), path, asset_id, pallas::Base::from(cb)));
-                }
-                *notes.lock().unwrap() = Some(issued);
-                Ok(())
-            }
-        })),
-        deploy_ix: Some(deploy_ix),
+        setup: None,
+        deploy_ix: None,
         endpoints: vec![
-            EndpointSpec {
-                name: "OpenPositionV1",
-                is_zk: true,
-                generate: Box::new({
-                    let notes = notes.clone();
-                    let position_commitment = position_commitment.clone();
-                    move || {
-                        // OBL-C83: the blinds are named here rather than drawn inside the
-                        // harness, because `MintStableV1` below has to reproduce this exact
-                        // position commitment to consume it.
-                        //
-                        // `OBL-C198`: this row is a cycle — the child's blind seed is derived from
-                        // the position commitment *this* call produces, and the commitment both
-                        // proofs bind to is a function of the child's data. So: prepare, build the
-                        // child around `public_inputs`, then prove the set.
-                        let plan = h.open_position_prepare(
-                            sk, 10000, 5000, pallas::Base::from(1u64),
-                            BaseBlind::from_u64(100u64), BaseBlind::from_u64(200u64),
-                        )
-                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        *position_commitment.lock().unwrap() = Some(plan.public_inputs.position_commitment);
-                        let n = notes.lock().unwrap();
-                        let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                        let blind_seed = poseidon_hash([pallas::Base::from(10000u64), plan.public_inputs.position_commitment]);
-                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[0], 10000, blind_seed, pallas::Base::zero())?;
-                        let r = h.open_position_prove(plan, &[child_call.clone()])
-                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        let debris = child_plan.prove(r.commitment, child_nonce)
-                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
-                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
-                    }
+            refusal("open_position_disabled", StablecoinFunction::OpenPositionV1),
+            refusal("add_collateral_disabled", StablecoinFunction::AddCollateralV1),
+            refusal("mint_stable_disabled", StablecoinFunction::MintStableV1),
+            refusal("liquidate_disabled", StablecoinFunction::LiquidateV1),
+            refusal("redeem_disabled", StablecoinFunction::RedeemStableV1),
+            // The negative twin at chain level: `VerifyCoverageV1` is read-only and enabled, so it
+            // must pass the custody guard and fail on its own rule — no report for the series —
+            // with `CoverageNotVerified` (Custom(24)), never `Custom(32)`.
+            mk_ep_rejecting_naming(
+                "verify_coverage_not_caught_by_the_custody_guard",
+                false,
+                &["ContractError(Custom(24))"],
+                Box::new(|| {
+                    let mut call_data = vec![StablecoinFunction::VerifyCoverageV1 as u8];
+                    call_data.extend_from_slice(&pallas::Base::zero().to_repr());
+                    Ok(EndpointResult { children: vec![], call_data, proofs: vec![] })
                 }),
-                generate_with_coinbase: None,
-                verify_state: Some(Box::new({
-                    let position_commitment = position_commitment.clone();
-                    move |chain| {
-                        let key = position_commitment.lock().unwrap()
-                            .ok_or_else(|| dwow_core::Error::Custom("position commitment not captured".into()))?
-                            .to_repr();
-                        let cid = crate::tests::blockchain::derive_contract_id_from_name("stablecoin");
-                        let r = chain.query_contract_state(cid, "positions", &key)?;
-                        if r.is_none() {
-                            return Err(dwow_core::Error::Custom("stablecoin positions not found".into()));
-                        }
-                        Ok(())
-                    }
-                })),
-                expectation: EndpointExpectation::Success,
-            },
-            // NEGATIVE — OBL-C83 clause 1, and its cause is single by construction.
-            //
-            // This is the positive mint in every respect except one: the commitment recorded in
-            // `MintStableParams` is not the `new_commitment` the proof established. The proof
-            // itself is a real one, over the same public-input vector the positive uses, so it
-            // verifies; the position is registered (the open above ran) and its nullifier is still
-            // unspent (this runs first); and the child transfer's blind seed is derived from the
-            // *mismatched* commitment, so the child check would accept it too. Every later check in
-            // `process_mint_stable_instruction` would pass. Only the join between the recorded
-            // field and the proven vector refuses it, and it refuses before any of them.
-            //
-            // If this endpoint is ever accepted, the recorded commitment is again a value the
-            // caller chose beside its proof rather than the one the proof established. Read the
-            // cause in the DWOW_TEST_LOGS=1 output: it must be "recorded commitment ... is not the
-            // proven one", which is a `CommitmentMismatch`. The positive mint succeeding in the
-            // same run is what rules out a blanket refusal — and since both would consume the same
-            // position and the same note, exactly one of the two can be accepted.
-            EndpointSpec {
-                name: "MintStableV1MismatchedCommitment", is_zk: true,
-                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(17))"]),
-                generate_with_coinbase: None,
-                verify_state: None,
-                generate: Box::new({
-                    // The positive's child note. This endpoint runs first, so the note is unspent
-                    // here and the position is unconsumed; the positive below is what proves both
-                    // were still available to it.
-                    let notes = notes.clone();
-                    let position_commitment = position_commitment.clone();
-                    move || {
-                        use dwow_stablecoin_contract::model::MintStableParams;
-                        use dwow_sdk::crypto::intent::IntentCommitment;
-
-                        let position = position_commitment.lock().unwrap()
-                            .ok_or_else(|| dwow_core::Error::Custom(
-                                "position commitment not captured".into()))?;
-                        let mut plan = h.mint_stable_prepare(sk, 10000, 5000, 1000,
-                            pallas::Base::from(1u64),
-                            BaseBlind::from_u64(100u64), BaseBlind::from_u64(200u64),
-                            position)
-                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-
-                        // One field changed: the commitment the host would record. The vector the
-                        // proof commits to is left exactly as the honest call built it.
-                        //
-                        // `OBL-C198`: the pair is now derived over the commitment, which covers the
-                        // call data — so the modified bytes are substituted into the plan *before*
-                        // proving. That is what keeps this row testing the join: the proof covers the
-                        // bytes that are submitted (so it verifies), while the recorded field is still
-                        // not the `new_commitment` the proof established, which is the only thing the
-                        // endpoint may refuse it for.
-                        let recorded = plan.public_inputs.new_commitment + pallas::Base::one();
-                        plan.call_data = {
-                            let params = MintStableParams {
-                                mint_commitment: IntentCommitment::from_base(recorded),
-                                mint_amount: 1000,
-                                proof: vec![],
-                                fee: 0,
-                                zk_public_inputs: wire_instances(&plan.public_inputs.to_vec()),
-                            };
-                            let mut cd = vec![0x04];
-                            cd.extend_from_slice(
-                                &params.encode().expect("encode MintStableParams"),
-                            );
-                            cd
-                        };
-
-                        // The child is built for the *mismatched* commitment, so it is self-
-                        // consistent with the params rather than with the proof — the point being
-                        // that no check downstream of the join can be the one that refuses.
-                        let n = notes.lock().unwrap();
-                        let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                        let blind_seed = poseidon_hash([pallas::Base::from(1000u64), recorded]);
-                        let cid = crate::tests::blockchain::derive_contract_id_from_name("stablecoin");
-                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[3], 1000, blind_seed, cid.inner())?;
-                        let r = h.mint_stable_prove(plan, &[child_call.clone()])
-                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        let debris = child_plan.prove(r.commitment, child_nonce)
-                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
-                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
-                    }
-                }),
-            },
-            EndpointSpec {
-                name: "MintStableV1",
-                is_zk: true,
-                generate: Box::new({
-                    let notes = notes.clone();
-                    let mint_commitment = mint_commitment.clone();
-                    let position_commitment = position_commitment.clone();
-                    move || {
-                        // OBL-C83: the mint consumes the position `OpenPositionV1` registered, and
-                        // it has to name it. Before the repair it passed `1` — a value no proof
-                        // could relate to the position the open had created, which is exactly the
-                        // divergence the four-argument commitment derivation hid.
-                        let position = position_commitment.lock().unwrap()
-                            .ok_or_else(|| dwow_core::Error::Custom(
-                                "position commitment not captured".into()))?;
-                        // `OBL-C198`: cycle — the child's blind seed comes from this call's own
-                        // `new_commitment`, and the commitment covers the child.
-                        let plan = h.mint_stable_prepare(sk, 10000, 5000, 1000,
-                            pallas::Base::from(1u64),
-                            BaseBlind::from_u64(100u64), BaseBlind::from_u64(200u64),
-                            position)
-                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        *mint_commitment.lock().unwrap() = Some(plan.public_inputs.new_commitment);
-                        let n = notes.lock().unwrap();
-                        let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                        let blind_seed = poseidon_hash([pallas::Base::from(1000u64), plan.public_inputs.new_commitment]);
-                        let cid = crate::tests::blockchain::derive_contract_id_from_name("stablecoin");
-                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[3], 1000, blind_seed, cid.inner())?;
-                        let r = h.mint_stable_prove(plan, &[child_call.clone()])
-                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        let debris = child_plan.prove(r.commitment, child_nonce)
-                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
-                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
-                    }
-                }),
-                generate_with_coinbase: None,
-                verify_state: Some(Box::new({
-                    let mint_commitment = mint_commitment.clone();
-                    let position_commitment = position_commitment.clone();
-                    move |chain| {
-                        let key = mint_commitment.lock().unwrap()
-                            .ok_or_else(|| dwow_core::Error::Custom("mint commitment not captured".into()))?
-                            .to_repr();
-                        let cid = crate::tests::blockchain::derive_contract_id_from_name("stablecoin");
-                        let r = chain.query_contract_state(cid, "stablecoin", &key)?;
-                        if r.is_none() {
-                            return Err(dwow_core::Error::Custom("stablecoin state not found".into()));
-                        }
-
-                        // OBL-C83 clause 2, asserted on chain state rather than inferred: the
-                        // position this mint consumed is marked spent, under the nullifier the
-                        // circuit derives from it. `apply_mint_stable_update` wrote no such marker
-                        // before the repair — the tree existed and every sibling arm used it, and
-                        // the mint was the one arm that did not.
-                        let position = position_commitment.lock().unwrap()
-                            .ok_or_else(|| dwow_core::Error::Custom("position commitment not captured".into()))?;
-                        let nullifier = poseidon_hash([pallas::Base::from(1u64), sk, position]);
-                        let spent = chain.query_contract_state(cid, "position_nullifiers", &nullifier.to_repr())?;
-                        if spent.is_none() {
-                            return Err(dwow_core::Error::Custom(
-                                "consumed position is not marked spent in position_nullifiers".into()));
-                        }
-                        Ok(())
-                    }
-                })),
-                expectation: EndpointExpectation::Success,
-            },
-            // OBL-C119's positive half: the second mint in the chain, large enough that the pool's
-            // ratio falls but not below the minimum. 10000 collateral against 1000 + 5500 = 6500
-            // debt is 15384 bp, above `CDP_MIN_COLLATERALIZATION_RATIO` (15000) — so this endpoint
-            // is also the fixture's own statement of where the threshold sits. If the amounts were
-            // mis-set the other way, this endpoint would be refused and the run would say so,
-            // rather than the below-minimum one passing for a reason nobody chose.
-            EndpointSpec {
-                name: "MintStableV1Large",
-                is_zk: true,
-                generate: Box::new({
-                    let notes = notes.clone();
-                    let mint_commitment = mint_commitment.clone();
-                    let mint_commitment_2 = mint_commitment_2.clone();
-                    move || {
-                        let previous = mint_commitment.lock().unwrap()
-                            .ok_or_else(|| dwow_core::Error::Custom(
-                                "first mint commitment not captured".into()))?;
-                        // `OBL-C198`: cycle, as the mint above.
-                        let plan = h.mint_stable_prepare(sk, 10000, 6000, 5500,
-                            pallas::Base::from(1u64),
-                            BaseBlind::from_u64(100u64), BaseBlind::from_u64(200u64),
-                            previous)
-                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        *mint_commitment_2.lock().unwrap() = Some(plan.public_inputs.new_commitment);
-                        let n = notes.lock().unwrap();
-                        let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                        let blind_seed = poseidon_hash([pallas::Base::from(5500u64), plan.public_inputs.new_commitment]);
-                        let cid = crate::tests::blockchain::derive_contract_id_from_name("stablecoin");
-                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[5], 5500, blind_seed, cid.inner())?;
-                        let r = h.mint_stable_prove(plan, &[child_call.clone()])
-                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        let debris = child_plan.prove(r.commitment, child_nonce)
-                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
-                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
-                    }
-                }),
-                generate_with_coinbase: None,
-                verify_state: None,
-                expectation: EndpointExpectation::Success,
-            },
-            // NEGATIVE — OBL-C119, and its cause is single by construction.
-            //
-            // The same mint as `MintStableV1Large` one step further along the chain: a valid proof
-            // over a registered, unconsumed position, a valid child transfer, and every check this
-            // arm made before the repair passing. What refuses it is the pool ratio — 10000
-            // collateral against 1000 + 5500 + 500 = 7000 debt is 14285 bp, below the 15000 bp
-            // minimum — and the refusal names those figures.
-            //
-            // Remove the ratio check and this endpoint is accepted: the position is consumed, the
-            // pool's debt is written past its floor, and `EndpointExpectation::RejectionByEndpoint`
-            // asserts that the block must fail, so the run says so. If this endpoint is ever accepted, a
-            // mint can again walk `CDP_TOTAL_DEBT_KEY` up with no floor — and that key is the
-            // denominator of the redemption exchange rate and the input to the liquidation gate.
-            EndpointSpec {
-                name: "MintStableV1BelowPoolMinimum", is_zk: true,
-                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(3))"]),
-                generate_with_coinbase: None,
-                verify_state: None,
-                generate: Box::new({
-                    let notes = notes.clone();
-                    let mint_commitment_2 = mint_commitment_2.clone();
-                    move || {
-                        let previous = mint_commitment_2.lock().unwrap()
-                            .ok_or_else(|| dwow_core::Error::Custom(
-                                "second mint commitment not captured".into()))?;
-                        // `OBL-C198`: cycle, as the mints above.
-                        let plan = h.mint_stable_prepare(sk, 10000, 11500, 500,
-                            pallas::Base::from(1u64),
-                            BaseBlind::from_u64(100u64), BaseBlind::from_u64(200u64),
-                            previous)
-                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        let n = notes.lock().unwrap();
-                        let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                        let blind_seed = poseidon_hash([pallas::Base::from(500u64), plan.public_inputs.new_commitment]);
-                        let cid = crate::tests::blockchain::derive_contract_id_from_name("stablecoin");
-                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[4], 500, blind_seed, cid.inner())?;
-                        let r = h.mint_stable_prove(plan, &[child_call.clone()])
-                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        let debris = child_plan.prove(r.commitment, child_nonce)
-                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
-                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
-                    }
-                }),
-            },
-            mk_ep("RepayStableV1", true, Box::new({
-                let notes = notes.clone();
-                move || {
-                    use dwow_stablecoin_contract::model::RepayStableParams;
-                    use dwow_sdk::crypto::intent::IntentCommitment;
-                    let params = RepayStableParams {
-                        repay_commitment: IntentCommitment::from_base(pallas::Base::from(1u64)),
-                        repay_amount: 500,
-                        proof: vec![],
-                        fee: 0,
-                        zk_public_inputs: vec![pallas::Base::from(1u64)],
-                    };
-                    let n = notes.lock().unwrap();
-                    let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                    // Not a cycle: this row's child blind seed is a constant, so the child is built
-                    // before the parent and both bind to the same commitment (`OBL-C198`).
-                    let blind_seed = poseidon_hash([pallas::Base::from(500u64), pallas::Base::from(1u64)]);
-                    let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[4], 500, blind_seed, pallas::Base::zero())?;
-                    let r = h.repay_stable(&[child_call.clone()], &params)
-                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    let debris = child_plan.prove(r.commitment, child_nonce)
-                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
-                    Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
-                }
-            })),
-            // OBL-C119: the report must state the pool's *actual* figures, so the two mints and the
-            // repay above it move what this endpoint reports. The host compares them against the
-            // stored totals and refuses a report that disagrees — 500 was the pre-chain value and
-            // the run says so verbatim (`GovernanceReport: debt mismatch — reported=500
-            // on_chain=6000`), which is what the fixture update is answering.
-            mk_ep("GovernanceReportV1", true, Box::new(move || {
-                // No child: the committed set is this call alone (`OBL-C198`).
-                let r = h.governance_report(&[], sk, 10000, 6000, 0, 10, 3600)
-                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
-            })),
-            // OBL-C204 control — the interest equality that was removed on 2026-10-07, exercised
-            // where its two operands disagree. That check compared the report's `interest_accrued`
-            // (a *window*, pinned by the circuit to `debt × rate × time ÷ DENOM`) against
-            // `accumulated_fees`, a running total. Two accruals separate them: the ledger reaches
-            // 120 while the honest window for the *last* term is 61. Before the removal this
-            // endpoint was refused (`GovernanceReport: interest_accrued mismatch — reported=61
-            // on_chain=120`); after it, this endpoint must be ACCEPTED, and this row is what says
-            // so. **One accrual does not suffice** — with a single accrual the ledger and the
-            // honest window coincide, which is exactly why the spec's original single
-            // report-at-zero never showed the defect.
-            //
-            // The collateral is the sibling report's 10000 and is deliberately untouched: it is
-            // proven-good at this point in the sequence, and the host checks it exactly
-            // (`entrypoint.rs:1737`), so deriving a new value here would be arithmetic this fixture
-            // cannot demonstrate.
-            mk_ep("AccrueInterestV1ControlA", true, Box::new(move || {
-                // floor(6000 × 1000 × 3_153_600 ÷ 315_360_000_000) = 60 → debt 6060, fees 60
-                let r = h.accrue_interest(&[], sk, 6000, 1000, 3_153_600)
-                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
-            })),
-            mk_ep("AccrueInterestV1ControlB", true, Box::new(move || {
-                // floor(6060 × 1000 × 3_153_600 ÷ 315_360_000_000) = 60 → debt 6120, fees 120
-                let r = h.accrue_interest(&[], sk, 6060, 1000, 3_153_600)
-                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
-            })),
-            mk_ep("GovernanceReportV1InterestControl", true, Box::new(move || {
-                // Honest: debt 6120 (6000 + 60 + 60), and the window `floor(6120 × 1000 ×
-                // 3_153_600 ÷ 315_360_000_000) = 61` — the ledger's 120 is *not* what an honest
-                // reporter states.
-                let r = h.governance_report(&[], sk, 10000, 6120, 0, 1000, 3_153_600)
-                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
-            })),
-            mk_ep("AccrueInterestV1", true, Box::new(move || {
-                // `old_total_debt` is the two control accruals' 6120, not the 6000 the mints left:
-                // the exec compares it against on-chain state. This accrual's interest is
-                // `floor(6120 × 10 × 3600 ÷ 315_360_000_000) = 0`, so the debt is unchanged.
-                let r = h.accrue_interest(&[], sk, 6120, 10, 3600)
-                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
-            })),
-            // NEGATIVE — OBL-C82, end to end, and it is the positive endpoint above that makes it
-            // a control. A stranger holds a perfectly valid accrual proof: a real proof of a real
-            // accumulator point, just not the point registered at init. Every other field is the
-            // positive's, `old_total_debt` included, so the only difference is the secret behind
-            // the accumulator — which is why a rejection here cannot be a statement about state.
-            // Before the fix the entrypoint had nothing to compare and any account could accrue
-            // interest on the pool's debt with a proof it made itself; if this endpoint ever flips
-            // to Success, that is back. Read the rejection's cause in the DWOW_TEST_LOGS=1 output:
-            // it must be the authority refusal ("AccrueInterest accumulator is not the registered
-            // authority"), not a proof-verification failure — a rejection for an unrelated reason
-            // is not evidence about this check. The positive endpoint succeeding in the same run
-            // is what rules out a blanket refusal.
-            EndpointSpec {
-                name: "AccrueInterestV1ByStranger", is_zk: true,
-                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(30))"]),
-                generate_with_coinbase: None,
-                verify_state: None,
-                generate: Box::new(move || {
-                    let r = h.accrue_interest(&[], pallas::Base::from(11u64), 6120, 10, 3600)
-                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
-                }),
-            },
-            mk_ep("AddCollateralV1", true, Box::new({
-                let notes = notes.clone();
-                move || {
-                    use dwow_stablecoin_contract::model::{DepositCollateralParams, CollateralType};
-                    use dwow_sdk::crypto::intent::IntentCommitment;
-                    let params = DepositCollateralParams {
-                        deposit_commitment: IntentCommitment::from_base(pallas::Base::from(1u64)),
-                        collateral_amount: 5000,
-                        collateral_type: CollateralType::Xmr,
-                        proof: vec![],
-                        fee: 0,
-                        zk_public_inputs: vec![pallas::Base::from(1u64), pallas::Base::from(2u64)],
-                    };
-                    let n = notes.lock().unwrap();
-                    let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                    // Not a cycle: this row's child blind seed is a constant (`OBL-C198`).
-                    let blind_seed = poseidon_hash([pallas::Base::from(5000u64), pallas::Base::from(1u64)]);
-                    let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[1], 5000, blind_seed, pallas::Base::zero())?;
-                    let r = h.add_collateral(&[child_call.clone()], &params)
-                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    let debris = child_plan.prove(r.commitment, child_nonce)
-                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
-                    Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
-                }
-            })),
-            mk_ep("RemoveCollateralV1", true, Box::new({
-                let notes = notes.clone();
-                move || {
-                    use dwow_stablecoin_contract::model::WithdrawCollateralParams;
-                    use dwow_sdk::crypto::intent::{IntentCommitment, IntentNullifier};
-                    let params = WithdrawCollateralParams {
-                        withdrawal_nullifier: IntentNullifier::from_base(pallas::Base::from(3u64)),
-                        new_commitment: IntentCommitment::from_base(pallas::Base::from(2u64)),
-                        withdraw_amount: 1000,
-                        proof: vec![],
-                        fee: 0,
-                        zk_public_inputs: vec![pallas::Base::from(1u64)],
-                    };
-                    let n = notes.lock().unwrap();
-                    let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                    // Not a cycle: this row's child blind seed is a constant (`OBL-C198`).
-                    let blind_seed = poseidon_hash([pallas::Base::from(1000u64), pallas::Base::from(3u64)]);
-                    let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[2], 1000, blind_seed, pallas::Base::zero())?;
-                    let r = h.remove_collateral(&[child_call.clone()], &params)
-                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    let debris = child_plan.prove(r.commitment, child_nonce)
-                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
-                    Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
-                }
-            })),
-            mk_ep("UpdateConfigV1", true, Box::new(move || {
-                use dwow_stablecoin_contract::model::UpdateConfigParams;
-                let params = UpdateConfigParams {
-                    min_collateralization_ratio: 15000,
-                    liquidation_threshold: 12000,
-                    liquidation_penalty: 500,
-                    base_rate: 500,
-                    pi_kp: 0, pi_ki: 0,
-                    twap_window: 3600,
-                    price_deviation_threshold: 500,
-                    gov_pub_x: pallas::Base::zero(),
-                    gov_pub_y: pallas::Base::zero(),
-                    config_nullifier: poseidon_hash([pallas::Base::from(1u64), pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero()]),
-                };
-                let r = h.update_config(&[], &params)
-                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
-            })),
+            ),
         ],
     }
 }

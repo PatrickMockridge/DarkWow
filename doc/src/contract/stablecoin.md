@@ -4,18 +4,19 @@
 
 *Privacy-preserving collateralized stablecoin with configurable models and multi-collateral support.*
 
-## Status: redemption disabled (2026-10-25)
+## Status: the custody-dependent arms are disabled (2026-10-25)
 
-`RedeemStableV1` (opcode `0x0A`) is **refused** with `CustodyModelUnavailable` before any state
-read. The arm decremented `total_collateral` by a proportional return and recorded the redemption,
-but its only child was a `promissory_note::redeem_v1` that burns the redeemer's stablecoin note:
-no child paid the collateral. The pool does not custody collateral — `OpenPositionV1` accepts any
-PN transfer whose value commitment matches and never checks the recipient — so `total_collateral`
-is bookkeeping over notes someone else holds. Paying it needs a custody primitive that exposes a
-parent-verifiable payout amount; the genesis `Purse` keeps its amounts off-wire. Disabling the arm
-prevents a redeemer from burning stablecoins and releasing a ledger entry they are not paid for.
-The design decision is `OBL-C272` in [`decisions.md`](../arch/decisions.md); register row
-`OBL-C92` closes on the refusal.
+`OpenPositionV1` (`0x01`), `AddCollateralV1` (`0x02`), `MintStableV1` (`0x04`), `LiquidateV1`
+(`0x06`) and `RedeemStableV1` (`0x0A`) are **refused** with `CustodyModelUnavailable` before any
+state read. The contract does not custody collateral: a deposit is a `promissory_note::transfer_v1`
+whose value commitment the parent can check, but whose **recipient it cannot** — the wire `Output`
+carries only commitments and an encrypted note — so a depositor can keep the note and mint against
+`total_collateral` bookkeeping. Minting and liquidation consume that unbacked ledger, and
+redemption released it without paying the redeemer. Paying and verifying it needs a custody
+primitive that exposes a parent-checkable recipient and amount; the genesis `Purse` keeps amounts
+off-wire. The market is inert until that primitive exists. Design records: `OBL-C272` in
+[`decisions.md`](../arch/decisions.md); register rows `OBL-C92` and `OBL-C273` close on the
+refusal.
 
 ## Token Movement
 
@@ -79,12 +80,12 @@ contract does. Recorded as `OBL-C231`.
 | Function | Opcode | Description |
 |----------|--------|-------------|
 | `InitializeV1` | `0x00` | Initialize stablecoin with model and parameters |
-| `OpenPositionV1` | `0x01` | Open a new CDP position |
-| `AddCollateralV1` | `0x02` | Add collateral to existing position |
+| `OpenPositionV1` | `0x01` | **Refused** (`CustodyModelUnavailable`): the deposit recipient is not parent-checkable |
+| `AddCollateralV1` | `0x02` | **Refused** (`CustodyModelUnavailable`): same custody gap |
 | `RemoveCollateralV1` | `0x03` | Remove collateral (subject to ratio check) |
-| `MintStableV1` | `0x04` | Mint stablecoin against collateral |
+| `MintStableV1` | `0x04` | **Refused** (`CustodyModelUnavailable`): the collateral ledger is unbacked |
 | `RepayStableV1` | `0x05` | Repay stablecoin debt |
-| `LiquidateV1` | `0x06` | Liquidate undercollateralized position |
+| `LiquidateV1` | `0x06` | **Refused** (`CustodyModelUnavailable`): there is no custodied collateral to seize |
 | `UpdateConfigV1` | `0x07` | Update configuration parameters |
 | `GovernanceReportV1` | `0x08` | Precise collateral/outstanding ratio — verifies on-chain state, enforces no fractional reserve (quotient-remainder, cold) |
 | `AccrueInterestV1` | `0x09` | Precise interest accrual (quotient-remainder, cold) |
@@ -99,7 +100,7 @@ The stablecoin is the **sole issuer** in the Promissory Note ecosystem. It creat
 
 | Phase | PN Opcode | Stablecoin Operation | Status |
 |-------|-----------|---------------------|--------|
-| **Mint** | TransferV1 (0x04) | `MintStableV1` — issues stablecoins to borrower | Implemented |
+| **Mint** | TransferV1 (0x04) | `MintStableV1` — **refused** (custody model unavailable) | Disabled |
 | **Transfer** | TransferV1 (0x04) | All collateral movements, repayments, liquidations | Implemented |
 | **Burn** | RevokeV1 (0x03) | `PN::RevokeV1` — direct burn with spend_hook callback | Implemented |
 | **Redeem** | RedeemV1 (0x01) | `RedeemStableV1` — **refused**; the pool does not custody collateral | Disabled |

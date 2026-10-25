@@ -118,11 +118,12 @@ pub enum StablecoinError {
     #[error("Not authorized: governance signature required")]
     NotAuthorized,
 
-    /// Redemption would decrement the pool's ledger without paying the redeemer: the contract
-    /// does not custody the collateral (deposits are PN transfers whose recipient the parent
-    /// cannot check), and no custody primitive exposes a parent-verifiable payout amount. The
-    /// arm refuses before any state read. See OBL-C272.
-    #[error("Custody model unavailable: stablecoin redemption is disabled until the pool custodies collateral verifiably")]
+    /// The custody-dependent arms (deposit, add collateral, mint, liquidate, redeem) are refused
+    /// before any state read. The contract does not custody collateral: a deposit is a PN transfer
+    /// whose recipient the parent cannot check (the wire `Output` carries only commitments and an
+    /// encrypted note), and no custody primitive exposes a parent-verifiable payout amount. See
+    /// OBL-C92, OBL-C272 and OBL-C273.
+    #[error("Custody model unavailable: the pool does not custody collateral; deposit, mint, liquidate and redemption are disabled")]
     CustodyModelUnavailable,
 }
 

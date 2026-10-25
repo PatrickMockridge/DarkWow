@@ -18,12 +18,14 @@ name = "open_position"
 code = 1
 requires_proof = true
 proof_circuit = "OpenPositionV2"
+description = "Refused: the deposit recipient is not parent-checkable, so the pool custodies nothing (CustodyModelUnavailable, OBL-C273)."
 
 [[functions]]
 name = "add_collateral"
 code = 2
 requires_proof = true
 proof_circuit = "AddCollateralV2"
+description = "Refused: same custody gap as open_position (CustodyModelUnavailable, OBL-C273)."
 
 [[functions]]
 name = "remove_collateral"
@@ -36,6 +38,7 @@ name = "mint_stable"
 code = 4
 requires_proof = true
 proof_circuit = "MintStableV2"
+description = "Refused: the collateral ledger is unbacked (CustodyModelUnavailable, OBL-C273)."
 
 [[functions]]
 name = "repay_stable"
@@ -48,6 +51,7 @@ name = "liquidate"
 code = 6
 requires_proof = true
 proof_circuit = "LiquidateV2"
+description = "Refused: there is no custodied collateral to seize (CustodyModelUnavailable, OBL-C273)."
 
 [[functions]]
 name = "update_config"

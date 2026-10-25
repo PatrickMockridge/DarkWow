@@ -562,23 +562,30 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
 
-    // OBL-C92 / OBL-C251 / OBL-C272: redemption is refused before the host is asked which call
-    // is ours, before any parameter decode and before any state read.
+    // OBL-C92 / OBL-C251 / OBL-C272 / OBL-C273: the custody-dependent arms are refused before
+    // the host is asked which call is ours, before any parameter decode and before any state read.
     //
-    // The arm decremented `total_collateral` by a proportional return and recorded the redemption
-    // while the only child was a `promissory_note::redeem_v1` that burns the redeemer's
-    // stablecoin note — no child paid the collateral. The pool does not custody collateral:
-    // `OpenPositionV1` accepts any PN transfer whose value commitment matches and never checks the
-    // recipient, so `total_collateral` is bookkeeping over notes someone else holds. Paying it
-    // needs a custody primitive that exposes a parent-verifiable payout; the genesis `Purse`
-    // keeps amounts off-wire. The only sound state is refusal.
+    // The pool does not custody collateral: `OpenPositionV1`/`AddCollateralV1` accept any PN
+    // transfer whose value commitment matches, and the wire `Output` carries only commitments and
+    // an encrypted note, so the parent cannot check the recipient — a depositor can keep the note
+    // and mint against `total_collateral` bookkeeping. `MintStableV1` and `LiquidateV1` consume
+    // that unbacked ledger, and `RedeemStableV1` releases it without paying the redeemer. No
+    // custody primitive exposes a parent-verifiable amount (the genesis `Purse` keeps amounts
+    // off-wire). The only sound state is refusal.
     //
     // The placement makes the control a host unit test: no state read, no host call.
     if calls.iter().any(|c| {
         c.data.contract_id == cid
-            && c.data.data.first().copied() == Some(StablecoinFunction::RedeemStableV1 as u8)
+            && matches!(
+                c.data.data.first().copied(),
+                Some(x) if x == StablecoinFunction::OpenPositionV1 as u8
+                    || x == StablecoinFunction::AddCollateralV1 as u8
+                    || x == StablecoinFunction::MintStableV1 as u8
+                    || x == StablecoinFunction::LiquidateV1 as u8
+                    || x == StablecoinFunction::RedeemStableV1 as u8
+            )
     }) {
-        msg!("[stablecoin::RedeemStableV1] refused: the collateral custody model is not implemented");
+        msg!("[stablecoin] refused: the collateral custody model is not implemented");
         return Err(StablecoinError::CustodyModelUnavailable.into())
     }
 
@@ -599,14 +606,24 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             let _params = InitializeParams::decode(&self_.data[1..])?;
             vec![]
         }
-        StablecoinFunction::OpenPositionV1 => process_open_position_instruction(cid, call_idx, calls)?,
-        StablecoinFunction::AddCollateralV1 => process_add_collateral_instruction(cid, call_idx, calls)?,
+        StablecoinFunction::OpenPositionV1 => {
+            // Unreachable: the pre-check refuses it. Fail-closed so removing the pre-check does
+            // not silently re-enable the arm.
+            return Err(StablecoinError::CustodyModelUnavailable.into())
+        }
+        StablecoinFunction::AddCollateralV1 => {
+            return Err(StablecoinError::CustodyModelUnavailable.into())
+        }
         StablecoinFunction::RemoveCollateralV1 => {
             process_remove_collateral_instruction(cid, call_idx, calls)?
         }
-        StablecoinFunction::MintStableV1 => process_mint_stable_instruction(cid, call_idx, calls)?,
+        StablecoinFunction::MintStableV1 => {
+            return Err(StablecoinError::CustodyModelUnavailable.into())
+        }
         StablecoinFunction::RepayStableV1 => process_repay_stable_instruction(cid, call_idx, calls)?,
-        StablecoinFunction::LiquidateV1 => process_liquidate_instruction(cid, call_idx, calls)?,
+        StablecoinFunction::LiquidateV1 => {
+            return Err(StablecoinError::CustodyModelUnavailable.into())
+        }
         StablecoinFunction::UpdateConfigV1 => {
             let params = UpdateConfigParams::decode(&self_.data[1..])?;
             // Verify ZK proof authorizes this config update (governance key holder)
@@ -650,6 +667,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 
 /// Process open position instruction
 /// Note: In the pooled model, this is equivalent to depositing collateral
+#[expect(dead_code, reason = "disabled by OBL-C273; kept for the custody-model redesign")]
 fn process_open_position_instruction(
     cid: ContractId,
     call_idx: usize,
@@ -928,6 +946,7 @@ fn apply_spend_hook_callback(cid: ContractId, update: SpendHookCallbackUpdateV1)
 }
 
 /// Process add collateral instruction
+#[expect(dead_code, reason = "disabled by OBL-C273; kept for the custody-model redesign")]
 fn process_add_collateral_instruction(
     cid: ContractId,
     call_idx: usize,
@@ -1131,6 +1150,7 @@ fn apply_remove_collateral_update(
 }
 
 /// Process mint stablecoin instruction
+#[expect(dead_code, reason = "disabled by OBL-C273; kept for the custody-model redesign")]
 fn process_mint_stable_instruction(
     cid: ContractId,
     call_idx: usize,
@@ -1464,6 +1484,7 @@ fn apply_repay_stable_update(cid: ContractId, update: RepayStableUpdateV1) -> Co
 }
 
 /// Process liquidate instruction
+#[expect(dead_code, reason = "disabled by OBL-C273; kept for the custody-model redesign")]
 fn process_liquidate_instruction(
     cid: ContractId,
     call_idx: usize,
@@ -2048,34 +2069,42 @@ mod tests {
         dwow_serial::serialize(&vec![leaf])
     }
 
-    /// R8 control for OBL-C92 / OBL-C251 / OBL-C272: redemption is refused before the host is
-    /// asked which call is ours, so this executes on a host unit test with no wasm runtime.
+    /// R8 control for OBL-C92 / OBL-C251 / OBL-C272 / OBL-C273: every custody-dependent arm is
+    /// refused before the host is asked which call is ours, so this executes on a host unit test
+    /// with no wasm runtime.
     ///
-    /// Before the fix the arm reached `get_call_index()` — a host call — and exited with
+    /// Before the fix each arm reached `get_call_index()` — a host call — and exited with
     /// `IoError("wasm host function unavailable")` on the host, which this assertion rejects.
     #[test]
-    fn redeem_is_refused_before_any_state_read() {
+    fn disabled_custody_arms_are_refused_before_any_state_read() {
         let cid = ContractId::ZERO;
-        let err = process_instruction(
-            cid,
-            &call_set(cid, StablecoinFunction::RedeemStableV1 as u8),
-        )
-        .expect_err("RedeemStableV1 must be refused");
-        assert!(
-            matches!(err, ContractError::Custom(32)),
-            "RedeemStableV1 must be refused with CustodyModelUnavailable (Custom(32)), got {err:?}"
-        );
+        for f in [
+            StablecoinFunction::OpenPositionV1,
+            StablecoinFunction::AddCollateralV1,
+            StablecoinFunction::MintStableV1,
+            StablecoinFunction::LiquidateV1,
+            StablecoinFunction::RedeemStableV1,
+        ] {
+            let selector = f as u8;
+            let err = process_instruction(cid, &call_set(cid, selector))
+                .expect_err("the disabled arm must be refused");
+            assert!(
+                matches!(err, ContractError::Custom(32)),
+                "selector 0x{selector:02x} must be refused with CustodyModelUnavailable \
+                 (Custom(32)), got {err:?}"
+            );
+        }
     }
 
-    /// The negative twin: a non-redeem selector is not caught by the refusal.
+    /// The negative twin: a non-custody selector is not caught by the refusal.
     #[test]
-    fn initialize_is_not_refused_by_the_redeem_guard() {
+    fn initialize_is_not_refused_by_the_custody_guard() {
         let cid = ContractId::ZERO;
         let err = process_instruction(cid, &call_set(cid, StablecoinFunction::InitializeV1 as u8))
-            .expect_err("a non-redeem call reaches the host index on the host");
+            .expect_err("a non-custody call reaches the host index on the host");
         assert!(
             !matches!(err, ContractError::Custom(32)),
-            "the refusal must be RedeemStableV1-specific, got {err:?}"
+            "the refusal must be custody-arm-specific, got {err:?}"
         );
     }
 }
