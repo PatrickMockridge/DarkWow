@@ -8,6 +8,12 @@ were re-read against the files before this report was written.
 until the batch is approved; the approval manifest and its `scope_hash` are produced in the approval
 commit.**
 
+**Update 2026-10-25 (process ALARP round, `reports/process-alarp-2026-10-25.md`).** R-05 (Z23) and
+R-06 (C42) are **withdrawn**: their cheapest controls are reasonably practicable, so both are live
+`OPEN` rows in the tracker's models and chain cycles. The residual register holds 5 records, and the
+live set is **27 OPEN / 8 CLOSED / 5 RESIDUAL**. The other dispositions and records in this report
+stand; the approval boundary is now the residual register and the policy, not the live tracker.
+
 ## 1. What the evidence says
 
 - 41 tracker rows: 37 OPEN, 4 CLOSED. **16 rows have no control** (`—`), and therefore no

@@ -13,7 +13,15 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 cd "$SCRIPT_DIR"
+
+# Verification preflight — the suite is a verification surface even when run independently of
+# test_pipeline.sh. No contract verdict while a finding is undecided.
+if ! bash "$REPO_ROOT/scripts/check-tracker-settled.sh" --require-clean; then
+    echo "REFUSED: the contract suite is a verification surface. Run the targeted control directly."
+    exit 1
+fi
 
 # Parse args
 RUN_ALL=true

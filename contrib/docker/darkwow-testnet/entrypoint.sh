@@ -76,6 +76,43 @@ check_listener_ports() {
         done
     done
 }
+
+# Self-test for the duplicate-listener refusal (OBL-C268). No node startup, no config generation:
+# the check is a pure function of the five port variables. A duplicate must be refused AND name
+# both listeners; a distinct set must pass.
+if [ "${1:-}" = "--self-test" ]; then
+    _self_test_fail=0
+    _self_test_out="$(mktemp)"
+    if ( P2P_PORT=31342 RPC_PORT=31342 STRATUM_PORT=31347 MANAGEMENT_PORT=31346 \
+            MERGE_MINING=false; check_listener_ports ) >"$_self_test_out" 2>&1; then
+        echo "SELF-TEST FAIL: duplicate P2P/RPC listeners were accepted" >&2
+        _self_test_fail=1
+    elif ! grep -q 'FATAL: P2P_PORT and RPC_PORT both use 31342' "$_self_test_out"; then
+        echo "SELF-TEST FAIL: duplicate P2P/RPC refused without naming both" >&2
+        _self_test_fail=1
+    fi
+    if ( P2P_PORT=31342 RPC_PORT=31345 STRATUM_PORT=31347 MANAGEMENT_PORT=31348 \
+            MM_RPC_PORT=31348 MERGE_MINING=true; check_listener_ports ) >"$_self_test_out" 2>&1; then
+        echo "SELF-TEST FAIL: duplicate MANAGEMENT/MM_RPC listeners were accepted" >&2
+        _self_test_fail=1
+    elif ! grep -q 'FATAL: MANAGEMENT_PORT and MM_RPC_PORT both use 31348' "$_self_test_out"; then
+        echo "SELF-TEST FAIL: duplicate MANAGEMENT/MM_RPC refused without naming both" >&2
+        _self_test_fail=1
+    fi
+    if ! ( P2P_PORT=31342 RPC_PORT=31345 STRATUM_PORT=31347 MANAGEMENT_PORT=31346 \
+            MM_RPC_PORT=31348 MERGE_MINING=true; check_listener_ports ) \
+            >"$_self_test_out" 2>&1; then
+        echo "SELF-TEST FAIL: distinct listeners were refused:" >&2
+        sed 's/^/  /' "$_self_test_out" >&2
+        _self_test_fail=1
+    fi
+    rm -f "$_self_test_out"
+    if [ "$_self_test_fail" -eq 0 ]; then
+        echo "SELF-TEST PASS: duplicate listeners are refused and named; distinct listeners pass."
+    fi
+    exit "$_self_test_fail"
+fi
+
 check_listener_ports
 FINALITY_MODE="${FINALITY_MODE:-always}"
 FINALITY_CARIBINA_ENABLED="${FINALITY_CARIBINA_ENABLED:-true}"

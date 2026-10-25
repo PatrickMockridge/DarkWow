@@ -75,3 +75,8 @@ a.out
 # `.md`: `scripts/check-doc-index.sh` globs the WORKING TREE (`:121-126`), so a `.md` written here would
 # enter the doc gate's scope whether or not it is tracked.
 /reports/*.raw/
+
+# Gate wall-time log. Append-only measurement data for the gate-portfolio decisions (each line is
+# date, label, seconds, exit); regenerable by re-running the umbrella, and a tracked append-only log
+# would churn on every run. The instrumentation is in `scripts/run-all-tests.sh`.
+/reports/gate-times.tsv

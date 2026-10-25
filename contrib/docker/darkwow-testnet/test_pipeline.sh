@@ -77,6 +77,101 @@ phase_gate() {
     _PHASE_FAIL_BEFORE="$current_fail"
 }
 
+# ══════════════════════════════════════════════════════════════════════════════
+# Self-test — the controls behind three closed rows, without Docker.
+#
+# R8: a control is not a control until it can fail. Each case runs the real function from the
+# sourced libs against a fixture of the daemon's log format, and plants the pre-fix parse beside
+# it; if the planted parse still succeeds, the fixture does not exercise the defect and the test
+# fails. OBL-C264 (phase 9 names the genesis/artifact failure), OBL-C268 (duplicate listeners are
+# refused and named), OBL-C270 (the field-bearing boundary line is the one parsed).
+# ══════════════════════════════════════════════════════════════════════════════
+_pipeline_self_test() {
+    local _st_fails=0
+    local _st_log
+    _st_log="$(mktemp)"
+
+    _st_node0() {
+        printf '%s\n' \
+          'Fee window boundary at height 19: circuit_premium=CfValue(900000) circuit_standard=CfValue(800000) wasm_premium=CfValue(950000) wasm_standard=CfValue(850000) flags=0x0101' \
+          'Fee window boundary at height 20: circuit_premium=CfValue(1000000) circuit_standard=CfValue(1000000) wasm_premium=CfValue(1100000) wasm_standard=CfValue(900000) flags=0x0101' \
+          'Fee window boundary at height 20: connect-side derivation applied' \
+          'miner_task: caught up'
+    }
+    _st_node1() {
+        printf '%s\n' \
+          'Fee window boundary at height 20: circuit_premium=CfValue(1000000) circuit_standard=CfValue(1000000) wasm_premium=CfValue(1100000) wasm_standard=CfValue(900000) flags=0x0101'
+    }
+    _st_artifact() {
+        printf '%s\n' \
+          'thread main panicked: contract memory export declares maximum 0' \
+          'miner_task: caught up'
+    }
+    # Shadow the docker binary for the duration of this function.
+    docker() {
+        case "$1:$2" in
+            logs:dwow-node0) _st_node0 ;;
+            logs:dwow-node1) _st_node1 ;;
+            logs:dwow-artifact) _st_artifact ;;
+            *) return 1 ;;
+        esac
+    }
+    _st_eq() {
+        local name="$1" want="$2" got="$3"
+        if [ "$got" != "$want" ]; then
+            echo "SELF-TEST FAIL: ${name}: want '${want}' got '${got}'"
+            _st_fails=$((_st_fails + 1))
+        fi
+    }
+    # The pre-fix shape: last boundary line, no field filter. It must return empty on this fixture.
+    _st_prefix_flags() {
+        docker logs "$1" 2>&1 | grep "Fee window boundary" | tail -1 \
+            | grep -oP 'flags=0x[0-9a-fA-F]+' | cut -d'=' -f2 || true
+    }
+    _st_prefix_cf() {
+        docker logs "$1" 2>&1 | grep "Fee window boundary" | tail -1 \
+            | grep -oP "circuit_premium=CfValue\(\K[0-9]+" || true
+    }
+
+    _st_eq "the fixture exercises the pre-fix flags defect" "" "$(_st_prefix_flags dwow-node0)"
+    _st_eq "the fixture exercises the pre-fix cf defect" "" "$(_st_prefix_cf dwow-node0)"
+    _st_eq "C270 flags from a field-poor tail" "0x0101" "$(_get_flags_from_log dwow-node0)"
+    _st_eq "C270 cf from a field-poor tail" "1000000" "$(_get_cf_from_log dwow-node0 circuit_premium)"
+    _st_eq "C270 cf at the named height" "1000000" "$(_get_cf_at_height dwow-node0 circuit_premium 20)"
+    _st_eq "C270 flags at the named height" "0x0101" "$(_get_flags_at_height dwow-node0 20)"
+    _st_eq "C270 height selection excludes another window" "900000" \
+        "$(_get_cf_at_height dwow-node0 circuit_premium 19)"
+    _st_eq "C270 nodes agree at the boundary" "$(_get_cf_at_height dwow-node0 wasm_premium 20)" \
+        "$(_get_cf_at_height dwow-node1 wasm_premium 20)"
+    _st_eq "C264 names the genesis/artifact line" \
+        "thread main panicked: contract memory export declares maximum 0" \
+        "$(_fatal_artifact_logs dwow-artifact | head -1)"
+    _st_eq "C264 is silent on a clean log" "" "$(_fatal_artifact_logs dwow-node1)"
+    if bash "$SCRIPT_DIR/entrypoint.sh" --self-test >"$_st_log" 2>&1; then
+        :
+    else
+        echo "SELF-TEST FAIL: C268 entrypoint port self-test failed:"
+        sed 's/^/  /' "$_st_log"
+        _st_fails=$((_st_fails + 1))
+    fi
+    rm -f "$_st_log"
+
+    if [ "$_st_fails" -ne 0 ]; then
+        echo "SELF-TEST FAIL: ${_st_fails} case(s)"
+        return 1
+    fi
+    echo "SELF-TEST PASS: C264/C268/C270 parsers refuse the pre-fix shape and pass the current one."
+    return 0
+}
+
+if [ "${SELFTEST:-false}" = "true" ]; then
+    if _pipeline_self_test; then
+        exit 0
+    else
+        exit 1
+    fi
+fi
+
 # ==============================================================================
 # Environment sanitization — prevent E2BIG from accumulated env vars.
 # The conda build toolchain (30+ compiler vars), ROS2, MKL, NVM, Snap,
@@ -99,6 +194,21 @@ echo "  Environment sanitized ($(env | wc -c) bytes)"
 # ==============================================================================
 
 _PHASE_FAIL_BEFORE=0
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Verification preflight — before any phase, before every mode (wallet-only included).
+#
+# A finding is decided or it is not. While any tracker row is OPEN, BLOCKED or DEFERRED, this
+# pipeline would be computing a verdict over code the register calls defective. It refuses, names
+# every blocking row, and has no override. The build clones origin/PIPELINE_BRANCH, so the tracker
+# read is that ref and HEAD must equal it; uncommitted tracker edits are refused too.
+# ══════════════════════════════════════════════════════════════════════════════
+if ! bash "$REPO_ROOT/scripts/check-tracker-settled.sh" \
+        --ref "origin/${PIPELINE_BRANCH}" --require-clean; then
+    error "Refusing to run: the defect register has undecided findings."
+    error "Legal exits: CLOSED with a failing-before control, or RESIDUAL with an ALARP record."
+    exit 1
+fi
 
 # --phase N: single-phase mode with precondition validation.
 if [ "$PHASE_ONLY" -gt 0 ] 2>/dev/null; then

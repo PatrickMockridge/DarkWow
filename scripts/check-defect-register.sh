@@ -5,21 +5,33 @@
 #
 # WHAT IT CHECKS
 #   1. Schema: main-table rows are `| ID | Status | Defect | Locus | Control | Risk |`, with status
-#      OPEN/BLOCKED/DEFERRED/CLOSED and Risk `S/L` (S in C/H/M/L, L in D/P/T). The band is computed
-#      from doc/src/arch/risk-management.md: Intolerable >= 15, Tolerable 6-14, Broadly <= 5, with
-#      C and H never Broadly. An OPEN row carries a resolving control or `plan:<text>`; `—` fails.
-#   2. Locus resolves: the file exists and, when `path:identifier` is written, the identifier
+#      OPEN/BLOCKED/DEFERRED/CLOSED and Risk `S/L` (S in C/H/M/L, L in D/P/T). An unknown status is a
+#      schema error, never silently dropped. The band is computed from risk-management.md:
+#      Intolerable >= 15, Tolerable 6-14, Broadly <= 5, with C and H never Broadly. An OPEN row
+#      carries a resolving control or `plan:<text>`; `—` fails.
+#   2. Fix cycles: every OPEN row is in exactly one cycle in the tracker's `## Fix cycles` table;
+#      a cycle has an owner and a `by:YYYY-MM-DD` bound that has not lapsed; a cycle that lists a
+#      non-OPEN or unknown row is stale.
+#   3. Locus resolves: the file exists and, when `path:identifier` is written, the identifier
 #      (the last segment of `A::b`) appears in the file.
-#   3. CLOSED rows: the control resolves, a script control has a `--self-test`, the control is not
+#   4. CLOSED rows: the control resolves, a script control has a `--self-test`, the control is not
 #      the locus itself, and the closure commit changes production code (src/, bin/, proofs/ or
-#      production contrib/; not docs, reports, scripts/, hooks/ or contrib/ci/).
-#   4. Tombstones: an ID that leaves the main table must appear in the Settled-IDs appendix; every
+#      production contrib/; not docs, reports, scripts/, hooks/ or contrib/ci/). `negative:` prose
+#      does not waive the self-test.
+#   5. Tombstones: an ID that leaves the main table must appear in the Settled-IDs appendix; every
 #      residual record's source ID must be tombstoned; no ID may be live in the tracker and in
-#      decisions.md or residual-risk.md.
-#   5. Counts: the register's stated decisions count equals decisions.md's row count.
-#   6. Risk history: a severity/likelihood decrease requires `basis:` in the row.
-#   7. Approval: reports/register-approval.txt holds `scope_sha256=<sha256>` over the tracker,
-#      residual register and risk policy; any edit to them invalidates it.
+#      decisions.md or residual-risk.md. Appendix dispositions are a closed vocabulary: `residual`,
+#      `merged into`, `decision`, and the frozen pre-migration words `settled`/`restated`/
+#      `accepted`/`dissolved`. The frozen set is hashed by the approval manifest, so a new historical
+#      tombstone cannot be used as an exit.
+#   6. Counts: the register's stated decisions count equals decisions.md's row count.
+#   7. Risk history: a severity/likelihood decrease requires `basis:` in the row.
+#   8. Approval: reports/register-approval.txt holds `scope_sha256=<sha256>` over the ACCEPTANCE
+#      BOUNDARY — residual-risk.md and risk-management.md — and `appendix_baseline_sha256` over the
+#      frozen historical tombstones. A tracker edit does not invalidate the approval (that was a
+#      re-approval treadmill); an acceptance-boundary edit does. In HEAD mode the hash is computed
+#      from HEAD's blobs, not the working tree, so an uncommitted edit cannot invalidate a check of
+#      the committed register.
 #
 # MODES
 #   (default)  HEAD: compare HEAD to its parent, changed paths = the commit.
@@ -40,7 +52,12 @@ import hashlib, os, re, subprocess, sys, tempfile
 
 ROOT = sys.argv[1]
 MODE = sys.argv[2]
-REGISTER_REL = "doc/src/arch/verification-hazop.md"
+sys.path.insert(0, os.path.join(ROOT, "scripts"))
+from register_parse import (  # noqa: E402
+    STATUSES, SEV, LIK, band, parse_register, parse_cycles, check_cycles,
+    historical_baseline, HISTORICAL_RE, TOMBSTONE_RE, REGISTER_REL,
+)
+
 REGISTER = os.path.join(ROOT, REGISTER_REL)
 RESIDUAL_REL = "doc/src/arch/residual-risk.md"
 RESIDUAL = os.path.join(ROOT, RESIDUAL_REL)
@@ -50,10 +67,6 @@ POLICY_REL = "doc/src/arch/risk-management.md"
 POLICY = os.path.join(ROOT, POLICY_REL)
 APPROVAL_REL = "reports/register-approval.txt"
 APPROVAL = os.path.join(ROOT, APPROVAL_REL)
-MAX_ROW = 600
-STATUSES = ("OPEN", "BLOCKED", "DEFERRED", "CLOSED")
-SEV = {"C": 5, "H": 3, "M": 2, "L": 1}
-LIK = {"D": 5, "P": 3, "T": 1}
 DOC_PREFIXES = ("doc/", "reports/", "scripts/", "hooks/", "script/", "contrib/ci/")
 
 def sh(*args):
@@ -64,58 +77,6 @@ def read(path):
         return open(path, encoding="utf-8").read()
     except OSError:
         return ""
-
-def band(sev, lik):
-    """The band for a risk pair, or None if the pair violates an override."""
-    if sev not in SEV or lik not in LIK:
-        return None
-    r = SEV[sev] * LIK[lik]
-    if r >= 15:
-        return "Intolerable"
-    if r <= 5:
-        return None if sev in ("C", "H") else "Broadly acceptable"
-    return "Tolerable"
-
-def parse_register(text):
-    """Return (rows, appendix, errors). rows: main table; appendix: ID -> disposition."""
-    rows, appendix, errors, seen = {}, {}, [], {}
-    for lineno, line in enumerate(text.splitlines(), 1):
-        if not line.startswith("| OBL-"):
-            continue
-        cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        oid = cells[0].strip("` ")
-        if not re.fullmatch(r"OBL-[CZT]\d+", oid):
-            continue
-        if len(cells) == 6 and cells[1] in STATUSES:
-            _, status, defect, locus, control, risk = cells
-            if len(line) > MAX_ROW:
-                errors.append(f"{REGISTER_REL}:{lineno}: {oid} row is {len(line)} chars (cap {MAX_ROW})")
-            if not defect:
-                errors.append(f"{REGISTER_REL}:{lineno}: {oid} has no defect sentence")
-            m = re.fullmatch(r"([CHML])/([DPT])", risk)
-            if not m:
-                errors.append(f"{REGISTER_REL}:{lineno}: {oid} risk '{risk}' is not S/L (C/H/M/L x D/P/T)")
-            elif band(m.group(1), m.group(2)) is None:
-                errors.append(f"{REGISTER_REL}:{lineno}: {oid} C/H risk cannot be Broadly acceptable")
-            if status == "OPEN":
-                c = control.strip("` ").strip()
-                if c in ("", "—"):
-                    errors.append(f"{REGISTER_REL}:{lineno}: {oid} OPEN row has no control or plan")
-            if status == "BLOCKED" and "blocked:" not in control:
-                errors.append(f"{REGISTER_REL}:{lineno}: {oid} BLOCKED row does not name blocked:<reason>")
-            if status == "DEFERRED" and "deferred" not in control:
-                errors.append(f"{REGISTER_REL}:{lineno}: {oid} DEFERRED row does not name its deferral")
-            seen.setdefault(oid, []).append(lineno)
-            rows[oid] = dict(status=status, defect=defect, locus=locus, control=control,
-                             sev=m.group(1) if m else "?", lik=m.group(2) if m else "?", line=lineno)
-        elif len(cells) == 2:
-            appendix[oid] = cells[1]
-        elif len(cells) >= 2 and cells[1] in STATUSES:
-            errors.append(f"{REGISTER_REL}:{lineno}: row has {len(cells)} cells, want 6")
-    for oid, lines in seen.items():
-        if len(lines) > 1:
-            errors.append(f"{REGISTER_REL}: {oid} is defined by {len(lines)} tracker rows")
-    return rows, appendix, errors
 
 def strip_ticks(cell):
     return cell.strip().strip("`").strip()
@@ -143,7 +104,8 @@ def resolve_control(cell, root):
         full = os.path.join(root, control)
         if not os.path.isfile(full):
             return f"control script '{control}' does not exist"
-        wired = read(os.path.join(root, "scripts/run-all-tests.sh")) + read(os.path.join(root, "hooks/pre-commit"))
+        wired = read(os.path.join(root, "scripts/run-all-tests.sh")) + read(
+            os.path.join(root, "hooks/pre-commit"))
         if control not in wired:
             return f"control '{control}' is not invoked by run-all-tests.sh or hooks/pre-commit"
         return None
@@ -202,17 +164,39 @@ def residual_sources(root):
                 out.append(cells[1])
     return out
 
-def scope_hash(root):
+def read_boundary(root, rel, mode):
+    """The acceptance-boundary file as the mode sees it: HEAD, the index, or the working tree."""
+    if mode == "head":
+        p = sh("show", f"HEAD:{rel}")
+        if p.returncode == 0:
+            return p.stdout
+    elif mode == "staged":
+        p = sh("show", f":{rel}")
+        if p.returncode == 0:
+            return p.stdout
+    return read(os.path.join(root, rel))
+
+def scope_hash(root, mode="work"):
+    """SHA-256 over the acceptance boundary, never over the live tracker.
+
+    Residuals and the policy are the decisions a lead signs. A tracker row is a disposition earned
+    by evidence and checked by this gate; including the tracker in the approval hash made every
+    legitimate closure invalidate the approval.
+    """
     h = hashlib.sha256()
-    for rel in (REGISTER_REL, RESIDUAL_REL, POLICY_REL):
-        h.update(read(os.path.join(root, rel)).encode())
+    for rel in (RESIDUAL_REL, POLICY_REL):
+        h.update(read_boundary(root, rel, mode).encode())
     return h.hexdigest()
 
-def check(register_text, prev_text, changed, root):
-    rows, appendix, errors = parse_register(register_text)
-    prev_rows, prev_appendix, _ = parse_register(prev_text)
+def check(register_text, prev_text, changed, root, mode="work"):
+    rows, appendix, errors = parse_register(register_text, REGISTER_REL)
+    prev_rows, prev_appendix, _ = parse_register(prev_text, REGISTER_REL)
     decisions = decision_ids(root)
     residuals = residual_sources(root)
+
+    cycles, cycle_errors = parse_cycles(register_text, REGISTER_REL)
+    errors.extend(cycle_errors)
+    errors.extend(check_cycles(rows, cycles, REGISTER_REL))
 
     for oid, row in rows.items():
         err = resolve_locus(row["locus"], root)
@@ -230,9 +214,9 @@ def check(register_text, prev_text, changed, root):
                 errors.append(f"{oid}: control is the locus itself")
             if "/" in control and control.endswith(".sh"):
                 if "--self-test" not in read(os.path.join(root, control)):
-                    if "negative:" not in row["defect"] + " " + row["control"]:
-                        errors.append(
-                            f"{oid}: script control has no --self-test and no negative: evidence")
+                    errors.append(
+                        f"{oid}: script control has no --self-test — observed-failure prose "
+                        "does not waive a control that can fail")
 
     # Decisions and residuals cannot be live tracker rows.
     for did in decisions:
@@ -243,9 +227,22 @@ def check(register_text, prev_text, changed, root):
             errors.append(f"{sid}: residual source is still a live tracker row")
         if sid not in appendix:
             errors.append(f"{sid}: residual source has no tombstone in the appendix")
+
+    # The appendix is a closed vocabulary, not a dumping ground.
     for oid, disp in appendix.items():
-        if "residual" in disp.lower() and oid not in residuals:
-            errors.append(f"{oid}: appendix says residual but residual-risk.md has no record")
+        d = disp.strip()
+        if HISTORICAL_RE.fullmatch(d):
+            continue
+        if TOMBSTONE_RE.fullmatch(d):
+            m = re.fullmatch(r"merged into (OBL-[CZT]\d+)", d)
+            if m and m.group(1) not in rows and m.group(1) not in appendix:
+                errors.append(f"{oid}: merged into {m.group(1)}, which does not resolve")
+            if "residual" in d.lower() and oid not in residuals:
+                errors.append(f"{oid}: appendix says residual but residual-risk.md has no record")
+            continue
+        errors.append(
+            f"{oid}: appendix disposition '{d}' is not residual/merged/decision or a frozen "
+            "historical word (settled/restated/accepted/dissolved)")
 
     # An ID that leaves the main table must be tombstoned.
     for oid in prev_rows:
@@ -280,16 +277,26 @@ def check(register_text, prev_text, changed, root):
             elif not any(evidence_commit_ok(sha, root) for sha in cited):
                 errors.append(f"{oid}: evidence commit does not change production code")
 
-    # Batch approval binds the tracker, residual register and policy.
-    approval = read(os.path.join(root, APPROVAL_REL))
+    # Approval binds the acceptance boundary and the frozen historical appendix. Read it through
+    # the same view as the boundary: an uncommitted approval edit must not unlock a committed
+    # register, and a staged approval must be checkable in the pre-commit hook.
+    approval = read_boundary(root, APPROVAL_REL, mode)
     am = re.search(r"scope_sha256=([0-9a-f]{64})", approval)
     if not am:
         errors.append(f"missing approval manifest {APPROVAL_REL}")
-    elif am.group(1) != scope_hash(root):
-        errors.append("approval scope_sha256 does not match the register, residual file and policy")
     else:
-        bm = re.search(r"batch=([A-Z0-9,\-]+)", approval)
-        ids = bm.group(1).split(",") if bm else []
+        if am.group(1) != scope_hash(root, mode):
+            errors.append(
+                "approval scope_sha256 does not match the acceptance boundary "
+                "(residual-risk.md and risk-management.md)")
+        bm = re.search(r"appendix_baseline_sha256=([0-9a-f]{64})", approval)
+        if not bm:
+            errors.append("approval manifest does not freeze the historical appendix")
+        elif bm.group(1) != historical_baseline(appendix):
+            errors.append(
+                "historical appendix changed — settled/restated/accepted/dissolved rows are frozen")
+        km = re.search(r"batch=([A-Z0-9,\-]+)", approval)
+        ids = km.group(1).split(",") if km else []
         for oid in ids:
             if oid not in rows and oid not in appendix:
                 errors.append(f"approved id {oid} does not resolve")
@@ -322,20 +329,20 @@ def main():
     if MODE == "--self-test":
         return self_test()
     if MODE == "--working-tree":
-        cur, prev, changed = read(REGISTER), register_at("HEAD"), changed_work()
+        cur, prev, changed, mode = read(REGISTER), register_at("HEAD"), changed_work(), "work"
     elif MODE == "--staged":
         staged = sh("show", f":{REGISTER_REL}")
         cur = staged.stdout if staged.returncode == 0 else read(REGISTER)
-        prev, changed = register_at("HEAD"), changed_staged()
+        prev, changed, mode = register_at("HEAD"), changed_staged(), "staged"
     elif MODE in ("", "--head"):
-        cur, prev, changed = register_at("HEAD"), register_at("HEAD~1"), changed_head()
+        cur, prev, changed, mode = register_at("HEAD"), register_at("HEAD~1"), changed_head(), "head"
     else:
         print(f"usage: {sys.argv[0]} [--working-tree|--staged|--self-test]")
         return 2
     if not cur:
         print(f"FAIL: no register at {REGISTER_REL}")
         return 1
-    errors, fresh = check(cur, prev, changed, ROOT)
+    errors, fresh = check(cur, prev, changed, ROOT, mode)
     if errors:
         print("FAIL: defect register")
         for e in errors:
@@ -356,74 +363,128 @@ def self_test():
             path = os.path.join(tmp, rel)
             os.makedirs(os.path.dirname(path), exist_ok=True)
             open(path, "w").write(body)
+
         write("src/foo.rs", "fn foo() {}\n")
         write("scripts/check-x.sh", "#!/bin/sh\necho --self-test\n")
         write("scripts/run-all-tests.sh", 'run_gate "x" bash scripts/check-x.sh\n')
         write(POLICY_REL, "policy\n")
         write(DECISIONS_REL, "| ID | Kind | Statement |\n|---|---|---|\n| OBL-C9 | decision | d |\n")
-        write(RESIDUAL_REL, "| ID | Source | Harm | S/L | Scenario | Control | Why | Compensating | Owner | Reopen |\n"
-              "|---|---|---|---|---|---|---|---|---|---|\n"
-              "| R-1 | OBL-C8 | availability | M/P | s | c | w | k | lead | release |\n")
+        residual_body = (
+            "| ID | Source | Harm | S/L | Scenario | Control | Why | Compensating | Owner | Reopen |\n"
+            "|---|---|---|---|---|---|---|---|---|---|\n"
+            "| R-1 | OBL-C8 | availability | M/P | s | c | w | k | lead | release |\n")
+        write(RESIDUAL_REL, residual_body)
         head = "| ID | Status | Defect | Locus | Control | Risk |\n|---|---|---|---|---|---|\n"
         tomb = ("\n## Appendix\n\n| ID | Disposition |\n|---|---|\n"
                 "| OBL-C8 | residual (R-1) |\n")
-        base = head + "| OBL-C1 | OPEN | a defect | `src/foo.rs:foo` | `plan: test` | M/P |\n" + tomb
-        ok = head + "| OBL-C1 | CLOSED | a defect | `src/foo.rs:foo` | `scripts/check-x.sh` | M/P |\n" + tomb
+        cycle_open = ("\n## Fix cycles\n\n| Cycle | Owner | Bound | Rows |\n|---|---|---|---|\n"
+                      "| c1 | lead | by:2099-01-01 | OBL-C1 |\n")
+        open_row = "| OBL-C1 | OPEN | a defect | `src/foo.rs:foo` | `plan: test` | M/P |\n"
+        closed_row = ("| OBL-C1 | CLOSED | a defect | `src/foo.rs:foo` | `scripts/check-x.sh` | "
+                      "M/P |\n")
+        base = head + open_row + tomb + cycle_open
+        ok = head + closed_row + tomb
         write(REGISTER_REL, ok)
-        write(APPROVAL_REL, "scope_sha256=" + scope_hash(tmp) + "\nbatch=OBL-C1\n")
-        prev_ok = base
+        appendix_baseline = historical_baseline(parse_register(ok)[1])
+        write(APPROVAL_REL, "scope_sha256=" + scope_hash(tmp, "work")
+              + "\nappendix_baseline_sha256=" + appendix_baseline + "\nbatch=OBL-C1\n")
         fails = []
+
         def expect(name, cond):
             if not cond:
                 fails.append(name)
+
         expect("status-only closure refused",
                any("without code" in e for e in
-                   check(ok, prev_ok, [os.path.join("doc", "no" + "tes") + ".md"], tmp)[0]))
+                   check(ok, base, [os.path.join("doc", "no" + "tes") + ".md"], tmp)[0]))
         expect("control-free closure refused",
                any("test symbol" in e or "does not exist" in e for e in
-                   check(head + "| OBL-C1 | CLOSED | a defect | `src/foo.rs:foo` | `no_such_test` | M/P |\n" + tomb,
-                         prev_ok, ["src/foo.rs"], tmp)[0]))
-        expect("clean twin accepted", not check(ok, prev_ok, ["src/foo.rs"], tmp)[0])
+                   check(head + "| OBL-C1 | CLOSED | a defect | `src/foo.rs:foo` | `no_such_test` | "
+                         "M/P |\n" + tomb, base, ["src/foo.rs"], tmp)[0]))
+        expect("clean twin accepted", not check(ok, base, ["src/foo.rs"], tmp)[0])
         expect("OPEN without control refused",
                any("no control or plan" in e for e in
-                   check(head + "| OBL-C1 | OPEN | a defect | `src/foo.rs:foo` | `—` | M/P |\n" + tomb,
-                         prev_ok, ["src/foo.rs"], tmp)[0]))
+                   check(head + "| OBL-C1 | OPEN | a defect | `src/foo.rs:foo` | `—` | M/P |\n"
+                         + tomb + cycle_open, base, ["src/foo.rs"], tmp)[0]))
         expect("missing risk refused",
                any("risk" in e for e in
-                   check(head + "| OBL-C1 | OPEN | a defect | `src/foo.rs:foo` | `plan: t` |  |\n" + tomb,
-                         prev_ok, ["src/foo.rs"], tmp)[0]))
+                   check(head + "| OBL-C1 | OPEN | a defect | `src/foo.rs:foo` | `plan: t` |  |\n"
+                         + tomb + cycle_open, base, ["src/foo.rs"], tmp)[0]))
         expect("C/H cannot be broadly acceptable refused",
                any("Broadly" in e for e in
-                   check(head + "| OBL-C1 | OPEN | a defect | `src/foo.rs:foo` | `plan: t` | C/T |\n" + tomb,
-                         prev_ok, ["src/foo.rs"], tmp)[0]))
+                   check(head + "| OBL-C1 | OPEN | a defect | `src/foo.rs:foo` | `plan: t` | C/T |\n"
+                         + tomb + cycle_open, base, ["src/foo.rs"], tmp)[0]))
         expect("dual-tracked decision refused",
                any("dual-tracked" in e for e in
-                   check(head + "| OBL-C9 | OPEN | a defect | `src/foo.rs:foo` | `plan: t` | M/P |\n" + tomb,
-                         prev_ok, ["src/foo.rs"], tmp)[0]))
+                   check(head + "| OBL-C9 | OPEN | a defect | `src/foo.rs:foo` | `plan: t` | M/P |\n"
+                         + tomb + cycle_open, base, ["src/foo.rs"], tmp)[0]))
         expect("missing tombstone refused",
                any("without a tombstone" in e for e in
-                   check(head + tomb, prev_ok, ["src/foo.rs"], tmp)[0]))
+                   check(head + tomb, base, ["src/foo.rs"], tmp)[0]))
         expect("control==locus refused",
                any("control is the locus" in e for e in
-                   check(head + "| OBL-C1 | CLOSED | a defect | `scripts/check-x.sh` | `scripts/check-x.sh` | M/P |\n" + tomb,
-                         prev_ok, ["src/foo.rs"], tmp)[0]))
+                   check(head + "| OBL-C1 | CLOSED | a defect | `scripts/check-x.sh` | "
+                         "`scripts/check-x.sh` | M/P |\n" + tomb, base, ["src/foo.rs"], tmp)[0]))
         write("scripts/check-x.sh", "#!/bin/sh\n")
         expect("script control without self-test refused",
-               any("--self-test" in e for e in check(ok, prev_ok, ["src/foo.rs"], tmp)[0]))
+               any("--self-test" in e for e in check(ok, base, ["src/foo.rs"], tmp)[0]))
+        expect("negative prose does not waive a self-test",
+               any("--self-test" in e for e in
+                   check(head + "| OBL-C1 | CLOSED | a defect negative:it failed before | "
+                         "`src/foo.rs:foo` | `scripts/check-x.sh` | M/P |\n" + tomb,
+                         base, ["src/foo.rs"], tmp)[0]))
         write("scripts/check-x.sh", "#!/bin/sh\necho --self-test\n")
-        two_dec = (head + "| OBL-C1 | OPEN | a defect | `src/foo.rs:foo` | `plan: t` | M/P |\n"
-                   + tomb + "\n2 decisions\n")
+        two_dec = (head + open_row + tomb + cycle_open + "\n2 decisions\n")
         expect("decisions count mismatch refused",
-               any("decisions count" in e for e in check(two_dec, prev_ok, ["src/foo.rs"], tmp)[0]))
-        write(APPROVAL_REL, "scope_sha256=" + "0" * 64 + "\nbatch=OBL-C1\n")
+               any("decisions count" in e for e in check(two_dec, base, ["src/foo.rs"], tmp)[0]))
+        write(APPROVAL_REL, "scope_sha256=" + "0" * 64 + "\nappendix_baseline_sha256="
+              + appendix_baseline + "\nbatch=OBL-C1\n")
         expect("stale approval hash refused",
-               any("scope_sha256" in e for e in check(ok, prev_ok, ["src/foo.rs"], tmp)[0]))
+               any("scope_sha256" in e for e in check(ok, base, ["src/foo.rs"], tmp)[0]))
+
+        # ── the process-round controls ───────────────────────────────────────
+        write(APPROVAL_REL, "scope_sha256=" + scope_hash(tmp, "work")
+              + "\nappendix_baseline_sha256=" + appendix_baseline + "\nbatch=OBL-C1\n")
+        expect("unknown status refused",
+               any("is not OPEN/BLOCKED/DEFERRED/CLOSED" in e for e in
+                   check(head + "| OBL-C1 | OPENISH | a defect | `src/foo.rs:foo` | "
+                         "`plan: t` | M/P |\n" + tomb + cycle_open,
+                         base, ["src/foo.rs"], tmp)[0]))
+        expect("OPEN row without a fix cycle refused",
+               any("in no fix cycle" in e for e in
+                   check(head + open_row + tomb, base, ["src/foo.rs"], tmp)[0]))
+        expect("cycle listing a non-OPEN row refused",
+               any("not OPEN" in e for e in
+                   check(ok + cycle_open, base, ["src/foo.rs"], tmp)[0]))
+        lapsed = (head + open_row + tomb
+                  + "\n## Fix cycles\n\n| Cycle | Owner | Bound | Rows |\n|---|---|---|---|\n"
+                  + "| c1 | lead | by:2000-01-01 | OBL-C1 |\n")
+        expect("lapsed cycle bound refused",
+               any("has lapsed" in e for e in check(lapsed, base, ["src/foo.rs"], tmp)[0]))
+        expect("a tracker edit does not invalidate approval",
+               not any("scope_sha256" in e for e in
+                       check(ok.replace("a defect", "a defect, reworded"), ok,
+                             ["src/foo.rs"], tmp)[0]))
+        write(RESIDUAL_REL, residual_body + "\n<!-- edited -->\n")
+        expect("an acceptance-boundary edit invalidates approval",
+               any("scope_sha256" in e for e in check(ok, base, ["src/foo.rs"], tmp)[0]))
+        write(RESIDUAL_REL, residual_body)
+        expect("new historical tombstone refused",
+               any("historical appendix" in e for e in
+                   check(head + closed_row + tomb + "| OBL-C2 | settled |\n",
+                         ok, ["src/foo.rs"], tmp)[0]))
+        expect("unknown appendix disposition refused",
+               any("appendix disposition" in e for e in
+                   check(head + closed_row + tomb + "| OBL-C3 | vanished |\n",
+                         ok, ["src/foo.rs"], tmp)[0]))
+
         if fails:
             print("SELF-TEST FAIL:")
             for f in fails:
                 print(f"  {f}")
             return 1
-        print("SELF-TEST PASS: closure/control/risk/tombstone/dual-track/count/approval controls fire.")
+        print("SELF-TEST PASS: closure/control/risk/tombstone/dual-track/count/approval/"
+              "cycle/status/history controls fire.")
         return 0
 
 sys.exit(main())

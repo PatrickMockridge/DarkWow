@@ -167,9 +167,10 @@ appendix; it stays unresolved, and the health report counts it.
    production change under `src/`, `bin/`, `proofs/` or `contrib/` is what counts as code), refuses
    a `CLOSED` row whose control does not resolve, whose script control has no `--self-test`, or
    whose control is the locus itself, refuses an ID that disappears without a tombstone and an ID
-   live in the tracker and in `decisions.md`/`residual-risk.md`, and verifies the batch approval's
-   `scope_hash`; `hooks/pre-commit` blocks the same cases. A closure the gate refuses is not a
-   closure.
+   live in the tracker and in `decisions.md`/`residual-risk.md`, refuses an unknown status, requires
+   every `OPEN` row to be in a live fix cycle, and verifies the approval's `scope_sha256` over the
+   acceptance boundary and its `appendix_baseline_sha256` over the frozen historical tombstones;
+   `hooks/pre-commit` blocks the same cases. A closure the gate refuses is not a closure.
 
 A requirement may be reclassified as a **non-defect** only against the authoritative specification
 (text and the commit that removed it), recorded separately from any fix; it is never used to green a
@@ -179,6 +180,42 @@ above exists.
 *Earned by:* a 2026-10-21 pass that renamed a counter measuring 34 live length-truncation defects to
 "COUNTER — not a defect", closed a holder-authorisation row on an issuer-only implementation, and
 closed a lock-exclusivity row while introducing a blocking-executor defect.
+
+---
+
+## The binary finding lifecycle
+
+A finding is decided or it is not. `OPEN`, `BLOCKED` and `DEFERRED` are **undecided**; `CLOSED` and
+`RESIDUAL` are **decided**. While any undecided row exists, no verification surface runs — not a
+Docker image, not the pipeline (any mode, wallet-only included), not the umbrella (any tier), not a
+release verdict. `scripts/check-tracker-settled.sh` enforces it before the pipeline's first phase and
+at the top of the umbrella. No override flag exists.
+
+A targeted control run directly by the fix in progress is not a verdict: it answers "does this
+control fail on the defect and pass on the fix", not "is the tree good".
+
+The exits:
+
+- `CLOSED` — the nine conditions above.
+- `RESIDUAL` — the ALARP record of [`risk-management.md`](../arch/risk-management.md) §6 and the
+  approval of §7.
+
+There is no third exit. `plan:` is an annotation on an undecided row, never a disposition. `settled`,
+`restated`, `accepted` and `dissolved` are frozen pre-migration history, not a vocabulary a new row
+may use; the approval manifest hashes that set.
+
+Every `OPEN` row is in exactly one dated cycle in the tracker; a lapsed bound fails the gate. The
+approval hashes the **acceptance boundary** (the residual register and the policy) and the frozen
+appendix, not the live tracker: a closure is earned by evidence, an acceptance is signed by the lead.
+Hashing the live tracker made every legitimate closure a re-approval, the treadmill that let the
+process drift back to "open but verified".
+
+*Earned by:* the 2026-10-25 process ALARP round. A Docker run was started with 25 rows open, five of
+them Intolerable, because no control outside the umbrella read the tracker; the Tier-2 route into
+the pipeline was dead code; the pipeline's own `report()` consulted only its `FAIL` counter; and the
+approval hash was over the live tracker, so re-approval was the rational response to any edit. The
+round also withdrew two residuals (Z23, C42) whose cheapest controls were contained, and removed the
+`negative:` prose escape that had stood in for a self-test on three pipeline closures.
 
 ---
 

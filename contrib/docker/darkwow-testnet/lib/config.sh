@@ -122,6 +122,11 @@ EOF
 
 # --- Parse flags ---
 MODE="native"
+# The ref the Dockerfile clones (`git clone --branch ...`). The verification preflight reads the
+# tracker at origin/<branch> and refuses if HEAD is not that ref: a verdict over code the pipeline
+# did not build is not a verdict. Keep this in sync with the Dockerfile.
+PIPELINE_BRANCH="${PIPELINE_BRANCH:-linear-master}"
+SELFTEST="${SELFTEST:-false}"
 FINALITY_MODE="${FINALITY_MODE:-always}"
 FINALITY_CARIBINA_ENABLED="${FINALITY_CARIBINA_ENABLED:-true}"
 FINALITY_ENABLE_MONERO="${FINALITY_ENABLE_MONERO:-false}"
@@ -166,6 +171,7 @@ while [ $# -gt 0 ]; do
         --forward) FORWARD_ENABLED="true"; shift ;;
         --contract-tier) CONTRACT_TIER="$2"; shift 2 ;;
         --capability-tests) CAPABILITY_TESTS=1; shift ;;
+        --self-test) SELFTEST="true"; shift ;;
         --help|-h) usage ;;
         *)
             echo "Unknown flag: $1"

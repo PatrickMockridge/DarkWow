@@ -25,6 +25,14 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+
+# Verification preflight — this entry point can run independently of test_pipeline.sh, so it
+# carries the same refusal. No contract verdict while a finding is undecided.
+if ! bash "$REPO_ROOT/scripts/check-tracker-settled.sh" --require-clean; then
+    echo "REFUSED: the contract suite is a verification surface. Run the targeted control directly."
+    exit 1
+fi
+
 DWW_BIN="${REPO_ROOT}/target/release/dwow_wallet"
 DWW_DEBUG="${REPO_ROOT}/target/debug/dwow_wallet"
 

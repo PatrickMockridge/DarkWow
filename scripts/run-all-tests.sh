@@ -68,10 +68,94 @@ run_gate() {
     fi
 }
 
-TIER="${1:-}${2:-}"  # allows "--tier 2" as two args: $1=--tier $2=2
-for arg in "$@"; do
-    [ "$arg" = "--fail-fast" ] && FAIL_FAST=1
-done
+# Parse `--tier 1|2` as two args, `--tier=1|2` as one, in any position. The earlier
+# `TIER="${1:-}${2:-}"` concatenated them to `--tier2`, so the documented `--tier 2` never reached
+# the Docker gate at the tail — the single most consequential process defect the 2026-10-25 round
+# found. The parser is a function so the self-test below can exercise it directly.
+_parse_args() {
+    TIER=1
+    _WANT_TIER=0
+    FAIL_FAST=0
+    for arg in "$@"; do
+        case "$arg" in
+            --tier) _WANT_TIER=1 ;;
+            --tier=*) TIER="${arg#*=}" ;;
+            --fail-fast) FAIL_FAST=1 ;;
+            *)
+                if [ "$_WANT_TIER" -eq 1 ]; then
+                    TIER="$arg"; _WANT_TIER=0
+                else
+                    echo "Unknown argument: $arg" >&2
+                    echo "Usage: $0 [--tier 1|2] [--fail-fast]" >&2
+                    return 2
+                fi ;;
+        esac
+    done
+    if [ "$_WANT_TIER" -eq 1 ]; then
+        echo "--tier needs a value (1 or 2)" >&2
+        return 2
+    fi
+    case "$TIER" in
+        1|2) ;;
+        *) echo "Invalid tier '$TIER' (want 1 or 2)" >&2; return 2 ;;
+    esac
+    return 0
+}
+
+_umbrella_self_test() {
+    local fails=0
+    _case_tier() {
+        local name="$1" want="$2"; shift 2
+        if ! _parse_args "$@" >/dev/null 2>&1; then
+            echo "SELF-TEST FAIL: $name: parser refused"
+            fails=$((fails + 1))
+        elif [ "$TIER" != "$want" ]; then
+            echo "SELF-TEST FAIL: $name: want tier $want got $TIER"
+            fails=$((fails + 1))
+        fi
+    }
+    _case_refuse() {
+        local name="$1"; shift
+        if _parse_args "$@" >/dev/null 2>&1; then
+            echo "SELF-TEST FAIL: $name: parser accepted"
+            fails=$((fails + 1))
+        fi
+    }
+    _case_tier "documented --tier 2" 2 --tier 2
+    _case_tier "--tier=2" 2 --tier=2
+    _case_tier "--tier 1" 1 --tier 1
+    _case_tier "no arguments" 1
+    _case_tier "flag before tier" 2 --fail-fast --tier 2
+    _case_refuse "missing tier value" --tier
+    _case_refuse "invalid tier" --tier 3
+    _case_refuse "unknown argument" --bogus
+    _case_refuse "bare tier" 2
+    if [ "$fails" -ne 0 ]; then
+        echo "SELF-TEST FAIL: ${fails} case(s)"
+        return 1
+    fi
+    echo "SELF-TEST PASS: the documented --tier 2 reaches Tier 2; malformed tiers are refused."
+    return 0
+}
+
+if [ "${1:-}" = "--self-test" ]; then
+    if _umbrella_self_test; then exit 0; else exit 1; fi
+fi
+
+_parse_args "$@" || exit $?
+
+# ── The binary finding lifecycle ────────────────────────────────────────────────
+#
+# The umbrella is a verification surface in BOTH tiers: Tier 1 sweeps `make test`, the Lean suite,
+# the models and the doc gates, and Tier 2 adds Docker. While any finding is undecided it refuses
+# before the first gate, so its summary can never be read as a verdict over a tree the register
+# calls defective. A targeted control is run directly by the fix in progress; that is not a verdict.
+# No override.
+if ! bash "$SCRIPT_DIR/check-tracker-settled.sh" --require-clean; then
+    echo ""
+    echo "REFUSED: the umbrella is a verification surface. Run the targeted control directly."
+    exit 1
+fi
 
 # ── Negative controls, before anything they judge ────────────────────────────────
 #
@@ -492,6 +576,15 @@ run_gate "control: the documentation index can fail" \
 # is the citation, and this gate resolves it.
 run_gate "defect tracker (green is code + control)" \
     bash "$SCRIPT_DIR/check-defect-register.sh"
+# The binary finding lifecycle's own controls. The preflight refuses every verification surface
+# while a finding is undecided; these prove it can refuse an OPEN row and pass a settled one. The
+# pipeline self-test exercises the C264/C268/C270 mechanisms on fixtures, without Docker.
+run_gate "control: the verification preflight can refuse an open finding" \
+    bash "$SCRIPT_DIR/check-tracker-settled.sh" --self-test
+run_gate "control: the pipeline parsers can fail [C264/C268/C270]" \
+    bash "$REPO_ROOT/contrib/docker/darkwow-testnet/test_pipeline.sh" --self-test
+run_gate "control: the umbrella's tier parser reaches Tier 2" \
+    bash "$SCRIPT_DIR/run-all-tests.sh" --self-test
 # A gate's AUTHORITY, resolved — the class that let an invented constant stand.
 # `MAX_BLOCK_SIZE`'s doc comment cited "L1 barrier #7", and "L1 barrier" appears in no
 # document in this repository (the barrier list was deleted 2026-09-22). This resolves the
@@ -866,7 +959,7 @@ do
     run_gate "control: $(basename "$gate") can fail" bash "$REPO_ROOT/$gate" --self-test
 done
 
-if [ "$TIER" = "--tier 2" ]; then
+if [ "$TIER" = "2" ]; then
     run_gate "Docker test pipeline (native, 2 wallets)" \
         "$REPO_ROOT/contrib/docker/darkwow-testnet/test_pipeline.sh" --mode native --with-wallet 2
 fi

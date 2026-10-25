@@ -5,23 +5,48 @@ changed in the same commit (for `CLOSED`) or the batch approval covers it (for a
 normative rules are [`hazop-rules.md`](../dev/hazop-rules.md) §"Definition of closed out" and
 [`risk-management.md`](risk-management.md).
 
+**A finding is decided or it is not.** `OPEN`, `BLOCKED` and `DEFERRED` are **undecided**: while any
+exists, no verification surface — a Docker run, a pipeline pass, an umbrella sweep, a release
+verdict — may run. `CLOSED` (the defect is impossible in current code, with a failing-before
+control) and `RESIDUAL` (an accepted risk with an ALARP record) are **decided**. There is no third
+exit and no override; `scripts/check-tracker-settled.sh` is the preflight that refuses every
+verification surface. A targeted control run directly by the fix in progress is not a verdict.
+
 **Row shape.** `ID | Status | Defect | Locus | Control | Risk`. The main table uses `OPEN`,
-`BLOCKED`, `DEFERRED` and `CLOSED`. `RESIDUAL`, `MERGED` and `DECISION` are tombstones in the
-Settled-IDs appendix: a residual's record is in [`residual-risk.md`](residual-risk.md), a decision's
-is in [`decisions.md`](decisions.md). `Risk` is `S/L` with `S ∈ {C,H,M,L}` and `L ∈ {D,P,T}`; the
-band is computed from [`risk-management.md`](risk-management.md) §4, never written by hand. An
-`OPEN` row carries a resolving control or `plan:<text>`; `—` is forbidden. A row is capped at 600
-characters.
+`BLOCKED`, `DEFERRED` and `CLOSED`; any other status is a schema error, never silently dropped.
+`RESIDUAL`, `MERGED` and `DECISION` are tombstones in the Settled-IDs appendix: a residual's record
+is in [`residual-risk.md`](residual-risk.md), a decision's is in [`decisions.md`](decisions.md).
+`Risk` is `S/L` with `S ∈ {C,H,M,L}` and `L ∈ {D,P,T}`; the band is computed from
+[`risk-management.md`](risk-management.md) §4, never written by hand. An `OPEN` row carries a
+resolving control or `plan:<text>`; `—` is forbidden. A row is capped at 600 characters.
 
 **Closure is code.** `scripts/check-defect-register.sh` refuses a `CLOSED` row whose control does
 not resolve, whose script control has no `--self-test`, or whose control is the locus itself; refuses
 a closure commit that changes only docs, reports, `scripts/`, `hooks/` or `contrib/ci/`; refuses an
 ID that disappears without a tombstone; refuses an ID live in the tracker and in `decisions.md` or
-`residual-risk.md`; and verifies the batch approval's `scope_hash`. `CLOSED` still means impossible
-in current code with a failing-before control (the nine conditions in `hazop-rules.md`).
+`residual-risk.md`; refuses an unknown status; requires every `OPEN` row to be in a live fix cycle;
+and verifies the approval's `scope_sha256` over the acceptance boundary and its
+`appendix_baseline_sha256` over the frozen historical tombstones. `CLOSED` still means impossible in
+current code with a failing-before control (the nine conditions in `hazop-rules.md`).
 
-**Counts.** 45 decisions and interpretations live in [`decisions.md`](decisions.md); the gate checks
+**Counts.** 44 decisions and interpretations live in [`decisions.md`](decisions.md); the gate checks
 this number.
+
+## Fix cycles
+
+Every `OPEN` row is in exactly one cycle. A cycle is a commitment by its owner to end every listed
+row as `CLOSED` (code + failing-before control) or `RESIDUAL` (signed ALARP record) by its bound. A
+lapsed bound fails the register gate; it is not re-dated silently.
+
+| Cycle | Owner | Bound | Rows |
+|---|---|---|---|
+| custody | project lead | by:2026-11-08 | OBL-C102, OBL-C160, OBL-C253, OBL-C97 |
+| stablecoin | project lead | by:2026-11-12 | OBL-C92 |
+| bearer-bond | project lead | by:2026-11-12 | OBL-C248 |
+| codec | project lead | by:2026-11-04 | OBL-C202, OBL-C205, OBL-C239, OBL-C241, OBL-C246 |
+| chain | project lead | by:2026-11-08 | OBL-C42, OBL-C45, OBL-C54, OBL-C56, OBL-C259, OBL-C266 |
+| wallet | project lead | by:2026-11-08 | OBL-C130, OBL-C214, OBL-C260 |
+| models | project lead | by:2026-11-15 | OBL-C109, OBL-C136, OBL-C206, OBL-Z12, OBL-Z18, OBL-Z23, OBL-Z3 |
 
 | ID | Status | Defect | Locus | Control | Risk |
 |---|---|---|---|---|---|
@@ -50,6 +75,7 @@ this number.
 | OBL-C268 | CLOSED | node1 set RPC_PORT=31346 while MANAGEMENT_PORT defaulted to 31346; both listeners targeted one port, management won, and blockchain.get_height was unreachable, which Phase 9 reported as sync lag. node1 now has MANAGEMENT_PORT=31344 and MM_RPC_PORT=31350, and the entrypoint refuses duplicate listeners. The 2026-10-25 run reports node1 height 38 then 1298. evidence:9af26fb23a negative:2026-10-24 node1 get_height answered method-not-found | `contrib/docker/darkwow-testnet/entrypoint.sh:MANAGEMENT_PORT` | `contrib/docker/darkwow-testnet/test_pipeline.sh` | M/D |
 | OBL-C269 | CLOSED | The cumulative-commit singletons in the contracts tree and the supply-chain tree were written non-atomically on reorg (rollback under no lock, contracts undo in a separate sled write, WASM outside connect_lock), so a failed or concurrent reorg could leave them divergent. The disconnect now commits both trees atomically under the apply lock; the fault-injection control passes and failed under a planted pre-fix mutation (supply entry removed). | `bin/dwowd/src/block_acceptor.rs:rollback_cumulative_commit` | `test_disconnect_undo_failure_leaves_the_trees_consistent` | H/P |
 | OBL-C270 | CLOSED | L3-FW-2 compared each node's last boundary log line with no boundary-height check or convergence wait, and a field-poor extra line made L3-FW-1 report no boundary line while two were present. The gate now reads the last flagged line at node0's named boundary and waits for each node to reach it; the 2026-10-25 run passes with node1 matching at boundary 20. evidence:9af26fb23a negative:2026-10-24 L3-FW-1 false failure | `contrib/docker/darkwow-testnet/lib/phase_fee_window.sh:_get_cf_at_height` | `contrib/docker/darkwow-testnet/test_pipeline.sh` | M/D |
+| OBL-C42 | OPEN | `take_competing_blocks()` destroys competing blocks before the fallible work in three of four call sites, so an uncle candidate can be lost. It was accepted as R-06; the process ALARP round withdrew that record because the reordering is contained. | `src/linear/src/chain_state.rs:take_competing_blocks` | `plan: reorder the four call sites and assert the ordering in a test` | M/P |
 | OBL-C45 | OPEN | The contracts tree and the supply-chain tree are not reconciled against each other; the RPC returns stored state. | `bin/dwowd/src/rpc/blockchain.rs:blockchain_get_cumulative_supply` | `test_supply_chain_audit` | H/P |
 | OBL-C54 | OPEN | A stratum submit can be judged against a template a concurrent login has already replaced; writes are serialised but unversioned. | `bin/dwowd/src/rpc/stratum.rs:stratum_submit` | `plan: template generation id checked at submit` | M/P |
 | OBL-C56 | OPEN | The sync-state check and the mining act are not atomic; a transition can land in the window before accept. | `bin/dwowd/src/lib.rs:miner_task` | `plan: atomic mining gate and test` | M/D |
@@ -57,6 +83,7 @@ this number.
 | OBL-C97 | OPEN | The exit arm of a protected fund does not apply the fund's stored spend authority (the member-authorization design is OBL-C253). | `src/contract/drain_protection/src/entrypoint.rs:exit_process_instruction_v1` | `test_heavyweight_drain_protection` | C/P |
 | OBL-Z12 | OPEN | A circuit's integer-quotient proof is about field residues unless the operand bound is established; the Lean theorem states the bound and nothing on chain establishes it. | `proofs/lean/src/DarkFi/BaseDivGadget.lean:qr_unique` | `scripts/check-circuit-instance-derivation.sh` | H/P |
 | OBL-Z18 | OPEN | 51 `constrain_equal_base` sites have no verifier-visible operand; each is adjudicated, but the sweep is not closed. | `scripts/check-pubkey-binding.sh` | `plan: external adjudication corpus (not the checker itself)` | M/D |
+| OBL-Z23 | OPEN | 117 dead values are adjudicated, but the dead-value gate is report-only, so a newly introduced undeclared dead value does not fail anything. It was accepted as R-05; the process ALARP round withdrew that record because a blocking gate frozen against the adjudicated baseline is reasonably practicable. | `scripts/check-circuit-dead-values.sh` | `plan: blocking gate with a frozen baseline of the adjudicated dead values` | M/D |
 | OBL-Z3 | OPEN | The circuit-domain gate accepts any `DOMAIN_`/`witness_base` token in a `poseidon_hash` call and never checks it is the right domain for that hash's purpose. | `scripts/check-circuit-domain-separation.sh` | `plan: purpose-specific domain token check` | H/P |
 
 ## Non-defects
@@ -69,6 +96,13 @@ this number.
 These ids were settled before the tracker migration. Their analysis is in git
 (`git log -S "<id>" -- doc/src/arch/verification-hazop.md`); this appendix exists so that
 citations elsewhere in the tree still resolve.
+
+**The appendix is history, not a disposition vocabulary.** `settled`, `restated`, `accepted` and
+`dissolved` are frozen records of the migration (257 rows). They are not exits from a live finding:
+a new row may not use one, and the set is hashed by the approval manifest
+(`appendix_baseline_sha256`), so adding or editing one fails the gate. New tombstones are only
+`residual (R-n)`, `merged into OBL-X` or `decision`; each resolves to its record in
+[`residual-risk.md`](residual-risk.md) or [`decisions.md`](decisions.md).
 
 | ID | Disposition |
 |---|---|
@@ -330,7 +364,6 @@ citations elsewhere in the tree still resolve.
 | OBL-C233 | restated |
 | OBL-C234 | restated |
 | OBL-C32 | accepted |
-| OBL-C42 | residual (R-06, see residual-risk.md) |
 | OBL-C66 | residual (R-07, see residual-risk.md) |
 | OBL-C76 | decision |
 | OBL-C80 | accepted |
@@ -356,4 +389,3 @@ citations elsewhere in the tree still resolve.
 | OBL-C262 | residual (R-01, see residual-risk.md) |
 | OBL-T22 | residual (R-03, see residual-risk.md) |
 | OBL-T24 | residual (R-04, see residual-risk.md) |
-| OBL-Z23 | residual (R-05, see residual-risk.md) |

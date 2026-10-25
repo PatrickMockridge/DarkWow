@@ -434,32 +434,20 @@ probes["genesis_ids"] = {"rc": 0 if agree else 1, "out":
 
 # The defect tracker's census — four dispositions and the risk band of every live row. A row turns
 # green only through the gate's code+control rule; an accepted risk is a residual, never green.
+# One parser for the tracker. The gate and the verification preflight import the same module, so
+# the report cannot count a row the gate refuses, or miss a status the gate rejects.
+sys.path.insert(0, os.path.join(REPO, "scripts"))
+from register_parse import parse_register, risk_band, BLOCKING  # noqa: E402
+
 def register_rows():
     """(id, status, risk, proposition) for every main-table tracker row."""
-    out = []
-    with open(REGISTER, errors="replace") as f:
-        for line in f:
-            m = re.match(
-                r'^\|\s*(OBL-[CZT]\d+)\s*\|\s*(OPEN|BLOCKED|DEFERRED|CLOSED)\s*\|(.+?)\|\s*'
-                r'([CHML]/[DPT])\s*\|\s*$', line)
-            if m:
-                out.append((m.group(1), m.group(2), m.group(4), ""))
-    return out, [], {}, 0
+    text = open(REGISTER, errors="replace").read()
+    parsed, _appendix, errors = parse_register(text)
+    return ([(oid, r["status"], f"{r['sev']}/{r['lik']}", r["defect"])
+             for oid, r in parsed.items()], [], {}, errors)
+
 rows, sev_recovered, table_shapes, arity_mismatch = register_rows()
-OPEN_TOKENS = {"OPEN", "BLOCKED", "DEFERRED"}
-SEV_W = {"C": 5, "H": 3, "M": 2, "L": 1}
-LIK_W = {"D": 5, "P": 3, "T": 1}
-def risk_band(sev_lik):
-    try:
-        sev, lik = sev_lik.split("/")
-        r = SEV_W[sev] * LIK_W[lik]
-    except (ValueError, KeyError):
-        return "unknown"
-    if r >= 15:
-        return "Intolerable"
-    if r <= 5 and sev not in ("C", "H"):
-        return "Broadly acceptable"
-    return "Tolerable"
+OPEN_TOKENS = set(BLOCKING)
 open_rows = [(rid, tok, sevlik) for rid, tok, sevlik, _prop in rows if tok in OPEN_TOKENS]
 open_by_sev = {}
 for _rid, _tok, _sevlik in open_rows:

@@ -105,6 +105,12 @@ These are mechanical, not advisory. They are here because agents have broken eac
   **The hash itself is deliberately not quoted here.** It was, and it went stale within hours of being written —
   which is the failure mode a constant in a doctrine document always has. Quote the procedure, never the value;
   `genesis_pin_is_current` is what reports the value.
+- **A finding is decided or it is not.** `OPEN`, `BLOCKED` and `DEFERRED` are undecided and block every
+  verification surface: no Docker, no pipeline (any mode, wallet-only included), no umbrella sweep (any
+  tier), no release verdict. `scripts/check-tracker-settled.sh` enforces it before the pipeline's first
+  phase and at the top of the umbrella; there is no override. `CLOSED` (code + failing-before control) and
+  `RESIDUAL` (signed ALARP record) are the only exits. A targeted control run directly by the fix in
+  progress is not a verdict. See `doc/src/dev/hazop-rules.md`, "The binary finding lifecycle".
 - **Never modify `src/zk/vm.rs`.** The VM is off-limits.
 - **Never `sed` Rust.** Use precise edits so changes are auditable.
 - **Never `git add -A`, `git stash`, `checkout` or `reset` in the shared tree.** Several sessions share it; commit

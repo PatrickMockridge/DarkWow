@@ -50,8 +50,11 @@ _get_flags_from_log() {
 # key ∈ {circuit_premium, circuit_standard, wasm_premium, wasm_standard}.
 _get_cf_from_log() {
     local node="$1" key="$2"
-    # Total: empty (exit 0) on no boundary log, same as _get_flags_from_log.
-    docker logs "$node" 2>&1 | grep "Fee window boundary" | tail -1 | grep -oP "${key}=CfValue\(\K[0-9]+" || true
+    # Select the last line that CARRIES the field, not the last boundary line. A field-poor
+    # connect-side or diagnostic line after the announcement made the pre-fix `tail -1` parser
+    # return empty while the value was present (OBL-C270's failure shape).
+    docker logs "$node" 2>&1 | grep "Fee window boundary" | grep "${key}=CfValue(" | tail -1 \
+        | grep -oP "${key}=CfValue\(\K[0-9]+" || true
 }
 
 # Height of the most recent "Fee window boundary at height N:" log line, or empty.
@@ -66,13 +69,16 @@ _get_boundary_height() {
 # makes L3-FW-2 compare like with like.
 _get_cf_at_height() {
     local node="$1" key="$2" height="$3"
-    docker logs "$node" 2>&1 | grep "Fee window boundary at height ${height}:" | tail -1 \
+    # Same rule at a named height: the last line carrying the field, never a field-poor twin.
+    docker logs "$node" 2>&1 | grep "Fee window boundary at height ${height}:" \
+        | grep "${key}=CfValue(" | tail -1 \
         | grep -oP "${key}=CfValue\(\K[0-9]+" || true
 }
 
 _get_flags_at_height() {
     local node="$1" height="$2"
-    docker logs "$node" 2>&1 | grep "Fee window boundary at height ${height}:" | tail -1 \
+    docker logs "$node" 2>&1 | grep "Fee window boundary at height ${height}:" \
+        | grep "flags=0x" | tail -1 \
         | grep -oP 'flags=0x[0-9a-fA-F]+' | cut -d'=' -f2 || true
 }
 
