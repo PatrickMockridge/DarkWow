@@ -86,7 +86,7 @@ cell; it is not green.
 | C266 | OPEN | H/P | 9 Tol. | Cache-mode PoW vs documented dataset; plan: decide enforcement vs docs |
 | C267 | CLOSED (existing) | C/D | 25 Int. | Typed chain-derived state; control + planted defect |
 | C268 | CLOSED (existing) | M/D | 10 Tol. | Port map + listener guard; pipeline evidence |
-| C269 | OPEN | H/P | 9 Tol. | Non-atomic reorg writes; plan: fault-injection control |
+| C269 | **CLOSED** | H/P | 9 Tol. | Atomic disconnect; control passes and failed under a planted pre-fix mutation |
 | C270 | CLOSED (existing) | M/D | 10 Tol. | Same-height gate; pipeline evidence |
 | C45 | OPEN | H/P | 9 Tol. | Two supply trees unreconciled; control exists |
 | C54 | OPEN | M/P | 6 Tol. | Stratum template unversioned; plan: generation id at submit |
@@ -101,7 +101,9 @@ cell; it is not green.
 | Z23 | **RESIDUAL** | M/D | 10 Tol. | 117 adjudicated dead values, none in genesis; report-only gate as compensating control; reopen on circuit change; ALARP R-05 |
 | Z3 | OPEN | H/P | 9 Tol. | Domain gate does not check purpose; plan: purpose-specific token check |
 
-Result: 26 OPEN, 5 RESIDUAL, 3 newly CLOSED, 2 merged, 1 decision, 4 pre-existing CLOSED.
+Result at batch approval: 26 OPEN, 5 RESIDUAL, 3 newly CLOSED, 2 merged, 1 decision, 4 pre-existing
+CLOSED. **Update 2026-10-25:** OBL-C269 gained its fault-injection control and is now CLOSED with a
+mutation witness, so the live set is **25 OPEN, 8 CLOSED, 7 RESIDUAL**.
 
 ## 4. Decisions triage (46 entries)
 
@@ -193,8 +195,9 @@ The batch consists of: the 41 row dispositions in §3; the decisions changes in 
 the model-authority classification in §7; the policy in `doc/src/arch/risk-management.md`; and the
 schema/tool changes in the implementation plan.
 
-- `scope_sha256 = 952fc1d5c8892538ced56e15d931042820bb31868f7d4e330077a1c5ca4cae3e`
-  (SHA-256 over `verification-hazop.md`, `residual-risk.md`, `risk-management.md`).
+- `scope_sha256 = 9800b6ee35633eb3b3088b04a43b029f3f4643c5a56c987fdc9bcbdbc4084846`
+  (SHA-256 over `verification-hazop.md`, `residual-risk.md`, `risk-management.md`; updated when
+  OBL-C269 closed with its fault-injection control).
 - The explicit batch ID list is in `reports/register-approval.txt` (`batch=`); the gate resolves every
   ID against the tracker or its appendix.
 - Five IDs re-derived from the tree for the approver: **C102** `C/P` → 15 Intolerable; **C109** `H/P`

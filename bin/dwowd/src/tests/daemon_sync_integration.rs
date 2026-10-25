@@ -1006,6 +1006,68 @@ fn test_multi_block_reorg_state_consistency() {
     });
 }
 
+/// OBL-C269: a failure while reversing a block's contracts writes must not remove the
+/// supply-chain entry first. The undo record is corrupted so the disconnect cannot decode it;
+/// the whole disconnect must abort with both trees untouched. Under the pre-fix shape the
+/// supply removal committed before the undo was deserialized, leaving the trees torn.
+#[test]
+fn test_disconnect_undo_failure_leaves_the_trees_consistent() {
+    dwow_native_token_contract::enable_deterministic_zk();
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_target(true)
+        .try_init();
+
+    smol::block_on(async {
+        use dwow_native_token_contract::{
+            NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT, NATIVE_TOKEN_CONTRACT_INFO_TREE,
+        };
+        let (chain, keys_path) = build_authority_chain().await; // genesis + block 2
+        let height = BlockHeight::new(2);
+
+        let info_prefix = dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
+            .hash_state_id(NATIVE_TOKEN_CONTRACT_INFO_TREE);
+        let mut key = Vec::from(info_prefix.as_slice());
+        key.extend_from_slice(NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT);
+        let stored_before = chain
+            .store
+            .contracts
+            .get(key.clone())
+            .expect("read the contracts singleton")
+            .expect("the singleton exists after genesis");
+        assert!(chain.supply_chain.get(height).is_ok(), "supply entry exists before");
+
+        // A corrupt undo record: deserialization must abort the disconnect before any write.
+        chain
+            .store
+            .contracts_undo
+            .insert(&height.to_le_bytes(), &b"not-a-valid-undo"[..])
+            .expect("plant a corrupt undo record");
+
+        let err = chain
+            .disconnect_block(height)
+            .expect_err("a corrupt undo record must abort the disconnect");
+        assert!(
+            chain.supply_chain.get(height).is_ok(),
+            "OBL-C269: the supply entry must survive the aborted disconnect ({err})",
+        );
+        assert_eq!(chain.get_height(), height, "height unchanged after the abort");
+        let stored_after = chain
+            .store
+            .contracts
+            .get(key)
+            .expect("read the contracts singleton")
+            .expect("the singleton still exists");
+        assert_eq!(
+            &stored_before[..],
+            &stored_after[..],
+            "OBL-C269: the contracts singleton is unchanged by the aborted disconnect",
+        );
+
+        let _ = std::fs::remove_file(&keys_path);
+    });
+}
+
 /// The sync-loop reorg driver (`reorg_to_heavier_chain`): a syncing node whose
 /// pull gets a block building on a competing (heavier) chain fetches that chain
 /// from the peer, finds the common ancestor, and reorgs onto it.
