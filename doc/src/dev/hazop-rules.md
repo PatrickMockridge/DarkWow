@@ -171,6 +171,10 @@ appendix; it stays unresolved, and the health report counts it.
    every `OPEN` row to be in a live fix cycle, and verifies the approval's `scope_sha256` over the
    acceptance boundary and its `appendix_baseline_sha256` over the frozen historical tombstones;
    `hooks/pre-commit` blocks the same cases. A closure the gate refuses is not a closure.
+   A **process row** — one whose locus is under `scripts/`, `hooks/` or `script/` — is closed by
+   the change to its control script: that script is the row's production artifact, and the gate
+   accepts it in place of `src/`/`bin/`/`proofs/`/`contrib/`. A code row cannot use that door, and
+   the gate's self-test carries both the positive and the negative case.
 
 A requirement may be reclassified as a **non-defect** only against the authoritative specification
 (text and the commit that removed it), recorded separately from any fix; it is never used to green a
