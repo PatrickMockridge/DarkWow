@@ -134,6 +134,12 @@ pub trait ContractHarness {
     /// Get proving key for a circuit namespace
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey>;
 
+    /// Whether a proving key for this namespace is available. The default asks `get_pk`; a
+    /// harness that derives keys on demand (and retains none) overrides this.
+    fn has_pk(&self, ns: &str) -> bool {
+        self.get_pk(ns).is_some()
+    }
+
     /// Tell this harness the height of the block the next generated call will land in.
     ///
     /// The runner calls this immediately before every `generate`, because a contract's circuits
@@ -161,7 +167,7 @@ pub trait ContractHarness {
         for ns in self.circuits() {
             total += 1;
             let has_zkbin = self.get_zkbin(ns).is_some();
-            let has_pk = self.get_pk(ns).is_some();
+            let has_pk = self.has_pk(ns);
 
             if !has_zkbin {
                 missing_zkbin.push(ns);

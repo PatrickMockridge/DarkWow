@@ -80,27 +80,16 @@ use dwow_attestation_contract::model::{
 /// Attestation Harness for isolated testing
 pub struct AttestationHarness {
     create_attestation_zkbin: ZkBinary,
-    create_attestation_pk: ProvingKey,
     create_claim_zkbin: ZkBinary,
-    create_claim_pk: ProvingKey,
     verify_claim_zkbin: ZkBinary,
-    verify_claim_pk: ProvingKey,
     consume_claim_zkbin: ZkBinary,
-    consume_claim_pk: ProvingKey,
     delegate_attestation_zkbin: ZkBinary,
-    delegate_attestation_pk: ProvingKey,
     attest_slash_zkbin: ZkBinary,
-    attest_slash_pk: ProvingKey,
     commit_fee_schedule_zkbin: ZkBinary,
-    commit_fee_schedule_pk: ProvingKey,
     verify_chain_zkbin: ZkBinary,
-    verify_chain_pk: ProvingKey,
     update_delegation_zkbin: ZkBinary,
-    update_delegation_pk: ProvingKey,
     revoke_attestation_zkbin: ZkBinary,
-    revoke_attestation_pk: ProvingKey,
     expire_attestation_zkbin: ZkBinary,
-    expire_attestation_pk: ProvingKey,
     /// The contract's deployed id (`OBL-C198`): the commitment is over the call set, and a call
     /// carries the contract it addresses, so a prover must know this id.
     contract_id: ContractId,
@@ -154,124 +143,36 @@ impl AttestationHarness {
         let revoke_attestation_zkbin = ZkBinary::decode(revoke_attestation_bin, false).unwrap();
         let expire_attestation_zkbin = ZkBinary::decode(expire_attestation_bin, false).unwrap();
 
-        let create_att_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&create_attestation_zkbin).unwrap(),
-            &create_attestation_zkbin,
-        );
-        let create_claim_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&create_claim_zkbin).unwrap(),
-            &create_claim_zkbin,
-        );
-        let verify_claim_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&verify_claim_zkbin).unwrap(),
-            &verify_claim_zkbin,
-        );
-        let consume_claim_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&consume_claim_zkbin).unwrap(),
-            &consume_claim_zkbin,
-        );
-        let delegate_attestation_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&delegate_attestation_zkbin).unwrap(),
-            &delegate_attestation_zkbin,
-        );
-        let attest_slash_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&attest_slash_zkbin).unwrap(),
-            &attest_slash_zkbin,
-        );
-        let commit_fee_schedule_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&commit_fee_schedule_zkbin).unwrap(),
-            &commit_fee_schedule_zkbin,
-        );
-        let update_delegation_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&update_delegation_zkbin).unwrap(),
-            &update_delegation_zkbin,
-        );
-        let verify_chain_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&verify_chain_zkbin).unwrap(),
-            &verify_chain_zkbin,
-        );
-        let revoke_attestation_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&revoke_attestation_zkbin).unwrap(),
-            &revoke_attestation_zkbin,
-        );
-        let expire_attestation_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&expire_attestation_zkbin).unwrap(),
-            &expire_attestation_zkbin,
-        );
-
-        // Build verify_claim first to isolate which circuit fails
-        eprintln!("DEBUG: verify_claim k={}", verify_claim_zkbin.k);
-        eprintln!("DEBUG: verify_claim namespace={}", verify_claim_zkbin.namespace);
-        eprintln!("DEBUG: verify_claim constants={:?}", verify_claim_zkbin.constants);
-        eprintln!("DEBUG: verify_claim witnesses={:?}", verify_claim_zkbin.witnesses);
-        eprintln!("DEBUG: verify_claim num_opcodes={}", verify_claim_zkbin.opcodes.len());
-        for (i, (op, args)) in verify_claim_zkbin.opcodes.iter().enumerate() {
-            eprintln!("DEBUG:   opcode[{}]: {:?} args={:?}", i, op, args);
-        }
-        eprintln!("DEBUG: Building verify_claim ProvingKey with k={}", verify_claim_zkbin.k);
-        let verify_claim_pk = ProvingKey::build(verify_claim_zkbin.k, &verify_claim_circuit).expect("ProvingKey::build failed");
-        eprintln!("DEBUG: verify_claim PK built successfully!");
-        eprintln!("DEBUG: Building create_attestation PK with k={}", create_attestation_zkbin.k);
-        let create_attestation_pk =
-            ProvingKey::build(create_attestation_zkbin.k, &create_att_circuit).expect("ProvingKey::build failed");
-        eprintln!("DEBUG: create_attestation PK built successfully!");
-        eprintln!("DEBUG: Building create_claim PK with k={}", create_claim_zkbin.k);
-        let create_claim_pk = ProvingKey::build(create_claim_zkbin.k, &create_claim_circuit).expect("ProvingKey::build failed");
-        eprintln!("DEBUG: create_claim PK built successfully!");
-        eprintln!("DEBUG: Building consume_claim PK with k={}", consume_claim_zkbin.k);
-        let consume_claim_pk = ProvingKey::build(consume_claim_zkbin.k, &consume_claim_circuit).expect("ProvingKey::build failed");
-        eprintln!("DEBUG: consume_claim PK built successfully!");
-        eprintln!("DEBUG: Building delegate_attestation PK with k={}", delegate_attestation_zkbin.k);
-        let delegate_attestation_pk =
-            ProvingKey::build(delegate_attestation_zkbin.k, &delegate_attestation_circuit).expect("ProvingKey::build failed");
-        eprintln!("DEBUG: delegate_attestation PK built successfully!");
-        eprintln!("DEBUG: Building attest_slash PK with k={}", attest_slash_zkbin.k);
-        let attest_slash_pk =
-            ProvingKey::build(attest_slash_zkbin.k, &attest_slash_circuit).expect("ProvingKey::build failed");
-        eprintln!("DEBUG: attest_slash PK built successfully!");
-        eprintln!("DEBUG: Building commit_fee_schedule PK with k={}", commit_fee_schedule_zkbin.k);
-        let commit_fee_schedule_pk =
-            ProvingKey::build(commit_fee_schedule_zkbin.k, &commit_fee_schedule_circuit).expect("ProvingKey::build failed");
-        eprintln!("DEBUG: commit_fee_schedule PK built successfully!");
-        eprintln!("DEBUG: Building update_delegation PK with k={}", update_delegation_zkbin.k);
-        let update_delegation_pk =
-            ProvingKey::build(update_delegation_zkbin.k, &update_delegation_circuit).expect("ProvingKey::build failed");
-        eprintln!("DEBUG: update_delegation PK built successfully!");
-        let verify_chain_pk =
-            ProvingKey::build(verify_chain_zkbin.k, &verify_chain_circuit)
-                .expect("ProvingKey::build failed for verify_chain");
-        let revoke_attestation_pk =
-            ProvingKey::build(revoke_attestation_zkbin.k, &revoke_attestation_circuit)
-                .expect("ProvingKey::build failed for revoke_attestation");
-        let expire_attestation_pk =
-            ProvingKey::build(expire_attestation_zkbin.k, &expire_attestation_circuit)
-                .expect("ProvingKey::build failed for expire_attestation");
+        // Proving keys are **not** built here. The harness used to derive and retain all eleven
+        // k=11 keys in `spawn`; that is the memory the host watchdog stopped at the first key
+        // (measured 2026-10-25, 32 GiB available, swap full). Each endpoint now builds its key on
+        // demand via `build_key`, uses it, and drops it, so the peak is one key plus the proof
+        // transient rather than eleven retained keys plus a transient.
 
         Self {
             create_attestation_zkbin,
-            create_attestation_pk,
             create_claim_zkbin,
-            create_claim_pk,
             verify_claim_zkbin,
-            verify_claim_pk,
             consume_claim_zkbin,
-            consume_claim_pk,
             delegate_attestation_zkbin,
-            delegate_attestation_pk,
             attest_slash_zkbin,
-            attest_slash_pk,
             commit_fee_schedule_zkbin,
-            commit_fee_schedule_pk,
-            update_delegation_zkbin,
-            update_delegation_pk,
             verify_chain_zkbin,
-            verify_chain_pk,
+            update_delegation_zkbin,
             revoke_attestation_zkbin,
-            revoke_attestation_pk,
             expire_attestation_zkbin,
-            expire_attestation_pk,
             contract_id,
         }
+    }
+
+    /// Build one proving key on demand. The caller uses it and drops it; nothing retains the key
+    /// between endpoints (`OBL-C206`-adjacent harness memory, measured 2026-10-25).
+    fn build_key(&self, zkbin: &ZkBinary) -> ProvingKey {
+        let circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(zkbin).expect("empty witnesses"),
+            zkbin,
+        );
+        ProvingKey::build(zkbin.k, &circuit).expect("ProvingKey::build")
     }
 
     /// Create an attestation (function code 0x00)
@@ -305,9 +206,10 @@ impl AttestationHarness {
         // `OBL-C198`: prove LAST, over the finished call data — the commitment is a derivation over
         // these bytes and excludes proofs, which is what makes the order solvable.
         input.tx_commitment = self.commitment(&call_data);
+        let pk = self.build_key(&self.create_attestation_zkbin);
         let (proof, public_inputs) = create_attestation_v1_proof(
             &self.create_attestation_zkbin,
-            &self.create_attestation_pk,
+            &pk,
             &input,
         )?;
 
@@ -344,9 +246,10 @@ impl AttestationHarness {
 
         // `OBL-C198`: prove LAST, over the finished call data.
         input.tx_commitment = self.commitment(&call_data);
+        let pk = self.build_key(&self.create_claim_zkbin);
         let (proof, public_inputs) = create_claim_v1_proof(
             &self.create_claim_zkbin,
-            &self.create_claim_pk,
+            &pk,
             &input,
         )?;
 
@@ -395,9 +298,10 @@ impl AttestationHarness {
 
         // `OBL-C198`: prove LAST, over the finished call data.
         input.tx_commitment = self.commitment(&call_data);
+        let pk = self.build_key(&self.verify_claim_zkbin);
         let (proof, public_inputs) = verify_claim_v1_proof(
             &self.verify_claim_zkbin,
-            &self.verify_claim_pk,
+            &pk,
             &input,
         )?;
 
@@ -443,7 +347,7 @@ impl AttestationHarness {
             input,
             call_data,
             verify_claim_zkbin: self.verify_claim_zkbin.clone(),
-            verify_claim_pk: self.verify_claim_pk.clone(),
+            verify_claim_pk: self.build_key(&self.verify_claim_zkbin),
         })
     }
 
@@ -473,9 +377,10 @@ impl AttestationHarness {
         call_data.extend_from_slice(&params.encode());
 
         input.tx_commitment = self.commitment(&call_data);
+        let pk = self.build_key(&self.consume_claim_zkbin);
         let (proof, public_inputs) = consume_claim_v1_proof(
             &self.consume_claim_zkbin,
-            &self.consume_claim_pk,
+            &pk,
             &input,
         )?;
 
@@ -543,9 +448,10 @@ impl AttestationHarness {
 
         // `OBL-C198`: prove LAST, over the finished call data.
         input.tx_commitment = self.commitment(&call_data);
+        let pk = self.build_key(&self.delegate_attestation_zkbin);
         let (proof, public_inputs) = delegate_attestation_v1_proof(
             &self.delegate_attestation_zkbin,
-            &self.delegate_attestation_pk,
+            &pk,
             &input,
         )?;
 
@@ -599,8 +505,9 @@ impl AttestationHarness {
 
         // `OBL-C198`: prove LAST, over the finished call data.
         input.tx_commitment = self.commitment(&call_data);
+        let pk = self.build_key(&self.update_delegation_zkbin);
         let (proof, public_inputs) = update_delegation_v1_proof(
-            &self.update_delegation_zkbin, &self.update_delegation_pk, &input,
+            &self.update_delegation_zkbin, &pk, &input,
         )?;
 
         Ok(UpdateDelegationResult { call_data, proof, public_inputs })
@@ -651,10 +558,11 @@ impl AttestationHarness {
         // Circuit constrain_instance order: attester_pub_x, attester_pub_y, tx_binding, tx_nonce
         let publics = [ax, ay, txb, pallas::Base::zero()];
         let circuit = ZkCircuit::new(witnesses, &self.attest_slash_zkbin);
+        let pk = self.build_key(&self.attest_slash_zkbin);
         let proof = if dwow_attestation_contract::deterministic_zk_enabled() {
-            Proof::create(&self.attest_slash_pk, &[circuit], &publics, rand::rngs::StdRng::seed_from_u64(0))
+            Proof::create(&pk, &[circuit], &publics, rand::rngs::StdRng::seed_from_u64(0))
         } else {
-            Proof::create(&self.attest_slash_pk, &[circuit], &publics, rand::rngs::OsRng)
+            Proof::create(&pk, &[circuit], &publics, rand::rngs::OsRng)
         }.map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
 
         Ok(AttestSlashResult { call_data, proof })
@@ -700,10 +608,11 @@ impl AttestationHarness {
         // Circuit constrain_instance order: attester_pub_x, attester_pub_y, tx_binding, tx_nonce
         let publics = [ax, ay, txb, pallas::Base::zero()];
         let circuit = ZkCircuit::new(witnesses, &self.commit_fee_schedule_zkbin);
+        let pk = self.build_key(&self.commit_fee_schedule_zkbin);
         let proof = if dwow_attestation_contract::deterministic_zk_enabled() {
-            Proof::create(&self.commit_fee_schedule_pk, &[circuit], &publics, rand::rngs::StdRng::seed_from_u64(0))
+            Proof::create(&pk, &[circuit], &publics, rand::rngs::StdRng::seed_from_u64(0))
         } else {
-            Proof::create(&self.commit_fee_schedule_pk, &[circuit], &publics, rand::rngs::OsRng)
+            Proof::create(&pk, &[circuit], &publics, rand::rngs::OsRng)
         }.map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
 
         Ok(CommitFeeScheduleResult { call_data, proof })
@@ -729,9 +638,10 @@ impl AttestationHarness {
         call_data.extend_from_slice(&params.encode());
         // `OBL-C198`: prove LAST, over the finished call data.
         input.tx_commitment = self.commitment(&call_data);
+        let pk = self.build_key(&self.revoke_attestation_zkbin);
         let (proof, public_inputs) = revoke_attestation_v1_proof(
             &self.revoke_attestation_zkbin,
-            &self.revoke_attestation_pk,
+            &pk,
             &input,
         )?;
         Ok(RevokeAttestationResult { call_data, proof, public_inputs })
@@ -757,9 +667,10 @@ impl AttestationHarness {
         call_data.extend_from_slice(&params.encode());
         // `OBL-C198`: prove LAST, over the finished call data.
         input.tx_commitment = self.commitment(&call_data);
+        let pk = self.build_key(&self.expire_attestation_zkbin);
         let (proof, public_inputs) = expire_attestation_v1_proof(
             &self.expire_attestation_zkbin,
-            &self.expire_attestation_pk,
+            &pk,
             &input,
         )?;
         Ok(ExpireAttestationResult { call_data, proof, public_inputs })
@@ -787,8 +698,9 @@ impl AttestationHarness {
         call_data.extend_from_slice(&params.encode()?);
         // `OBL-C198`: prove LAST, over the finished call data.
         input.tx_commitment = self.commitment(&call_data);
+        let pk = self.build_key(&self.verify_chain_zkbin);
         let (proof, _public_inputs) = verify_chain_v1_proof(
-            &self.verify_chain_zkbin, &self.verify_chain_pk, &input,
+            &self.verify_chain_zkbin, &pk, &input,
         )?;
         Ok(VerifyChainResult { call_data, proof })
     }
@@ -845,19 +757,24 @@ impl super::ContractHarness for AttestationHarness {
         }
     }
 
-    fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
-        match ns {
-            "CreateAttestationV2" => Some(&self.create_attestation_pk),
-            "CreateClaimV2" => Some(&self.create_claim_pk),
-            "VerifyClaimV2" => Some(&self.verify_claim_pk),
-            "ConsumeClaimV2" => Some(&self.consume_claim_pk),
-            "DelegateAttestationV2" => Some(&self.delegate_attestation_pk),
-            "AttestSlashV2" => Some(&self.attest_slash_pk),
-            "CommitFeeScheduleV2" => Some(&self.commit_fee_schedule_pk),
-            "UpdateDelegationV2" => Some(&self.update_delegation_pk),
-            "VerifyChainV2" => Some(&self.verify_chain_pk),
-            _ => None,
-        }
+    fn get_pk(&self, _ns: &str) -> Option<&ProvingKey> {
+        // This harness builds each key on demand and retains none; `has_pk` reports presence.
+        None
+    }
+
+    fn has_pk(&self, ns: &str) -> bool {
+        matches!(
+            ns,
+            "CreateAttestationV2"
+                | "CreateClaimV2"
+                | "VerifyClaimV2"
+                | "ConsumeClaimV2"
+                | "DelegateAttestationV2"
+                | "AttestSlashV2"
+                | "CommitFeeScheduleV2"
+                | "UpdateDelegationV2"
+                | "VerifyChainV2"
+        )
     }
 }
 
