@@ -319,8 +319,15 @@ pub struct Membership {
 
 impl Membership {
     /// Derive the membership note from parameters
+    /// `membership_note = poseidon_hash(DOMAIN_COMMITMENT, member_pub_x, member_pub_y, value,
+    /// asset_id, expiry, membership_blind)` — the formula `pay_premium.zk` constrains and the
+    /// client computes (OBL-C241).
+    ///
+    /// This helper hashed `dao_escrow_bulla.inner()` where the domain constant belongs, so a call
+    /// built through it carried a note the circuit refused. The bulla is a separate public input,
+    /// not part of the note preimage; the parameter is kept for the stored record's shape.
     pub fn derive_note(
-        dao_escrow_bulla: DaoEscrowBulla,
+        _dao_escrow_bulla: DaoEscrowBulla,
         member_pubkey: &PublicKey,
         value: u64,
         asset_id: pallas::Base,
@@ -330,7 +337,7 @@ impl Membership {
         #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (mx, my) = member_pubkey.xy().expect("pk not identity");
         MembershipNote(poseidon_hash([
-            dao_escrow_bulla.inner(),
+            pallas::Base::from(4u64), // DOMAIN_COMMITMENT
             mx,
             my,
             pallas::Base::from(value),

@@ -210,6 +210,49 @@ fn test_membership_derive_note() {
     assert_ne!(note, different);
 }
 
+/// OBL-C241 control: the helper must hash the circuit's preimage, not the DAO bulla.
+#[test]
+fn test_membership_derive_note_matches_the_circuit_preimage() {
+    let member_pubkey = make_pubkey(1);
+    let (mx, my) = member_pubkey.xy().expect("pk not identity");
+    let value: u64 = 1000;
+    let asset_id = pallas::Base::one();
+    let expiry: u64 = 100_000;
+    let blind = make_blind(42);
+    let expected = dwow_sdk::crypto::poseidon_hash([
+        pallas::Base::from(4u64), // DOMAIN_COMMITMENT, as pay_premium.zk and the client use
+        mx,
+        my,
+        pallas::Base::from(value),
+        asset_id,
+        pallas::Base::from(expiry),
+        blind.inner(),
+    ]);
+    let note = Membership::derive_note(
+        DaoEscrowBulla(pallas::Base::from(1)),
+        &member_pubkey,
+        value,
+        asset_id,
+        expiry,
+        blind,
+    );
+    assert_eq!(
+        note.0, expected,
+        "the helper must hash the circuit's preimage (domain 4), not the DAO bulla"
+    );
+
+    // The bulla is a separate public input; it must not change the note.
+    let other_bulla = Membership::derive_note(
+        DaoEscrowBulla(pallas::Base::from(9)),
+        &member_pubkey,
+        value,
+        asset_id,
+        expiry,
+        make_blind(42),
+    );
+    assert_eq!(note.0, other_bulla.0, "the DAO bulla is not part of the note preimage");
+}
+
 #[test]
 fn test_membership_encoding() {
     let membership = Membership {

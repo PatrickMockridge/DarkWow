@@ -242,6 +242,8 @@ fn test_bearer_bond_encode_roundtrip() {
     //     merkle_root(MerkleNode), user_data_enc(Fp), spend_hook(Fp), signature_public(Fp)
     use dwow_bearer_bond_contract::model::{
         IssueStakeParamsV1, BurnStakeParamsV1, BondInput, BondCommitment,
+        CoverageReport, EmergencyUnstakeParamsV1, PayInterestParamsV1, RegisterSeriesParamsV1,
+        RequestInterestParamsV1, TransferStakeParamsV1, UnstakeParamsV1,
         Nullifier as BbNullifier,
     };
     use dwow_sdk::crypto::ContractId;
@@ -278,6 +280,8 @@ fn test_bearer_bond_encode_roundtrip() {
     unclaimed.commitment.nullifier = BbNullifier::ZERO;
     assert_roundtrip!(IssueStakeParamsV1, unclaimed);
 
+    // Captured before the macro consumes `issue`; the other arms reuse the same commitment shape.
+    let bond_commitment = issue.commitment.clone();
     assert_roundtrip!(IssueStakeParamsV1, issue);
 
     let burn = BurnStakeParamsV1 {
@@ -293,6 +297,73 @@ fn test_bearer_bond_encode_roundtrip() {
         }],
     };
     assert_roundtrip!(BurnStakeParamsV1, burn);
+
+    // OBL-C202: the round-trip covered two arms (issue, burn) while the contract has more.
+    // Every param struct the dispatch accepts is exercised here, so a codec divergence in any arm
+    // is a test failure rather than a chain refusal.
+    let bond_input = BondInput {
+        value_commit: dummy_point(),
+        token_commit: pallas::Base::from(1u64),
+        nullifier: bb_nf,
+        merkle_root: dummy_merkle_node(),
+        user_data_enc: pallas::Base::zero(),
+        spend_hook: pallas::Base::zero(),
+        signature_public: pallas::Base::from(42u64),
+        commitment: pallas::Base::from(9u64),
+    };
+
+    assert_roundtrip!(TransferStakeParamsV1, TransferStakeParamsV1 {
+        inputs: vec![bond_input.clone()],
+        outputs: vec![bond_commitment.clone()],
+    });
+
+    assert_roundtrip!(RequestInterestParamsV1, RequestInterestParamsV1 {
+        bond_input: bond_input.clone(),
+        claim_block: 7,
+        payment_key: pallas::Base::from(11u64),
+        min_claim: 1,
+    });
+
+    assert_roundtrip!(PayInterestParamsV1, PayInterestParamsV1 {
+        bond_commitment: pallas::Base::from(9u64),
+        claim_block: 7,
+        interest_commitment: bond_commitment.clone(),
+    });
+
+    let report = CoverageReport {
+        series_asset_id: pallas::Base::from(1u64),
+        total_outstanding: 10,
+        total_interest_obligation: 1,
+        reserve_amount: 20,
+        coverage_ratio_bps: 18_181,
+        report_block: 7,
+    };
+    assert_roundtrip!(UnstakeParamsV1, UnstakeParamsV1 {
+        bond_input: bond_input.clone(),
+        current_block: 7,
+        receipt_commitment: pallas::Base::from(12u64),
+        receipt_token_commit: pallas::Base::from(13u64),
+        receipt_spend_hook: pallas::Base::from(14u64),
+        receipt_value_commit_x: pallas::Base::from(15u64),
+        receipt_value_commit_y: pallas::Base::from(16u64),
+    });
+
+    assert_roundtrip!(EmergencyUnstakeParamsV1, EmergencyUnstakeParamsV1 {
+        bond_input: bond_input.clone(),
+        coverage_report: report,
+        receipt_commitment: pallas::Base::from(12u64),
+        receipt_token_commit: pallas::Base::from(13u64),
+        receipt_spend_hook: pallas::Base::from(14u64),
+        receipt_value_commit_x: pallas::Base::from(15u64),
+        receipt_value_commit_y: pallas::Base::from(16u64),
+    });
+
+    assert_roundtrip!(RegisterSeriesParamsV1, RegisterSeriesParamsV1 {
+        series_asset_id: pallas::Base::from(1u64),
+        interest_rate_bps: 500,
+        maturity_block: 1000,
+        issuer_contract: ContractId::from_bytes([1u8; 32]).unwrap(),
+    });
 }
 
 /// `SerializedLen` controls for bearer_bond: every length prefix is a 4-byte `u32`, so a
