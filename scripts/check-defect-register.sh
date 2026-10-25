@@ -176,6 +176,16 @@ def read_boundary(root, rel, mode):
             return p.stdout
     return read(os.path.join(root, rel))
 
+def scope_hash_at(root, rev):
+    """The acceptance-boundary hash as it stood at a commit, or None if it does not resolve."""
+    h = hashlib.sha256()
+    for rel in (RESIDUAL_REL, POLICY_REL):
+        p = sh("show", f"{rev}:{rel}")
+        if p.returncode != 0:
+            return None
+        h.update(p.stdout.encode())
+    return h.hexdigest()
+
 def scope_hash(root, mode="work"):
     """SHA-256 over the acceptance boundary, never over the live tracker.
 
@@ -289,6 +299,15 @@ def check(register_text, prev_text, changed, root, mode="work"):
             errors.append(
                 "approval scope_sha256 does not match the acceptance boundary "
                 "(residual-risk.md and risk-management.md)")
+        # An `approved_commit` is falsifiable: the boundary at that commit must hash to the
+        # approved value. The manifest cannot claim a history it does not have.
+        cm = re.search(r"approved_commit=([0-9a-f]{7,40})", approval)
+        if cm:
+            at = scope_hash_at(root, cm.group(1))
+            if at is None:
+                errors.append(f"approved_commit {cm.group(1)} does not resolve")
+            elif at != am.group(1):
+                errors.append("approved_commit does not carry the approved acceptance boundary")
         bm = re.search(r"appendix_baseline_sha256=([0-9a-f]{64})", approval)
         if not bm:
             errors.append("approval manifest does not freeze the historical appendix")
@@ -477,6 +496,11 @@ def self_test():
                any("appendix disposition" in e for e in
                    check(head + closed_row + tomb + "| OBL-C3 | vanished |\n",
                          ok, ["src/foo.rs"], tmp)[0]))
+        write(APPROVAL_REL, "scope_sha256=" + scope_hash(tmp, "work")
+              + "\nappendix_baseline_sha256=" + appendix_baseline
+              + "\nbatch=OBL-C1\napproved_commit=deadbeef\n")
+        expect("a non-resolving approved_commit refused",
+               any("approved_commit" in e for e in check(ok, base, ["src/foo.rs"], tmp)[0]))
 
         if fails:
             print("SELF-TEST FAIL:")
