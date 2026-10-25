@@ -630,6 +630,10 @@ pub async fn consensus_linear_init_task(
         // Computed AFTER the pull so it reflects the post-pull height.
         let caught_up = blockchain.get_height() >= max_peer_height;
         let mine = caught_up && (authority || !sync_peers.is_empty());
+        // OBL-C56: the miner holds this gate from its CaughtUp re-check through block
+        // acceptance. Taking it while storing the new state makes the transition atomic with
+        // the mining act: it cannot land between the check and the accept.
+        let _mining_gate = node.mining_state.mining_gate.lock().await;
         node.mining_state.sync_state.store(
             if mine { SyncState::CaughtUp as u8 } else { SyncState::Behind as u8 },
             Ordering::SeqCst,

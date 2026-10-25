@@ -15,8 +15,6 @@
 //! heavyweight harness to run deterministically, which this refusal list preserves. The disabled
 //! exec functions remain in the contract for the custody-model redesign.
 use dwow_contract_test_harness::harness::StablecoinHarness;
-use dwow_sdk::crypto::pasta_prelude::{Field, PrimeField};
-use dwow_sdk::pasta::pallas;
 use dwow_stablecoin_contract::StablecoinFunction;
 
 use super::helpers::mk_ep_rejecting_naming;
@@ -57,17 +55,19 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
             refusal("mint_stable_disabled", StablecoinFunction::MintStableV1),
             refusal("liquidate_disabled", StablecoinFunction::LiquidateV1),
             refusal("redeem_disabled", StablecoinFunction::RedeemStableV1),
-            // The negative twin at chain level: `VerifyCoverageV1` is read-only and enabled, so it
-            // must pass the custody guard and fail on its own rule — no report for the series —
-            // with `CoverageNotVerified` (Custom(24)), never `Custom(32)`.
+            // The negative twin at chain level: `GovernanceReportV1` is enabled, so it must pass
+            // the custody guard and fail on its own rule — with no params its decoder refuses —
+            // never with `Custom(32)`. The needle is the decoder's own error, not the guard's.
             mk_ep_rejecting_naming(
-                "verify_coverage_not_caught_by_the_custody_guard",
+                "governance_report_not_caught_by_the_custody_guard",
                 false,
-                &["ContractError(Custom(24))"],
+                &["ContractError(IoError"],
                 Box::new(|| {
-                    let mut call_data = vec![StablecoinFunction::VerifyCoverageV1 as u8];
-                    call_data.extend_from_slice(&pallas::Base::zero().to_repr());
-                    Ok(EndpointResult { children: vec![], call_data, proofs: vec![] })
+                    Ok(EndpointResult {
+                        children: vec![],
+                        call_data: vec![StablecoinFunction::GovernanceReportV1 as u8],
+                        proofs: vec![],
+                    })
                 }),
             ),
         ],

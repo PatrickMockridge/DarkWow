@@ -231,7 +231,8 @@ impl DwowNode {
         // Store template, height and recipient as ONE value for the submit handler (`OBL-C43`/`OBL-C54`):
         // three separate assignments let a submit observe a new template with the previous round's
         // recipient or height.
-        self.mining_state
+        let template_generation = self
+            .mining_state
             .store_template(template.clone(), chain_state.get_height(), config)
             .await;
 
@@ -245,7 +246,9 @@ impl DwowNode {
             lock.as_ref().unwrap().clone()
         };
 
-        let job_id = format!("linear-job-{}", template.height);
+        // OBL-C54: the job id names the publication generation, so a submit for a replaced
+        // template is refused as stale instead of being judged against the newer blob.
+        let job_id = format!("linear-job-{}-{}", template.height, template_generation);
         let randomx_key = dwow_chain::Miner::derive_key_from_height(template.height);
         let seed_hash = hex::encode(randomx_key);
 
@@ -429,13 +432,17 @@ impl DwowNode {
             return miner_status_response(id, "stale")
         }
 
-        // Validate job height
+        // Validate job height and publication generation (OBL-C54). The job id is
+        // `linear-job-<height>-<generation>`; a submit that names an older generation is stale.
         let current_height = chain_state.get_height();
-        let submitted_height: BlockHeight = job_id
-            .trim_start_matches("linear-job-")
-            .parse()
+        let mut job_parts = job_id.trim_start_matches("linear-job-").split('-');
+        let submitted_height: BlockHeight = job_parts
+            .next()
+            .and_then(|part| part.parse::<u64>().ok())
             .map(BlockHeight::new)
-            .unwrap_or(current_height.succ());
+            .unwrap_or_else(|| current_height.succ());
+        let submitted_generation: Option<u64> =
+            job_parts.next().and_then(|part| part.parse::<u64>().ok());
 
         if submitted_height != current_height.succ() {
             info!(
@@ -478,7 +485,24 @@ impl DwowNode {
         //
         // Cloned rather than held: the guard must not live across the awaits below.
         let active = self.mining_state.active_template.lock().await.clone();
-        let template = active.as_ref().map(|active| active.template.clone());
+        // OBL-C54: a submit for a template a concurrent login has replaced is stale. Judging it
+        // against the newer template pairs one round's nonce with another round's blob.
+        let Some(active_ref) = active.as_ref() else {
+            info!(
+                target: "dwowd::rpc::rpc_stratum::stratum_submit",
+                "[RPC-STRATUM] Stale: no active template for job {job_id}"
+            );
+            return miner_status_response(id, "stale")
+        };
+        if submitted_generation != Some(active_ref.generation) {
+            info!(
+                target: "dwowd::rpc::rpc_stratum::stratum_submit",
+                "[RPC-STRATUM] Stale: job generation {:?} != active {}",
+                submitted_generation, active_ref.generation
+            );
+            return miner_status_response(id, "stale")
+        }
+        let template = Some(active_ref.template.clone());
         let template_timestamp = template.as_ref().map(|t| t.timestamp).unwrap_or(now);
         // Since b6bf44f79 the coinbase is a plaintext contract call — no ZK
         // proof rides in the template; only the pre-built call data is needed.

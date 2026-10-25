@@ -245,6 +245,10 @@ pub struct ActiveTemplate {
     /// The recipient the template's coinbase pays. Deliberately **not** an `Option`: a published template
     /// always has a recipient, so "template without recipient" is not a state this type can hold.
     pub recipient_config: LinearMinerRewardsRecipientConfig,
+    /// Monotonic publication id (`OBL-C54`). The stratum job id carries it, and a submit is refused as
+    /// stale if it names a generation the active template is not — a concurrent login that replaced the
+    /// template can no longer have the older miner's solution judged against the newer blob.
+    pub generation: u64,
 }
 
 /// Block production state shared between stratum, merge-mining, and miner RPC.
@@ -254,6 +258,14 @@ pub struct MiningState {
     /// The template currently offered to miners, or `None` before the first login. Written only through
     /// [`MiningState::store_template`], so the three parts cannot be published out of step.
     pub active_template: Mutex<Option<ActiveTemplate>>,
+    /// Publication counter for [`ActiveTemplate::generation`] (`OBL-C54`). Incremented by the sole
+    /// writer, `store_template`, and copied into the active template.
+    pub template_generation: AtomicU64,
+    /// Serializes the sync-state check and the mining act against a sync-state transition
+    /// (`OBL-C56`). The miner holds it from its CaughtUp re-check through block acceptance; the
+    /// consensus task holds it while storing Behind, so a transition cannot land in the window
+    /// between the check and the accept.
+    pub mining_gate: Arc<Mutex<()>>,
     /// Publisher for pushing stratum job notifications to miners
     pub linear_stratum_publisher: Mutex<Option<PublisherPtr<JsonNotification>>>,
     /// Serializes block submission to prevent concurrent RandomX VM access
@@ -286,6 +298,8 @@ impl MiningState {
         Self {
             last_block_time: LastBlockTime::new(),
             active_template: Mutex::new(None),
+            template_generation: AtomicU64::new(0),
+            mining_gate: Arc::new(Mutex::new(())),
             linear_stratum_publisher: Mutex::new(None),
             linear_submit_lock: Mutex::new(()),
             linear_genesis_hash: Mutex::new(None),
@@ -311,8 +325,18 @@ impl MiningState {
         template: crate::registry::model::LinearBlockTemplate,
         height: BlockHeight,
         recipient_config: LinearMinerRewardsRecipientConfig,
-    ) {
-        *self.active_template.lock().await = Some(ActiveTemplate { template, height, recipient_config });
+    ) -> u64 {
+        let generation = self
+            .template_generation
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            .saturating_add(1);
+        *self.active_template.lock().await = Some(ActiveTemplate {
+            template,
+            height,
+            recipient_config,
+            generation,
+        });
+        generation
     }
 }
 
@@ -1498,6 +1522,17 @@ async fn miner_task(node: DwowNodePtr) -> Result<()> {
             last_logged_sync_state = SyncState::CaughtUp;
         }
 
+        // OBL-C56: hold the mining gate from the CaughtUp re-check through block acceptance.
+        // The consensus task takes the same gate while storing Behind, so a transition cannot
+        // land in the window between the check and the accept. The fast-path check above keeps
+        // the common paused case from taking the lock.
+        let _mining_gate = node.mining_state.mining_gate.lock().await;
+        if SyncState::load(&node.mining_state.sync_state) != SyncState::CaughtUp {
+            drop(_mining_gate);
+            smol::Timer::after(std::time::Duration::from_secs(1)).await;
+            continue;
+        }
+
         let chain_state = match &node.chain_state {
             Some(cs) => cs.clone(),
             None => {
@@ -1839,6 +1874,9 @@ async fn miner_task(node: DwowNodePtr) -> Result<()> {
         // Drop VM reference after block acceptance — avoids concurrent
         // RandomX access if a P2P block arrives during the next iteration.
         drop(vm);
+        // OBL-C56: the check-and-accept is complete; release the sync-state gate before the
+        // outcome logging and the inter-block sleep.
+        drop(_mining_gate);
         match apply_result {
             Ok(outcome) => {
                 // Logging-only hash — a failure here must not kill the miner task.
@@ -2032,6 +2070,75 @@ mod active_template_tests {
             published.recipient_config.recipient, second.recipient,
             "OBL-C43/C54: so must the recipient — a next-round template paid to the previous round's \
              recipient is the outcome this bundles away"
+        );
+    }
+
+    /// OBL-C54 control: every publication has a distinct generation, and the active template
+    /// carries the latest one. The stratum job id names it, so a submit for a replaced template is
+    /// refused as stale instead of being judged against the newer blob.
+    #[test]
+    fn template_generation_distinguishes_replaced_templates() {
+        let state = MiningState::new(std::sync::Arc::new(AtomicU8::new(SyncState::CaughtUp as u8)));
+        let path = keys_file();
+        let mgr = crate::accounts::AccountManager::open(&path, Network::Testnet, "node0")
+            .expect("open test keys");
+        let _ = std::fs::remove_file(&path);
+        let recipient = LinearMinerRewardsRecipientConfig::from_account(&mgr, BlockHeight::new(1))
+            .map_err(|_| "from_account failed at height 1")
+            .expect("recipient at height 1");
+
+        let first = smol::block_on(state.store_template(
+            template(0x31),
+            BlockHeight::new(1),
+            recipient.clone(),
+        ));
+        let second = smol::block_on(state.store_template(
+            template(0x32),
+            BlockHeight::new(1),
+            recipient,
+        ));
+        assert_ne!(first, second, "each publication must have its own generation");
+        let guard = smol::block_on(state.active_template.lock());
+        let published = guard.as_ref().expect("a published template");
+        assert_eq!(
+            published.generation, second,
+            "the active template must carry the latest generation"
+        );
+        assert_ne!(
+            published.generation, first,
+            "a submit naming the replaced generation must be distinguishable from the active one"
+        );
+    }
+
+    /// OBL-C56 control: a sync-state transition waits while the mining act holds the gate, and
+    /// proceeds once the act completes. This is the mutex the two paths share; the miner holds it
+    /// from the CaughtUp re-check through acceptance.
+    #[test]
+    fn mining_gate_serializes_a_transition_with_the_mining_act() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let state = MiningState::new(std::sync::Arc::new(AtomicU8::new(SyncState::CaughtUp as u8)));
+        let gate = state.mining_gate.clone();
+        let mining_act = smol::block_on(gate.lock());
+
+        let transitioned = std::sync::Arc::new(AtomicBool::new(false));
+        let flag = transitioned.clone();
+        let transition_gate = gate.clone();
+        let transition = std::thread::spawn(move || {
+            let _gate = smol::block_on(transition_gate.lock());
+            flag.store(true, Ordering::SeqCst);
+        });
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        assert!(
+            !transitioned.load(Ordering::SeqCst),
+            "a transition must wait while the mining act holds the gate"
+        );
+        drop(mining_act);
+        transition.join().expect("transition thread");
+        assert!(
+            transitioned.load(Ordering::SeqCst),
+            "the transition must proceed once the mining act completes"
         );
     }
 }
