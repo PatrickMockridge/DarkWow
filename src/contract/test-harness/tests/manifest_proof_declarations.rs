@@ -300,8 +300,11 @@ const UNDECLARED_PROOF_CIRCUIT: &[(&str, &str, &str)] = &[
 /// `OBL-C91` (B): a `[[circuits]]` name no `proof/*.zk` declares — the instruction cannot be built
 /// because the circuit was never written. `(contract, circuit, why)`.
 const DECLARED_WITHOUT_CIRCUIT: &[(&str, &str, &str)] = &[
-    ("stablecoin", "RedeemStableV1", "no `proof/*.zk` declares any `RedeemStable*`; the arm pushes the namespace and the manifest declares it, so the decision is whether the function gets the circuit or the manifest stops claiming one — that decision is the work, and repairing the declaration without making it would bury it (OBL-C91)"),
-    ("labor_market", "CreateJobWithCapabilityV2", "no `proof/*.zk` declares it; its sibling `CreateJobV2` does — same decision owed as `stablecoin`'s (OBL-C91)"),
+    // `stablecoin`'s `RedeemStableV1` entry was removed 2026-10-26 with the manifest declaration it
+    // excused: the function was already refused before any state read (`Custom(32)`,
+    // `CustodyModelUnavailable`) and no `proof/*.zk` ever declared the circuit, so there is nothing
+    // left for the exception to name. A ratchet entry outlives its defect only by accident.
+    ("labor_market", "CreateJobWithCapabilityV2", "no `proof/*.zk` declares it; its sibling `CreateJobV2` does — the same shape of decision `stablecoin` took above (refuse the arm or supply the circuit) is owed here (OBL-C91)"),
     ("labor_market", "CreateJobWithMilestonesAndCapabilityV2", "no `proof/*.zk` declares it — same decision owed (OBL-C91)"),
 ];
 

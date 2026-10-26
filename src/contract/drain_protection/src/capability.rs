@@ -25,8 +25,13 @@
 //!
 //! ## Capabilities
 //!
-//! - Member: can vote, propose, exit with haircut
+//! - Member: can vote, propose, transfer
 //! - Guardian: can pause/unpause, trigger emergency lock
+//!
+//! `ExitV1` (0x04) has **no** `Action` here: the arm is refused at the dispatch pre-check
+//! (`Custom(24)`, `src/contract/drain_protection/src/entrypoint.rs`), so a descriptor entry for it
+//! would advertise a capability the contract will not honour. The absent entry is deliberate; a
+//! reader adding it back re-opens `OBL-C102`.
 //!
 //! Capability type discriminants:
 //! - 0x00: Member (proposer/voter)
@@ -92,18 +97,9 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             consumes: vec![],
             produces: vec![],
         },
-        // ExitV1 (0x04): Member exits with haircut
-        Action {
-            function_id: 0x04,
-            name: "Exit".into(),
-            contract_id,
-            description: "Exit the fund with a haircut penalty".into(),
-            requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_MEMBER, b"instance").expect("valid CapabilityId derivation"),
-            ]),
-            consumes: vec![],
-            produces: vec![],
-        },
+        // ExitV1 (0x04) is refused before any state read, so it has no `Action` — see the module
+        // header. Nothing in this crate consumes `descriptor`, which is how the entry outlived the
+        // refusal; the contract's own `exit_is_refused_before_any_state_read` control carries it.
         // TransferV1 (0x05): Transfer funds (rate-limited)
         Action {
             function_id: 0x05,
