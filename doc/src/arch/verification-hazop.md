@@ -40,7 +40,6 @@ lapsed bound fails the register gate; it is not re-dated silently.
 
 | Cycle | Owner | Bound | Rows |
 |---|---|---|---|
-| pow-hash-determinism | project lead | by:2026-11-09 | OBL-C279 |
 
 | ID | Status | Defect | Locus | Control | Risk |
 |---|---|---|---|---|---|
@@ -80,7 +79,7 @@ lapsed bound fails the register gate; it is not re-dated silently.
 | OBL-Z3 | CLOSED | The domain gate's role rule requires a derivation whose name declares a purpose to carry that purpose's domain (by role, not a conventional value); the self-test plants a `commitment = poseidon_hash(DOMAIN_NULLIFIER, …)` mismatch and requires it named. Inline `witness_base(N)` tokens have no name and remain under the presence rule. Run: `check-circuit-domain-separation.sh --self-test` PASS; live PASS (4 adjudicated). | `script/circuit_domain_separation.py:role_of` | `scripts/check-circuit-domain-separation.sh` | H/P |
 | OBL-C277 | CLOSED | Bulk-memory ops were flat-priced (8 gas at any length), so a deployed contract looped them and a valid block could run for days. `BulkMemoryMetering` now charges `len >> 2` out of the same metering points before `memory.fill`/`copy`/`init` and traps with the exhausted flag set. No artifact byte or pin moved. Run: `bulk_memory_is_charged_by_length ... ok` (unmetered arm fills, metered arm traps before the first byte); planted-defect run FAILED on that assertion. | `src/runtime/bulk_metering.rs:BulkMemoryMetering` | `bulk_memory_is_charged_by_length` | H/P |
 | OBL-C278 | CLOSED | `RedeemStableV1`'s metadata arm returned a 0-byte buffer, which the host reads as the documented rejection signal, so the call died at `metadata-decode-zkp` and the arm's `CustodyModelUnavailable` refusal (`OBL-C92`) was unreachable through `accept_block`. It now publishes an encoded empty vector — `OBL-C77`'s shape, as `tender`'s `close_tender` did. Run: `test_heavyweight_stablecoin ... ok`; before: `redeem_disabled` named `EMPTY metadata`. | `src/contract/stablecoin/src/entrypoint.rs:get_metadata` | `test_heavyweight_stablecoin` | M/D |
-| OBL-C279 | OPEN | `connect_block` rejected a block whose own mined hash met its target (replay height 15, target 1108606123: mined `7260e707…`, validator `b2490891…`, `InvalidPoW`). The next run mined the identical hash and passed, so it is not a function of the block; cause unknown, and a consensus-identity mismatch is not a flake. | `src/linear/src/chain_state.rs:connect_block` | `plan: rehash one block via both VMs and across process runs; `Miner::create_vm` leaves JIT on where validators mask it — measure that too` | C/P |
+| OBL-C279 | DEFERRED | `connect_block` once rejected a block whose own mined hash met its target (height 15; both hashes are in `485f0bc76a`). Not reproduced in 7 more runs; preimage, rotation key, JIT/interpreter and cache rebuild are excluded, leaving a corrupted VM in that process or a host fault. Not genesis-critical: genesis PoW is target-MAX; pin and determinism pass. | `src/linear/src/chain_state.rs:connect_block` | `deferred:next-release — plan: log the validator's key and VM, then repeat; the harness logs blob digest, mined hash and candidate-key hashes` | C/P |
 
 ## Non-defects
 
