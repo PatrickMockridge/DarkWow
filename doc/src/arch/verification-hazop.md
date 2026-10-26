@@ -40,6 +40,7 @@ lapsed bound fails the register gate; it is not re-dated silently.
 
 | Cycle | Owner | Bound | Rows |
 |---|---|---|---|
+| wasm-costing | project lead | by:2026-11-09 | OBL-C277 |
 
 | ID | Status | Defect | Locus | Control | Risk |
 |---|---|---|---|---|---|
@@ -77,6 +78,7 @@ lapsed bound fails the register gate; it is not re-dated silently.
 | OBL-Z12 | CLOSED | The Lean `qr_unique` theorem gives quotient/remainder uniqueness over integers; a circuit proves it over field residues unless its operands are range-checked. The known quotient circuits (prove_coverage, governance_report, accrue_interest) do range-check every operand, and `script/quotient_bounds.txt` pins them; `check-circuit-quotient-bounds.sh` fails if a listed operand loses its check, and a new quotient circuit joins the manifest in the same change. Run: `--self-test` PASS; live PASS. | `script/quotient_bounds.txt` | `scripts/check-circuit-quotient-bounds.sh` | H/P |
 | OBL-Z23 | CLOSED | 117 dead values were adjudicated while the dead-value gate was report-only, so a newly introduced value failed nothing. The 117 are declared in `script/circuit_dead_value_exceptions.txt` as a frozen baseline, and the gate now blocks: a new value is undeclared and fails the umbrella and the pre-commit hook. Run: `check-circuit-dead-values.sh --self-test` OK, and the blocking gate `PASS` (177 files walked). | `script/circuit_dead_values.py` | `scripts/check-circuit-dead-values.sh` | M/D |
 | OBL-Z3 | CLOSED | The domain gate's role rule requires a derivation whose name declares a purpose to carry that purpose's domain (by role, not a conventional value); the self-test plants a `commitment = poseidon_hash(DOMAIN_NULLIFIER, …)` mismatch and requires it named. Inline `witness_base(N)` tokens have no name and remain under the presence rule. Run: `check-circuit-domain-separation.sh --self-test` PASS; live PASS (4 adjudicated). | `script/circuit_domain_separation.py:role_of` | `scripts/check-circuit-domain-separation.sh` | H/P |
+| OBL-C277 | OPEN | Bulk-memory ops are flat-priced: `MemoryFill`/`MemoryCopy`/`MemoryInit` cost 8 gas at any length, so a deployed contract loops them inside the 400M-gas call budget and a block can run for days. Gas prices instructions, not bytes, not `OBL-C19`'s wall-clock bound. All 32 artifacts carry these ops; refusing them needs a rebuild and a genesis re-roll. | `src/runtime/vm_runtime.rs:cost_function` | `plan: price bulk ops by length in middleware, or rebuild the 32 artifacts without bulk-memory and refuse 0xFC at load; a looped-fill module is the failing-before control` | H/P |
 
 ## Non-defects
 
