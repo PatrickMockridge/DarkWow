@@ -780,6 +780,85 @@ mod tests {
         randomx::RandomXVM::new(flags, Some(cache), None).expect("Failed to create VM")
     }
 
+    /// `OBL-C279`: one block through every VM construction path this tree has.
+    ///
+    /// The paths do not agree on flags. `Miner::create_vm` and `verify_uncle_proof` use
+    /// `get_recommended_flags()` as it comes (JIT on); `CChainState::get_vm` and every validator
+    /// mask JIT off, and so does the heavyweight harness. RandomX specifies that the JIT and the
+    /// interpreter produce identical hashes, which is what makes a JIT miner and a non-JIT
+    /// validator compatible at all — this test is the falsifier for that assumption on this build.
+    ///
+    /// It prints the flag words and one hash so two *separate* `cargo test` processes can be
+    /// compared: the `OBL-C279` divergence was observed across processes, not within one, and a
+    /// hash that matches in-process but not across runs would point at construction, not at the
+    /// blob.
+    #[test]
+    fn randomx_construction_paths_agree_on_the_same_block() {
+        fn vm(flags: randomx::RandomXFlags, key: &[u8; 32]) -> randomx::RandomXVM {
+            let cache = randomx::RandomXCache::new(flags, key).expect("RandomX cache");
+            randomx::RandomXVM::new(flags, Some(cache), None).expect("RandomX VM")
+        }
+        fn digest(vm: &randomx::RandomXVM, blob: &[u8]) -> [u8; 32] {
+            let h = vm.calculate_hash(blob).expect("RandomX hash");
+            h.get(..32).expect("32 bytes").try_into().expect("32 bytes")
+        }
+
+        let height = BlockHeight::new(15);
+        let key = crate::Miner::derive_key_from_height(height);
+        let base = BlockHeader {
+            version: BlockVersion::CURRENT,
+            previous: blake3::hash(b"previous"),
+            merkle_root: blake3::hash(b"transactions"),
+            timestamp: BlockTimestamp::new(0),
+            target: BlockTarget::new(1_108_606_123),
+            nonce: 0,
+            height,
+            uncle_merkle_root: [0u8; 32],
+            total_reward: BlockReward::ZERO,
+            randomx_key: key,
+            miner: [0u8; 32],
+            commitment_merkle_root: [0u8; 32],
+            nullifier_root: [0u8; 32],
+            anchor_tx_id: [0u8; 32],
+            anchor_monero_height: MoneroBlockHeight::new(0),
+            anchor_monero_hash: [0u8; 32],
+            finality_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
+            pow_source: PowSource::Native,
+            anchor_owner: [0u8; 32],
+            caribina_anchor: None,
+        };
+
+        let recommended = randomx::RandomXFlags::get_recommended_flags();
+        let masked = recommended & !randomx::RandomXFlags::JIT;
+        eprintln!("OBL-C279 flags recommended={recommended:?} masked={masked:?}");
+        let vm_recommended = vm(recommended, &key);
+        let vm_masked = vm(masked, &key);
+        let vm_miner = crate::Miner::create_vm(&key).expect("miner VM");
+
+        let mut first = None;
+        for nonce in [0u32, 1, 2, 42, 1000] {
+            let mut header = base.clone();
+            header.nonce = nonce;
+            let blob = header.to_mining_blob();
+            let a = digest(&vm_recommended, &blob);
+            let b = digest(&vm_masked, &blob);
+            let c = digest(&vm_miner, &blob);
+            assert_eq!(a, b, "recommended-flags and masked VMs disagree at nonce {nonce}");
+            assert_eq!(a, c, "miner VM and masked VM disagree at nonce {nonce}");
+            assert_eq!(a, digest(&vm_recommended, &blob),
+                "the same VM returned a different hash for the same blob at nonce {nonce}");
+            first.get_or_insert(a);
+        }
+        let first = first.expect("at least one nonce");
+        eprintln!(
+            "OBL-C279 height {} key {} hash {}",
+            height.get(),
+            blake3::hash(&key),
+            blake3::Hash::from_bytes(first),
+        );
+    }
+
     #[test]
     fn test_build_uncle_merkle_empty() {
         let (root, proofs) = build_uncle_merkle(&[]);
