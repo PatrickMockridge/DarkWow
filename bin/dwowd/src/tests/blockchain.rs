@@ -816,6 +816,35 @@ impl<'c> HeavyweightBlock<'c> {
             ));
         }
 
+        // `OBL-C279`: the same block hashed under the keys a wrong-VM bug could plausibly have
+        // used. Opt-in by height (`DWOW_POW_DIAG_HEIGHT=<h>`), because each candidate costs a
+        // 256 MB cache. If a validator's rejected hash ever equals one of these, the cause is a
+        // key mix-up and the label says which; if it equals none, the key is excluded.
+        if std::env::var("DWOW_POW_DIAG_HEIGHT").ok().and_then(|v| v.parse::<u64>().ok())
+            == Some(self.height.get())
+        {
+            let h = self.height.get();
+            let candidates = [
+                ("prev", dwow_chain::Miner::derive_key_from_height(BlockHeight::new(h.saturating_sub(1)))),
+                ("next", dwow_chain::Miner::derive_key_from_height(BlockHeight::new(h + 1))),
+                ("zero", [0u8; 32]),
+                ("be-height", *blake3::hash(&h.to_be_bytes()).as_bytes()),
+            ];
+            let flags = randomx::RandomXFlags::get_recommended_flags()
+                & !randomx::RandomXFlags::JIT;
+            for (label, key) in candidates {
+                let Ok(cache) = randomx::RandomXCache::new(flags, &key) else { continue };
+                let Ok(candidate_vm) = randomx::RandomXVM::new(flags, Some(cache), None) else {
+                    continue
+                };
+                let Ok(hash) = block.hash_with_vm(&candidate_vm) else { continue };
+                self.chain.log(&format!(
+                    "[blockchain] OBL-C279 height {} candidate {label} hash {hash}",
+                    self.height
+                ));
+            }
+        }
+
         self.chain.log("[blockchain] submitting to accept_block...");
         let t0 = std::time::Instant::now();
         let outcome = crate::block_acceptor::accept_block(
