@@ -41,6 +41,7 @@ lapsed bound fails the register gate; it is not re-dated silently.
 | Cycle | Owner | Bound | Rows |
 |---|---|---|---|
 | wasm-costing | project lead | by:2026-11-09 | OBL-C277 |
+| pow-hash-determinism | project lead | by:2026-11-09 | OBL-C279 |
 
 | ID | Status | Defect | Locus | Control | Risk |
 |---|---|---|---|---|---|
@@ -80,6 +81,7 @@ lapsed bound fails the register gate; it is not re-dated silently.
 | OBL-Z3 | CLOSED | The domain gate's role rule requires a derivation whose name declares a purpose to carry that purpose's domain (by role, not a conventional value); the self-test plants a `commitment = poseidon_hash(DOMAIN_NULLIFIER, …)` mismatch and requires it named. Inline `witness_base(N)` tokens have no name and remain under the presence rule. Run: `check-circuit-domain-separation.sh --self-test` PASS; live PASS (4 adjudicated). | `script/circuit_domain_separation.py:role_of` | `scripts/check-circuit-domain-separation.sh` | H/P |
 | OBL-C277 | OPEN | Bulk-memory ops are flat-priced: `MemoryFill`/`MemoryCopy`/`MemoryInit` cost 8 gas at any length, so a deployed contract loops them inside the 400M-gas call budget and a block can run for days. Gas prices instructions, not bytes, not `OBL-C19`'s wall-clock bound. All 32 artifacts carry these ops; refusing them needs a rebuild and a genesis re-roll. | `src/runtime/vm_runtime.rs:cost_function` | `plan: price bulk ops by length in middleware, or rebuild the 32 artifacts without bulk-memory and refuse 0xFC at load; a looped-fill module is the failing-before control` | H/P |
 | OBL-C278 | CLOSED | `RedeemStableV1`'s metadata arm returned a 0-byte buffer, which the host reads as the documented rejection signal, so the call died at `metadata-decode-zkp` and the arm's `CustodyModelUnavailable` refusal (`OBL-C92`) was unreachable through `accept_block`. It now publishes an encoded empty vector — `OBL-C77`'s shape, as `tender`'s `close_tender` did. Run: `test_heavyweight_stablecoin ... ok`; before: `redeem_disabled` named `EMPTY metadata`. | `src/contract/stablecoin/src/entrypoint.rs:get_metadata` | `test_heavyweight_stablecoin` | M/D |
+| OBL-C279 | OPEN | `connect_block` rejected a block whose own mined hash met its target (replay height 15, target 1108606123: mined `7260e707…`, validator `b2490891…`, `InvalidPoW`). The next run mined the identical hash and passed, so it is not a function of the block; cause unknown, and a consensus-identity mismatch is not a flake. | `src/linear/src/chain_state.rs:connect_block` | `plan: rehash one block via both VMs and across process runs; `Miner::create_vm` leaves JIT on where validators mask it — measure that too` | C/P |
 
 ## Non-defects
 

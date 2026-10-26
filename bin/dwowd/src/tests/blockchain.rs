@@ -798,6 +798,18 @@ impl<'c> HeavyweightBlock<'c> {
         if target < BlockTarget::MAX {
             block.header.nonce = mine_test_nonce(&block, &vm, target)?;
         }
+        // Diagnostics for a PoW failure: the mined header's hash as the *mining* VM sees it, and
+        // the target it was checked against. A validator that reports InvalidPoW while these agree
+        // is hashing a different preimage or using a different VM, not rejecting the nonce.
+        {
+            let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
+            let h = block.hash_with_vm(&guard)
+                .map_err(|e| dwow_core::Error::Custom(format!("hashing the mined block: {e}")))?;
+            self.chain.log(&format!(
+                "[blockchain] height {} target {} nonce {} mined hash {}",
+                self.height, target.get(), block.header.nonce, h
+            ));
+        }
 
         self.chain.log("[blockchain] submitting to accept_block...");
         let t0 = std::time::Instant::now();
