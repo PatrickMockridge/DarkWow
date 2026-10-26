@@ -13,10 +13,24 @@
 //! The failing-before evidence for this rewrite: the old spec failed at block 3,
 //! `fn_code=0x01`, `ContractError(Custom(35))` (`/tmp/heavy-bearer-before.out`, 734.59s).
 //!
+//! **A refusal row must carry the arm's real params, or it tests the wrong gate.** The first
+//! version of this rewrite used a selector-only call (the shape `stablecoin_spec.rs` uses for its
+//! dispatch pre-check). Here that is refused earlier: `get_metadata` decodes the arm's params, a
+//! one-byte call fails that decode, and the host rejects the call as `metadata-decode-zkp` /
+//! `EMPTY metadata` before `exec` is ever entered — so the run named the metadata gate, not
+//! `Custom(35)` (`/tmp/p2-bearer.out`, 84.34s). The params are therefore built by each arm's own
+//! `prepare` (no proving), which is what makes the metadata arm answer and leaves the exec
+//! pre-check as the first refusal.
+//!
+//! Proofs are empty on these rows because the host verifies them only after every call in the
+//! transaction has executed (`src/linear/src/execution.rs` — `verify_core_tx_with_tables` runs
+//! post-loop); a call refused at `exec` never reaches verification. The negative twins below need
+//! real proofs for the same reason: they must survive to `apply` to reach their state check.
+//!
 //! The ZK inputs carry a well-formed but arbitrary Merkle path: the circuits fold it into
 //! `merkle_root` and instance it, but no arm of this contract compares that root to anything, so
 //! the proof must be *satisfiable*, not *anchored*.
-use dwow_contract_test_harness::harness::{BearerBondHarness, ContractHarness};
+use dwow_contract_test_harness::harness::BearerBondHarness;
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
 use dwow_sdk::crypto::{ContractId, MerkleNode};
 use dwow_sdk::pasta::pallas;
@@ -52,25 +66,66 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                 ).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
             })),
-            // The three issuer-authority arms, refused at the dispatch pre-check. A selector-only
-            // call is the honest minimal call: the refusal happens before any parameter decode.
+            // The three issuer-authority arms, refused at the dispatch pre-check. The params are
+            // real (built by each arm's `prepare`) so the metadata gate answers and `exec` is the
+            // first refusal; a selector-only call dies earlier at `metadata-decode-zkp`.
             mk_ep_rejecting_naming(
                 "IssueStakeV1_refused", false, &["ContractError(Custom(35))"],
-                Box::new(|| Ok(EndpointResult {
-                    children: vec![], call_data: vec![0x00], proofs: vec![],
-                })),
+                Box::new(move || {
+                    use dwow_bearer_bond_contract::client::issue_stake::IssueStakeCallInput;
+                    let input = IssueStakeCallInput {
+                        principal: 10_000, maturity_block: 1_000, min_claim: 1,
+                        issuer_contract: ContractId::from_bytes([1u8; 32]).unwrap(),
+                        asset_id: pallas::Base::from(1u64), staker: pallas::Base::from(42u64),
+                        spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
+                        commitment_blind: pallas::Base::from(3u64),
+                        tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
+                    };
+                    let plan = h.issue_stake_prepare(input)
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let mut call_data = vec![0x00u8];
+                    call_data.extend_from_slice(&plan.params().encode());
+                    Ok(EndpointResult { children: vec![], call_data, proofs: vec![] })
+                }),
             ),
             mk_ep_rejecting_naming(
                 "RequestInterestV1_refused", false, &["ContractError(Custom(35))"],
-                Box::new(|| Ok(EndpointResult {
-                    children: vec![], call_data: vec![0x02], proofs: vec![],
-                })),
+                Box::new(move || {
+                    use dwow_bearer_bond_contract::client::request_interest::RequestInterestCallInput;
+                    let input = RequestInterestCallInput {
+                        principal: 10_000, asset_id: pallas::Base::from(1u64),
+                        spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
+                        commitment_blind: pallas::Base::from(3u64), last_claim_block: 10,
+                        maturity_block: 1_000, claim_block: 20, min_claim: 1, leaf_position: 0,
+                        merkle_path: vec![MerkleNode::new(pallas::Base::from(0u64)); 32],
+                        secret: pallas::Base::from(42u64),
+                        payment_key: pallas::Base::from(11u64),
+                        tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
+                    };
+                    let plan = h.request_interest_prepare(input)
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let mut call_data = vec![0x02u8];
+                    call_data.extend_from_slice(&plan.params().encode());
+                    Ok(EndpointResult { children: vec![], call_data, proofs: vec![] })
+                }),
             ),
             mk_ep_rejecting_naming(
                 "ProveCoverageV1_refused", false, &["ContractError(Custom(35))"],
-                Box::new(|| Ok(EndpointResult {
-                    children: vec![], call_data: vec![0x06], proofs: vec![],
-                })),
+                Box::new(move || {
+                    use dwow_bearer_bond_contract::client::prove_coverage::ProveCoverageCallInput;
+                    let input = ProveCoverageCallInput {
+                        series_asset_id: pallas::Base::from(1u64),
+                        total_outstanding: 500, total_interest_obligation: 50,
+                        reserve_amount: 100, report_block: 10,
+                        tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
+                    };
+                    let plan = h.prove_coverage_prepare(input)
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let mut call_data = vec![0x06u8];
+                    call_data.extend_from_slice(&plan.params().encode()
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
+                    Ok(EndpointResult { children: vec![], call_data, proofs: vec![] })
+                }),
             ),
             // The read-only arm is enabled; with no report it must answer `CoverageNotVerified`
             // (code 24), never the authority refusal.
@@ -146,15 +201,19 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
                 }),
             ),
+            // The coverage gate runs *before* the stake lookup (`entrypoint/mod.rs:1032`), so an
+            // adequate report names `EmergencyUnstakeNotAllowed` with no bond at all. A voided
+            // report reaches the lookup instead and answers `StakeNotFound` — measured 2026-10-26,
+            // the first version of this row expected 29 from a voided report and got 1.
             mk_ep_rejecting_naming(
-                "EmergencyUnstakeV1_without_coverage", true, &["ContractError(Custom(29))"],
+                "EmergencyUnstakeV1_coverage_adequate", true, &["ContractError(Custom(29))"],
                 Box::new(move || {
                     use dwow_bearer_bond_contract::client::emergency_unstake::{EmergencyUnstakeCallInput, EmergencyUnstakeCallOutput};
                     use dwow_bearer_bond_contract::model::CoverageReport;
                     let report = CoverageReport {
                         series_asset_id: pallas::Base::from(1u64),
                         total_outstanding: 500, total_interest_obligation: 50,
-                        reserve_amount: 100, coverage_ratio_bps: 1818, report_block: 10,
+                        reserve_amount: 10_000, coverage_ratio_bps: 181_818, report_block: 10,
                     };
                     let input = EmergencyUnstakeCallInput {
                         principal: 10000, asset_id: pallas::Base::from(1u64),

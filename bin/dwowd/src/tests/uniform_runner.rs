@@ -576,14 +576,23 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
         // Gated on a full run: under a selection there is no row here to build the control on, and
         // warning that the *contract's* replay rejection is unverified would be false — this run
         // simply did not exercise it. The narrowed-run banner already says what was skipped.
-        // Loud, not silent: §3.6 requires this control for every contract with a ZK-gated function,
-        // and a spec that cannot host it has an *unverified* replay rejection rather than a passing
-        // one. The alternative — picking a row that is expected to be rejected anyway — is the
-        // vacuity `OBL-C193` records.
+        // Loud, not silent, and it must not overclaim in either direction. The control needs a row
+        // that is both standalone-generatable and expected to succeed; when every usable success
+        // row here needs coinbase parameters, the spec-level control has nothing to build on. The
+        // alternative — picking a row that is expected to be rejected anyway — is the vacuity
+        // `OBL-C193` records, and a fabricated "verified" would be the second false claim.
+        //
+        // What the warning must say is what remains controlled: replay rejection at the block
+        // *acceptance* boundary is exercised separately, for a recorded spend nullifier in a later
+        // block and twice within one block (`chain_state`'s replay-gate tests). The per-arm second
+        // submission of *this contract's own call* is what this run does not drive.
         eprintln!(
             "WARN [{}]: §3.6 nullifier-replay control SKIPPED — no ZK endpoint is both \
-             standalone-generatable and expected to succeed, so there is nothing whose replay could \
-             be refused. This contract's replay rejection is UNVERIFIED (OBL-C193).",
+             standalone-generatable and expected to succeed (its success rows either need coinbase \
+             parameters or do not exist), so the spec-level control has nothing to build on. \
+             Replay rejection at the acceptance boundary is controlled separately (a recorded spend \
+             nullifier is refused in a later block and twice within one block); the per-arm second \
+             submission of this contract's own call is not driven here (OBL-C193).",
             spec.name
         );
     }
