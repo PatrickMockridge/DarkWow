@@ -584,6 +584,10 @@ run_gate "control: the documentation index can fail" \
 # is the citation, and this gate resolves it.
 run_gate "defect tracker (green is code + control)" \
     bash "$SCRIPT_DIR/check-defect-register.sh"
+# The same preflight the umbrella runs at the top, re-asserted as a gate so the portfolio has no
+# wired-nothing gate: at this point every finding must be decided (`scripts/check-tracker-settled.sh`).
+run_gate "verification preflight (no undecided findings)" \
+    bash "$SCRIPT_DIR/check-tracker-settled.sh"
 # The binary finding lifecycle's own controls. The preflight refuses every verification surface
 # while a finding is undecided; these prove it can refuse an OPEN row and pass a settled one. The
 # pipeline self-test exercises the C264/C268/C270 mechanisms on fixtures, without Docker.

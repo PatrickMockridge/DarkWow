@@ -85,8 +85,17 @@ def snake(v):
 
 def covered(variant, spec_text):
     """A variant is covered when its name or its snake_case form appears in the contract's spec.
-    The spec file IS the contract's test, so the whole-file scope is the test's scope."""
-    return bool(re.search(r'\b%s\b|\b%s\b' % (re.escape(variant), re.escape(snake(variant))), spec_text))
+    The spec file IS the contract's test, so the whole-file scope is the test's scope.
+
+    An endpoint row may be named `<Variant>_<case>` (e.g. `RevokeCapabilityV1_Holder`). A `\\b`
+    boundary fails there: `_` and `1` are both word characters, so `\\bV1\\b` does not match
+    `V1_Holder` — the checker reported a covered variant as a gap (identity, measured
+    2026-10-26). The guard is a leading non-identifier and a trailing non-lowercase instead.
+    """
+    for name in (variant, snake(variant)):
+        if re.search(r'(?<![A-Za-z0-9_])%s(?![a-z])' % re.escape(name), spec_text):
+            return True
+    return False
 
 def check(root):
     cdir = root / "src" / "contract"

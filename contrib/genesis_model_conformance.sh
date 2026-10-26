@@ -71,6 +71,7 @@ cd "$ROOT"
 MODEL=proofs/lean/src/DarkFi/Genesis/Ceremony.lean
 BLOCKCHAIN=src/sdk/src/blockchain.rs
 GENESIS=bin/dwowd/src/lib.rs
+EXECUTION=src/linear/src/execution.rs
 
 for f in "$MODEL" "$BLOCKCHAIN" "$GENESIS"; do
     [ -f "$f" ] || { echo "genesis_model_conformance: missing $f" >&2; exit 2; }
@@ -114,10 +115,11 @@ check "maxTarget (u32::MAX)" "$(lean_num maxTarget)" "$(grep -q 'pub const MAX: 
 echo
 
 # ---- the deployment table -------------------------------------------------------------------------
-# The Rust side: (wasm_bytes, manifest_bytes_or_empty, "Name") in genesis_contracts() order.
-# The name is the last quoted string before the closing paren of each table entry.
-rs_table=$(awk '/fn build_genesis_deployment_txs/,/^    \];/' "$GENESIS" \
-    | grep -oE ', "[A-Za-z]+"\)' | sed 's/^, "//; s/")$//')
+# The Rust side names live in `dwow_chain::execution::genesis_contracts()` — the deployment table
+# itself carries only `(wasm, manifest)` pairs and is built in that function's order. The earlier
+# parser read a `"Name"` third element the table no longer has, so it reported zero names.
+rs_table=$(awk '/pub fn genesis_contracts/,/^    \]/' "$ROOT/$EXECUTION" \
+    | grep -oE '"[A-Za-z]+"' | tr -d '"')
 rs_names=$(printf '%s\n' "$rs_table" | paste -sd, -)
 lean_names=$(grep -oE '⟨"[A-Za-z]+", (true|false)⟩' "$MODEL" | sed -E 's/⟨"([A-Za-z]+)".*/\1/' | paste -sd, -)
 check "deployment names, in order" "$lean_names" "$rs_names"

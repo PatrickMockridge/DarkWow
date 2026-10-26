@@ -14,10 +14,10 @@ by the gate as `lake build DarkFi Transcribed`, and is not reachable from `lake 
 that place in the `DarkFi` library until 2026-09-24, when a `LEAN_NUM_THREADS=4` build of that library
 exhausted this host's memory and froze the machine: a thread cap bounds how many `lean` processes run,
 not how much memory one of them uses, and kernel `decide` evaluations at this scale is where in this
-tree that difference bites — 181 of them the day it froze, 179 now. The gate builds it under
+tree that difference bites — 181 of them the day it froze, 177 now. The gate builds it under
 `scripts/lean-build.sh`, which adds the cgroup memory
 ceiling the thread cap never was. **A `lake build DarkFi` therefore does not type-check this file; the
-gate does.** `CheckAxioms.lean` imports it directly, so the axiom walk still covers all 179
+gate does.** `CheckAxioms.lean` imports it directly, so the axiom walk still covers all 177
 theorems.
 
 What is here is one `List Stmt` per circuit in `InstanceDerivation`'s vocabulary, the names the
@@ -27,28 +27,28 @@ asks whether every exposed value is *determined* by what precedes it, while the 
 accepts an exposed value that the circuit pins elsewhere (`redundant`) or that a host-side
 justification declares free (`script/circuit_free_instances.txt`).
 
-Measured: **168** of 179 circuits expose at least one value the model does not
+Measured: **166** of 177 circuits expose at least one value the model does not
 find determined in-circuit, and **11** hold. Each refuted circuit names the first such
 exposure **and the checker's class for that exposure**.
 
-**The 168 are decomposed rather than asserted, and the decomposition is the finding.** For each
+**The 166 are decomposed rather than asserted, and the decomposition is the finding.** For each
 refuted circuit the generator asks the *checker* — `classify`, the gate's own classifier — what it
 made of the exposure the model refused, and the answer is that the two rules disagree by design
 almost everywhere:
 
-* **148** of the 168 — The checker resolves it as `redundant` — pinned by another exposed
+* **147** of the 166 — The checker resolves it as `redundant` — pinned by another exposed
   determination, which the model's sequential rule does not follow.
-* **19** of the 168 — The checker resolves it as `declared-free`, from a host-side justification
+* **18** of the 166 — The checker resolves it as `declared-free`, from a host-side justification
   in `script/circuit_free_instances.txt`.
-* **1** of the 168 — The checker resolves it as `bound`, through a `constrain_equal_base` whose
+* **1** of the 166 — The checker resolves it as `bound`, through a `constrain_equal_base` whose
   determining side is a declared constant.
 
-So the model does not contradict the checker; it **refines** it, and every one of the 168 is the
+So the model does not contradict the checker; it **refines** it, and every one of the 166 is the
 checker's weaker rule or the single boundary the model note names. Two consequences a reader should
 take from this file rather than infer:
 
-* `Axioms.NoFreeInstances`' *name* is a **strict** reading this tree mostly does not meet — 168 of
-  179 circuits are refuted under it — while the property the tree actually enforces is the checker's
+* `Axioms.NoFreeInstances`' *name* is a **strict** reading this tree mostly does not meet — 166 of
+  177 circuits are refuted under it — while the property the tree actually enforces is the checker's
   four-verdict rule, whose failures are the instances `OBL-Z16` names (11 when this sentence was
   written on 2026-09-24, and re-run `scripts/check-circuit-instance-derivation.sh` for the count now —
   it is 4 as of that evening, because one site was repaired and one circuit deleted).
@@ -68,7 +68,7 @@ reason the generator is allowed to predict at all.
 One boundary in the *other* direction stays untested, stated because it would show up as a false
 positive the day a circuit meets it: a bare `constant` exposed by `constrain_instance` would fail the
 model's property, where the checker accepts a constant by declaration. No circuit in this tree exposes
-one — measured, every undetermined exposure across the 168 refutations is a witness and none is a
+one — measured, every undetermined exposure across the 166 refutations is a witness and none is a
 constant — so that direction is untested rather than settled, while the direction above is met.
 
 Not transcribed, and counted rather than dropped silently: 22 bare opcode-call statements
@@ -84,7 +84,7 @@ needs without supplying the bridge. See `OBL-T7` in `doc/src/arch/verification-h
 2026-09-24 this module exceeded 24 GiB in a single `lean` process and was OOM-killed at both a 16 GiB
 and a 24 GiB ceiling, so no `.olean` had ever been produced and the kernel had closed none of the
 verdicts below. Extracting `boundWalk`'s `assign` arm into `bindAssign` removed it: the whole
-transcription — all 179 verdicts as it now stands, 181 when that was measured — builds in
+transcription — all 177 verdicts as it now stands, 181 when that was measured — builds in
 **~71 s and 743 MB** as one module. **Which circuits were
 expensive, and why, is not established** — see `bindAssign`'s docstring, which carries the controlled
 comparison that justifies the change and the rival explanations it does not settle, and retracts the
@@ -100,7 +100,7 @@ open Circuits.InstanceDerivation
 
 /-! ===== The circuits, in source order =====
 
-179 circuits, 2747 statements transcribed; **11** satisfy the model's property and **168** do not, the latter named by the
+177 circuits, 2735 statements transcribed; **11** satisfy the model's property and **166** do not, the latter named by the
 first undetermined exposure in each, with the checker's class for that exposure named beneath it.
 -/
 
@@ -534,30 +534,6 @@ def attestation_attest_slash_stmts : List Stmt :=
 @[axiom_budget 0]
 theorem attestation_attest_slash_has_a_free_instance :
     ¬ NoFreeInstance attestation_attest_slash_held attestation_attest_slash_stmts := by
-  unfold NoFreeInstance
-  decide
-
-
-/-- `src/contract/attestation/proof/check_not_revoked.zk` — 2 exposure(s). -/
-
-def attestation_check_not_revoked_held : List Name := ["NULLIFIER_K", "tx_binding", "tx_commitment", "tx_nonce"]
-
-
-def attestation_check_not_revoked_stmts : List Stmt :=
-[
-  .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
-  .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
-  .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce")
-]
-
-
-/-- **The property fails** for `src/contract/attestation/proof/check_not_revoked.zk`: its first undetermined exposure is
-    `.var "tx_nonce"`, which the circuit does not bind before exposing.
-    The checker resolves it as `redundant` — pinned by another exposed determination, which the model's sequential rule does not follow. -/
-@[axiom_budget 0]
-theorem attestation_check_not_revoked_has_a_free_instance :
-    ¬ NoFreeInstance attestation_check_not_revoked_held attestation_check_not_revoked_stmts := by
   unfold NoFreeInstance
   decide
 
@@ -2267,37 +2243,6 @@ def darktoshi_dice_settle_bet_stmts : List Stmt :=
 @[axiom_budget 0]
 theorem darktoshi_dice_settle_bet_has_a_free_instance :
     ¬ NoFreeInstance darktoshi_dice_settle_bet_held darktoshi_dice_settle_bet_stmts := by
-  unfold NoFreeInstance
-  decide
-
-
-/-- `src/contract/deployooor/proof/lock.zk` — 4 exposure(s). -/
-
-def deployooor_lock_held : List Name := ["NULLIFIER_K", "deployer_secret", "public_key_x", "public_key_y", "tx_binding", "tx_commitment", "tx_nonce"]
-
-
-def deployooor_lock_stmts : List Stmt :=
-[
-  .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
-  .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
-  .assign "derived_pub" (.op "ec_mul_base" [.var "deployer_secret", .var "NULLIFIER_K"]),
-  .assign "derived_pub_x" (.op "ec_get_x" [.var "derived_pub"]),
-  .assign "derived_pub_y" (.op "ec_get_y" [.var "derived_pub"]),
-  .constrainEq (.var "derived_pub_x") (.var "public_key_x"),
-  .constrainEq (.var "derived_pub_y") (.var "public_key_y"),
-  .constrainInstance (.var "public_key_x"),
-  .constrainInstance (.var "public_key_y"),
-  .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce")
-]
-
-
-/-- **The property fails** for `src/contract/deployooor/proof/lock.zk`: its first undetermined exposure is
-    `.var "tx_nonce"`, which the circuit does not bind before exposing.
-    The checker resolves it as `redundant` — pinned by another exposed determination, which the model's sequential rule does not follow. -/
-@[axiom_budget 0]
-theorem deployooor_lock_has_a_free_instance :
-    ¬ NoFreeInstance deployooor_lock_held deployooor_lock_stmts := by
   unfold NoFreeInstance
   decide
 
@@ -4177,13 +4122,16 @@ theorem lottery_reveal_ticket_has_a_free_instance :
 
 /-- `src/contract/multisig/proof/create_group.zk` — 5 exposure(s). -/
 
-def multisig_create_group_held : List Name := ["group_id", "threshold", "total_keys", "tx_commitment", "tx_nonce"]
+def multisig_create_group_held : List Name := ["first_commitment", "group_id", "threshold", "total_keys", "tx_commitment", "tx_nonce"]
 
 
 def multisig_create_group_stmts : List Stmt :=
 [
   .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
+  .assign "DOMAIN_GROUP_ID" (.op "witness_base" [.lit 14]),
   .rangeCheck 64 (.var "threshold"),
+  .assign "derived_group_id" (.op "poseidon_hash" [.var "DOMAIN_GROUP_ID", .var "first_commitment", .var "threshold", .var "total_keys"]),
+  .constrainEq (.var "derived_group_id") (.var "group_id"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "group_id"),
   .constrainInstance (.var "threshold"),
@@ -4194,8 +4142,8 @@ def multisig_create_group_stmts : List Stmt :=
 
 
 /-- **The property fails** for `src/contract/multisig/proof/create_group.zk`: its first undetermined exposure is
-    `.var "group_id"`, which the circuit does not bind before exposing.
-    The checker resolves it as `declared-free`, from a host-side justification in `script/circuit_free_instances.txt`. -/
+    `.var "threshold"`, which the circuit does not bind before exposing.
+    The checker resolves it as `redundant` — pinned by another exposed determination, which the model's sequential rule does not follow. -/
 @[axiom_budget 0]
 theorem multisig_create_group_has_a_free_instance :
     ¬ NoFreeInstance multisig_create_group_held multisig_create_group_stmts := by
@@ -5156,7 +5104,7 @@ def purse_balance_stmts : List Stmt :=
   .constrainInstance (.var "derived_purse_id"),
   .assign "derived_owner" (.op "poseidon_hash" [.var "DOMAIN_SIGNATURE_SECRET", .var "owner_secret"]),
   .constrainEq (.var "derived_owner") (.var "owner_pub"),
-  .assign "purse_leaf" (.op "poseidon_hash" [.var "DOMAIN_MERKLE_LEAF", .var "purse_id", .var "balance", .var "state_nonce", .var "owner_pub"]),
+  .assign "purse_leaf" (.op "poseidon_hash" [.var "DOMAIN_MERKLE_LEAF", .var "purse_id", .var "balance", .var "state_nonce", .var "owner_pub", .var "asset_id"]),
   .assign "root" (.op "merkle_root" [.var "leaf_pos", .var "path", .var "purse_leaf"]),
   .constrainEq (.var "root") (.var "expected_root"),
   .constrainInstance (.var "expected_root"),
@@ -5206,7 +5154,7 @@ def purse_deposit_stmts : List Stmt :=
   .assign "nf_circuit" (.op "poseidon_hash" [.var "DOMAIN_NULLIFIER", .var "owner_secret", .var "purse_id", .var "state_nonce"]),
   .constrainEq (.var "nf_circuit") (.var "nullifier"),
   .constrainInstance (.var "nullifier"),
-  .assign "old_leaf" (.op "poseidon_hash" [.var "DOMAIN_MERKLE_LEAF", .var "purse_id", .var "old_balance", .var "state_nonce", .var "owner_pub"]),
+  .assign "old_leaf" (.op "poseidon_hash" [.var "DOMAIN_MERKLE_LEAF", .var "purse_id", .var "old_balance", .var "state_nonce", .var "owner_pub", .var "asset_id"]),
   .assign "root" (.op "merkle_root" [.var "leaf_pos", .var "path", .var "old_leaf"]),
   .constrainEq (.var "root") (.var "expected_root"),
   .constrainInstance (.var "expected_root"),
@@ -5232,7 +5180,7 @@ def purse_deposit_stmts : List Stmt :=
   .assign "computed_new" (.op "base_add" [.var "old_balance", .var "deposit_amount"]),
   .constrainEq (.var "computed_new") (.var "new_balance"),
   .assign "new_nonce" (.op "base_add" [.var "state_nonce", .var "ONE"]),
-  .assign "new_leaf_circuit" (.op "poseidon_hash" [.var "DOMAIN_MERKLE_LEAF", .var "purse_id", .var "new_balance", .var "new_nonce", .var "owner_pub"]),
+  .assign "new_leaf_circuit" (.op "poseidon_hash" [.var "DOMAIN_MERKLE_LEAF", .var "purse_id", .var "new_balance", .var "new_nonce", .var "owner_pub", .var "asset_id"]),
   .constrainEq (.var "new_leaf_circuit") (.var "new_leaf"),
   .constrainInstance (.var "new_leaf"),
   .assign "tb_circuit" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
@@ -5279,7 +5227,7 @@ def purse_withdraw_stmts : List Stmt :=
   .assign "nf_circuit" (.op "poseidon_hash" [.var "DOMAIN_NULLIFIER", .var "owner_secret", .var "purse_id", .var "state_nonce"]),
   .constrainEq (.var "nf_circuit") (.var "nullifier"),
   .constrainInstance (.var "nullifier"),
-  .assign "old_leaf" (.op "poseidon_hash" [.var "DOMAIN_MERKLE_LEAF", .var "purse_id", .var "old_balance", .var "state_nonce", .var "owner_pub"]),
+  .assign "old_leaf" (.op "poseidon_hash" [.var "DOMAIN_MERKLE_LEAF", .var "purse_id", .var "old_balance", .var "state_nonce", .var "owner_pub", .var "asset_id"]),
   .assign "root" (.op "merkle_root" [.var "leaf_pos", .var "path", .var "old_leaf"]),
   .constrainEq (.var "root") (.var "expected_root"),
   .constrainInstance (.var "expected_root"),
@@ -5305,7 +5253,7 @@ def purse_withdraw_stmts : List Stmt :=
   .assign "computed_new" (.op "base_sub" [.var "old_balance", .var "withdraw_amount"]),
   .constrainEq (.var "computed_new") (.var "new_balance"),
   .assign "new_nonce" (.op "base_add" [.var "state_nonce", .var "ONE"]),
-  .assign "new_leaf_circuit" (.op "poseidon_hash" [.var "DOMAIN_MERKLE_LEAF", .var "purse_id", .var "new_balance", .var "new_nonce", .var "owner_pub"]),
+  .assign "new_leaf_circuit" (.op "poseidon_hash" [.var "DOMAIN_MERKLE_LEAF", .var "purse_id", .var "new_balance", .var "new_nonce", .var "owner_pub", .var "asset_id"]),
   .constrainEq (.var "new_leaf_circuit") (.var "new_leaf"),
   .constrainInstance (.var "new_leaf"),
   .assign "tb_circuit" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),

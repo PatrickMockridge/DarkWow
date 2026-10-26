@@ -332,6 +332,8 @@ a new row may not use one, and the set is hashed by the approval manifest
 | OBL-Z7 | settled |
 | OBL-Z9 | settled |
 | OBL-C266 | decision (see decisions.md) |
+| OBL-C271 | decision (see decisions.md) |
+| OBL-C272 | decision (see decisions.md) |
 | OBL-C11 | restated |
 | OBL-C113 | decision |
 | OBL-C125 | decision |
