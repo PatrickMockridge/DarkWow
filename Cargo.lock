@@ -2644,6 +2644,7 @@ dependencies = [
  "wasmer",
  "wasmer-compiler-singlepass",
  "wasmer-middlewares",
+ "wasmer-types",
  "x509-parser 0.18.1",
 ]
 

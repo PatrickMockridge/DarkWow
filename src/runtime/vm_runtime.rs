@@ -109,6 +109,29 @@ const MEMORY: &str = "memory";
 /// Gas limit for a single contract call (Single WASM instance)
 pub const GAS_LIMIT: u64 = 400_000_000;
 
+/// The compiler configuration every contract module is built with.
+///
+/// One helper, not two call sites, because the **order** is load-bearing and the chain is a
+/// security control:
+///
+/// - `Metering` first: it adds and exports the remaining-points and exhausted globals.
+/// - `BulkMemoryMetering` second (`OBL-C277`): it reads those globals and refuses to compile a
+///   module without them, and running second in the function chain also keeps its own inserted
+///   operators out of the metering accumulator.
+///
+/// `bulk_metering::tests::bulk_memory_is_charged_by_length` builds its module through this
+/// function, so removing either middleware from the chain fails that control rather than only a
+/// review.
+pub(crate) fn contract_compiler<F>(gas_limit: u64, cost_function: F) -> Compiler
+where
+    F: Fn(&Operator) -> u64 + Send + Sync + 'static,
+{
+    let mut compiler = Compiler::new();
+    compiler.push_middleware(Arc::new(Metering::new(gas_limit, cost_function)));
+    compiler.push_middleware(Arc::new(super::bulk_metering::BulkMemoryMetering::new()));
+    compiler
+}
+
 // ANCHOR: contract-section
 #[derive(Clone, Copy, PartialEq)]
 pub enum ContractSection {
@@ -493,10 +516,7 @@ impl Runtime {
                 &_ => 256,
             }
         };
-        let metering = Arc::new(Metering::new(GAS_LIMIT, cost_function));
-        let mut compiler_config = Compiler::new();
-        compiler_config.push_middleware(metering);
-        let mut store = Store::new(compiler_config);
+        let mut store = Store::new(contract_compiler(GAS_LIMIT, cost_function));
         let module = Module::new(&store, wasm_bytes)?;
 
         // Every section export the host calls must have the signature the host calls it

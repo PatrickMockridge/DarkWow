@@ -24,6 +24,9 @@
 /// Main WASM VM runtime implementation
 pub mod vm_runtime;
 
+/// Length-proportional metering for the bulk-memory operators (`OBL-C277`)
+pub mod bulk_metering;
+
 /// VM memory access (read/write)
 pub(crate) mod memory;
 
