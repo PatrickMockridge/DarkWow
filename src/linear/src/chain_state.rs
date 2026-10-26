@@ -2420,6 +2420,101 @@ mod tests {
         );
     }
 
+    /// `OBL-C279`: the validator's own path — `hash_block_with_cached_vm` — swept across keys,
+    /// nonces and cache evictions.
+    ///
+    /// The one observed failure was a validator hash that disagreed with the mining hash for the
+    /// same block, at a real height. This test is the broad falsifier for that class: for sixteen
+    /// rotation keys (the cache holds three, so every key is evicted and rebuilt many times),
+    /// three nonces each, it requires the cached-VM hash to equal a fresh masked VM's hash, the
+    /// miner's JIT VM's hash, and a second call through the cache. It ends by re-hashing the first
+    /// block after all evictions and requiring the value recorded then — a rebuilt cache is
+    /// allowed to be slow, not to be different.
+    ///
+    /// It prints a rolling digest of every hash so two separate `cargo test` processes can be
+    /// compared; the observed failure was across processes, not within one.
+    #[test]
+    fn cached_vm_hashing_is_stable_across_keys_and_evictions() {
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let cs = CChainState::new(Arc::new(db), 120, BlockTarget::MAX, BlockTarget::new(1),
+            BlockTarget::MAX, FinalityConfig::default()).unwrap();
+
+        let header_for = |h: u64, nonce: u32| BlockHeader {
+            version: BlockVersion::CURRENT,
+            previous: blake3::hash(&h.to_le_bytes()),
+            merkle_root: compute_merkle_root(&[]),
+            timestamp: BlockTimestamp::new(h * 120),
+            target: BlockTarget::new(1_108_606_123),
+            nonce,
+            height: BlockHeight::new(h),
+            uncle_merkle_root: [0u8; 32],
+            total_reward: dwow_sdk::blockchain::expected_reward(BlockHeight::new(h)),
+            randomx_key: Miner::derive_key_from_height(BlockHeight::new(h)),
+            miner: [0u8; 32],
+            commitment_merkle_root: [0u8; 32],
+            nullifier_root: [0u8; 32],
+            anchor_tx_id: [0u8; 32],
+            anchor_monero_height: MoneroBlockHeight::new(0),
+            anchor_monero_hash: [0u8; 32],
+            finality_flags: 0,
+            pow_source: PowSource::Native,
+            anchor_owner: [0u8; 32],
+            caribina_anchor: None,
+            fee_window_flags: FeeWindowFlags::default(),
+        };
+
+        let masked_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
+        let heights = 16u64;
+        let nonces = [0u32, 1, 7];
+        let mut digest = Vec::new();
+        let mut first: Option<blake3::Hash> = None;
+
+        for h in 1..=heights {
+            let key = Miner::derive_key_from_height(BlockHeight::new(h));
+            let miner_vm = Miner::create_vm(&key).expect("miner VM");
+            let cache = randomx::RandomXCache::new(masked_flags, &key).expect("fresh cache");
+            let fresh = randomx::RandomXVM::new(masked_flags, Some(cache), None).expect("fresh VM");
+
+            for nonce in nonces {
+                let block = Block { header: header_for(h, nonce), transactions: vec![] };
+                let cached = cs.hash_block_with_cached_vm(&block).expect("cached-VM hash");
+                assert_eq!(
+                    cached,
+                    block.hash_with_vm(&fresh).expect("fresh-VM hash"),
+                    "cached and fresh VMs disagree at h={h} nonce={nonce}"
+                );
+                assert_eq!(
+                    cached,
+                    block.hash_with_vm(&miner_vm).expect("miner-VM hash"),
+                    "JIT and masked VMs disagree at h={h} nonce={nonce}"
+                );
+                assert_eq!(
+                    cached,
+                    cs.hash_block_with_cached_vm(&block).expect("re-hash through the cache"),
+                    "the same cached VM returned a different hash for the same blob at h={h}"
+                );
+                digest.extend_from_slice(cached.as_bytes());
+                first.get_or_insert(cached);
+            }
+        }
+
+        // Every key above has been evicted (`MAX_CACHED_VMS` is 3): the first block's key is
+        // rebuilt from scratch here and must produce the value recorded then.
+        let block = Block { header: header_for(1, nonces[0]), transactions: vec![] };
+        assert_eq!(
+            cs.hash_block_with_cached_vm(&block).expect("rebuilt cache hash"),
+            first.expect("at least one pair"),
+            "an evicted-and-rebuilt cache changed the hash of the first block"
+        );
+
+        eprintln!(
+            "OBL-C279 sweep {} pairs over {} keys, digest {}",
+            heights * nonces.len() as u64,
+            heights,
+            blake3::hash(&digest),
+        );
+    }
+
     /// The sync responder reads tip/genesis hashes from a cache, not re-hashing
     /// with RandomX per request (the established Bitcoin/Monero block-index
     /// pattern). After connecting the genesis block, both must return the
