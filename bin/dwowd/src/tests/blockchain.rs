@@ -805,9 +805,14 @@ impl<'c> HeavyweightBlock<'c> {
             let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
             let h = block.hash_with_vm(&guard)
                 .map_err(|e| dwow_core::Error::Custom(format!("hashing the mined block: {e}")))?;
+            // The preimage's own digest, next to the hash function's output: a future OBL-C279
+            // rejection can then say whether the *blob* changed between mining and validation
+            // (the digest differs) or only the hash did (the digest agrees, and the VM is the
+            // difference).
+            let blob = blake3::hash(&block.header.to_mining_blob());
             self.chain.log(&format!(
-                "[blockchain] height {} target {} nonce {} mined hash {}",
-                self.height, target.get(), block.header.nonce, h
+                "[blockchain] height {} target {} nonce {} blob {} mined hash {}",
+                self.height, target.get(), block.header.nonce, blob, h
             ));
         }
 
