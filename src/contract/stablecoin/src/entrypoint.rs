@@ -544,8 +544,18 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             // the metadata arm was the half that did not follow. Authority for a redemption is
             // the child PN redeem proof plus this contract's host-side checks (value binding,
             // burned-nullifier replay anchor), not a circuit over caller-chosen totals.
-            let _ = wasm::util::set_return_data(&vec![]);
-            Ok(())
+            //
+            // `OBL-C278`: proofless means an **encoded empty** vector, not a 0-byte buffer. The
+            // host decodes metadata as `Vec<(String, Vec<Base>)>` and reads a zero-length buffer
+            // as the documented rejection signal, so `set_return_data(&vec![])` here made the
+            // call die at `metadata-decode-zkp` before `exec` — and with it the arm's own
+            // `CustodyModelUnavailable` refusal, which `OBL-C92` claims. Measured 2026-10-26 on
+            // `test_heavyweight_stablecoin`: `redeem_disabled` named `EMPTY metadata`, not
+            // `Custom(32)`. This is the `OBL-C77` shape, one match arm late.
+            let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            wasm::util::set_return_data(&metadata)
         }
         StablecoinFunction::SpendHookCallback => {
             // Internal callback — no ZK proofs to verify
