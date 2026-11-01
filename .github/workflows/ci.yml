@@ -119,7 +119,9 @@ jobs:
        (github.event_name == 'workflow_dispatch' && (inputs.lane == 'auto' || inputs.lane == 'fast')))
       && needs.select.outputs.models == 'true'
     runs-on: [self-hosted, linux, x64, darkwow]
-    timeout-minutes: 15
+    # The wallet model suite passes in ~5 minutes but the wallet simulation alone has taken >15,
+    # so 15 was a false ceiling rather than a guard.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 1, persist-credentials: false }
