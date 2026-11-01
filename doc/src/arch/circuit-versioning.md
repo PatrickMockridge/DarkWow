@@ -24,10 +24,16 @@ V2 circuits add `DRK_POSEIDON_DOMAIN_*` constants (defined in
 | `DRK_POSEIDON_DOMAIN_NULLIFIER` | 1 | Nullifier derivation |
 | `DRK_POSEIDON_DOMAIN_TOKEN_COMMIT` | 2 | Token commitment |
 | `DRK_POSEIDON_DOMAIN_TX_BINDING` | 3 | Transaction binding |
-| `DRK_POSEIDON_DOMAIN_CAP_COMMIT` | 4 | Capability commitment (commitment) |
+| `DRK_POSEIDON_DOMAIN_COMMITMENT` | 4 | Capability commitment (commitment) |
 | `DRK_POSEIDON_DOMAIN_MERKLE_LEAF` | 5 | Merkle leaf hashing |
 | `DRK_POSEIDON_DOMAIN_USER_DATA_ENC` | 6 | User data encryption |
 | `DRK_POSEIDON_DOMAIN_SIGNATURE_SECRET` | 7 | Signature secret derivation |
+| `DRK_POSEIDON_DOMAIN_KEY_DERIVE` | 8 | Key derivation |
+| `DRK_POSEIDON_DOMAIN_CAPABILITY_ID` | 9 | Capability identifier |
+| `DRK_POSEIDON_DOMAIN_ATTRIBUTE` | 10 | Named attribute inside a credential commitment |
+
+The table said `DRK_POSEIDON_DOMAIN_CAP_COMMIT` until 2026-11-01; no such constant exists.
+`src/sdk/src/crypto/constants.rs:55-69` is the source of the ten.
 | `DRK_POSEIDON_DOMAIN_KEY_DERIVE` | 8 | Key derivation |
 | `DRK_POSEIDON_DOMAIN_CAPABILITY_ID` | 9 | Capability identifier |
 
@@ -124,8 +130,10 @@ too (`NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V3 = "Fee_V3"`,
 ### Rust Namespace Constants
 
 Contract `lib.rs` files declare namespace constants matching the `.zk` circuit
-name exactly. Only the current versions exist — there is no `_V1` namespace
-constant anywhere (the deleted V1 circuits have no constants left):
+name exactly. The constant an entrypoint uses must name the shipped circuit. Some crates
+still carry unused `_NS_V1` constants from the migration (e.g. `src/contract/auction/src/lib.rs`,
+`src/contract/escrow/src/lib.rs`); no entrypoint references them. The claim that "there is no
+`_V1` namespace constant anywhere" was false:
 
 ```rust
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2: &str = "Mint_V2";

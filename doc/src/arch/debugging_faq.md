@@ -246,8 +246,8 @@ The DAO Escrow contract (`src/contract/dao_escrow/`) manages endowment funds for
 | UpdateV1 | 0x01 | Update endowment parameters |
 | PayPremiumV1 | 0x02 | Member pays premium, receives membership |
 | WithdrawV1 | 0x03 | Owner withdraws from endowment |
-| EndowmentWithdrawV1 | 0x04 | DAO governance withdrawal (not implemented) |
-| TreasurySpendV1 | 0x05 | Treasury spending (not implemented) |
+| EndowmentWithdrawV1 | 0x04 | DAO governance withdrawal (group approval child) |
+| TreasurySpendV1 | 0x05 | Treasury spending (group approval child) |
 | ProposeClaimV1 | 0x07 | Propose a claim (group approval child) |
 | VoteClaimV1 | 0x08 | Group vote; writes `Approved`/`Rejected` |
 | ExecuteClaimV1 | 0x09 | Execute an approved claim |
@@ -382,12 +382,13 @@ wasm::db::db_set(db, &subscription.id.to_repr(), &serialize(&subscription)?);
 wasm::db::db_set(db, &subscription.id.to_bytes(), &serialize(&subscription)?);
 ```
 
-**Block height casting**: `get_verifying_block_height()` returns `u32`, cast to `u64`:
+**Block height type**: `get_verifying_block_height()` returns
+`GenericResult<BlockHeight>`; take `.get()` for the `u64`:
 ```rust
 // CORRECT
-let current_block = wasm::util::get_verifying_block_height()? as u64;
+let current_block = wasm::util::get_verifying_block_height()?.get();
 
-// WRONG - type mismatch
+// WRONG - BlockHeight is not u64
 let current_block = wasm::util::get_verifying_block_height()?;
 ```
 

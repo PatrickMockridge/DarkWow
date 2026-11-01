@@ -944,8 +944,8 @@ is a plain `fee >= tier_price` comparison (mempool.md §5.2).
 **Call data format.** FeeV3 call data SHALL use `FeeParamsV3` per
 [fee-spec.md §5](consensus/fee-spec.md): plaintext `fee: FeeAmount`
 (8 bytes LE), `tier: FeeTier` (u8 multiplier 1/2/4), plus the retained
-`fee_value_commit` and `fee_v3_tx_binding` used by the host to verify the
-retained Fee_V3 mass-balance proof. The wallet constructs `FeeParamsV3` via
+`fee_value_commit` and `tx_nonce` used by the host to verify the retained Fee_V3
+mass-balance proof. (`fee_v3_tx_binding` was removed, not moved — OBL-C198.) The wallet constructs `FeeParamsV3` via
 the NativeToken client builder (`src/contract/native_token/src/client/fee.rs`).
 The call data SHALL contain clear-text fee bytes — the fee is public by design.
 

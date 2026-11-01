@@ -55,7 +55,7 @@ This creates API proliferation as new contracts are added. The generalized `cont
       "message": "Transaction building not yet implemented - ZK proof generation required"
     },
     "transaction_id": null,
-    "status": "dry_run"
+    "status": "simulated"
   },
   "id": 1
 }
@@ -78,8 +78,8 @@ This creates API proliferation as new contracts are added. The generalized `cont
 | `contract_id` | string | Contract that was invoked |
 | `function` | string | Function that was called |
 | `result` | object | Function-specific result data |
-| `transaction_id` | string? | Transaction ID if broadcast, null if dry_run |
-| `status` | string | "simulated", "broadcast", or "failed" |
+| `transaction_id` | string? | Transaction ID if broadcast, null when not broadcast |
+| `status` | string | `"simulated"`, `"not_broadcast"`, or `"deployed"` (`bin/dwowd/src/rpc/contract.rs:186,206,307`) |
 
 ## Supported Contracts
 

@@ -125,9 +125,9 @@ to disk. No special teardown is required.
   observer as a seed/bootstrap peer and as a source of mempool transactions.
 
 - **To wallets**: Wallets connect to the observer as a P2P peer, sync blocks
-  via GetTip/GetBlocks, and submit transactions via JSON-RPC
-  `tx.submit_linear`. The observer broadcasts submitted transactions to the
-  network.
+  via GetTip/GetBlocks, and broadcast transactions over the same P2P sync rail
+  (`bin/dww/src/lib.rs:481-520` — there is no `tx.submit_linear` wallet path). The
+  observer relays them to the network.
 
 - **To other observers**: Multiple observers form a redundant relay mesh.
   Each observer independently validates and relays.

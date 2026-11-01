@@ -157,28 +157,24 @@ sorts by plain comparison against tier prices. Specification:
 
 ```
 admit(tx):
-  // Extract plaintext fee from call data
-  fee = extract_fee(tx)
-  if fee is None → REJECT (not a FeeV3 transaction)
-
-  // Plain comparison — no ZK threshold proof
-  if fee >= price_high:
-    admit_to_high_queue(tx)
+  if tx carries a FeeV3 call:
+    fee = extract_fee(tx)          // FeeAmount, never Option
+    // Plain comparison — no ZK threshold proof
+    if fee >= price_high:   admit_to_high_queue(tx);   return ADMITTED
+    if fee >= price_medium: admit_to_medium_queue(tx); return ADMITTED
+    if fee >= price_low:    admit_to_low_queue(tx);    return ADMITTED
+    REJECT ↓bad-fee
+  else:
+    // Non-FeeV3 transactions bypass the tier gate and are admitted at
+    // min_fee = ZERO (`crates/dwow-mempool/src/lib.rs:530-545,102`)
+    admit_to_standard_queue(tx)
     return ADMITTED
-  if fee >= price_medium:
-    admit_to_medium_queue(tx)
-    return ADMITTED
-  if fee >= price_low:
-    admit_to_low_queue(tx)
-    return ADMITTED
-
-  // Fee below all tier prices
-  REJECT ↓bad-fee
 ```
 
 ### 5.3 Block Selection
 
-`select_for_block(max_gas, max_txs)`:
+`select_for_block(&MinerConfig)`
+(`crates/dwow-mempool/src/lib.rs:608`):
 1. Drain high queue in FIFO order until `max_gas` or `max_txs` reached.
 2. Drain medium queue in FIFO order until limits reached.
 3. Drain low queue in FIFO order until limits reached.

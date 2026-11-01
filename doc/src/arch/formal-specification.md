@@ -51,7 +51,7 @@ Three independent layers:
 
 See [Contract Trust Model](contract-trust-model.md) for the full specification.
 
-## Contract Ecosystem — 32 Contracts with Manifests
+## Contract Ecosystem — 32 Contracts, 31 with Manifests
 
 Most contracts have a **manifest** — a TOML document describing their functions,
 capability types, actions, state trees, and ZK circuits. The manifest enables a
@@ -138,8 +138,8 @@ cargo build --release -p dwowd -p dwow_wallet
 # Show a contract's interface from its manifest
 ./target/release/dwow_wallet -c dww_config.toml contract show <contract_id>
 
-# Verify a contract's manifest against its WASM
-./target/release/dwow_wallet -c dww_config.toml contract verify <contract_id>
+# Inspect a contract's manifest and metadata
+./target/release/dwow_wallet -c dww_config.toml contract show <contract_id>
 ```
 
 ## Where to Go Next

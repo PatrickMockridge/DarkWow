@@ -19,7 +19,7 @@ DarkWow merge mining uses three separate protocols: mm_rpc JSON-RPC between p2po
 ### How It Works
 
 1. p2pool connects to dwowd's mm_rpc JSON-RPC handler (port 31348)
-2. p2pool calls `merge_mining_get_aux_block` to get a DarkWow block template (292-byte mining blob with nonce=0)
+2. p2pool calls `merge_mining_get_aux_block`; the handler returns an **empty `aux_blob`** and a job id as `aux_hash` (`mm_rpc.rs:152-155`). The DarkWow template is built by the node from that job, not returned as a 292-byte blob
 3. p2pool injects the aux data into Monero blocks and miners find RandomX solutions
 4. When a Monero block is found with DarkWow aux data, p2pool calls `merge_mining_submit_solution`
 5. dwowd reconstructs the block with the found nonce, verifies RandomX PoW, and inserts the block into the linear chain

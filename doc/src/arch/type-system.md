@@ -1009,7 +1009,8 @@ return forces the consumer to handle both `Some` (typed, barb-carrying) and
 
 A `Transaction`'s `witness` carries the ZK proofs and signatures as an opaque,
 dwow_serial-encoded bundle. The witness SHALL be carried end-to-end (broadcast →
-mempool → block) and verified at both mempool admission and block acceptance
+mempool → block) and verified at **block acceptance**; the mempool performs structural,
+nullifier and fee checks only and does not verify ZK proofs or signatures
 ([mempool.md](mempool.md)). The witness is EXCLUDED from the transaction hash —
 block identity commits to transaction semantics (version, inputs, outputs,
 contract_calls, lock_time, nullifiers), never to interchangeable witness bytes.
