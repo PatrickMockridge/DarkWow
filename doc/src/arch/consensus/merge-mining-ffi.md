@@ -76,9 +76,9 @@ deterministic. The merkle proof verification SHALL be a pure function.
 | `monero::Hash` | 32 bytes (Keccak-256) | `MoneroHash` | Length=32, non-zero |
 | `seed_hash` | 32 bytes (RandomX VM key) | `RandomXKey` | Length=32, non-zero |
 | `aux_hash` (job ID) | 32 bytes (blake3 of template) | `JobId` | Non-zero, registered in job table |
-| `monero::Block` | Variable (consensus-encoded) | Raw bytes → `MoneroBlock` | Consensus-decode succeeds |
-| `MerkleProof` | branch: Vec<32B>, path: u32 | `MoneroMerkleProof` | Branch length < 32, path non-zero |
-| `coinbase_tx` | Variable (prefix + extra) | `MoneroCoinbasePrefix` | Extra field contains MM tag |
+| `monero::Block` | Variable (consensus-encoded) | `monero::Block` | Consensus-decode succeeds |
+| `MerkleProof` | branch: Vec<32B>, path: u32 | `MerkleProof` | Branch length < 32, path non-zero |
+| `coinbase_tx` | Variable (prefix + extra) | `FixedByteArray` | Extra field contains MM tag |
 | `FixedByteArray` | ≤60 bytes | Validated at construction | Exact length match |
 | `PowData` | Monero-specific struct | `PowSource::Monero(MoneroPowData)` | All fields non-default |
 

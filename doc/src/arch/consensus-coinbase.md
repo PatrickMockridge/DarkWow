@@ -968,10 +968,11 @@ LinearBlockTemplate {
     transactions: Vec<Transaction>,  // Pre-selected mempool transactions
     merkle_root: Blake3Hash,         // Merkle root of transactions (in mining blob)
     uncles: Vec<UncleBlock>,         // Uncle blocks included (competing blocks from previous height)
-    uncle_merkle_root: [u8; 32],     // Merkle root of uncle headers (in mining blob)
-    uncle_proofs: Vec<UncleProof>,   // Merkle proofs for each uncle (stateless verification)
 }
 ```
+
+`uncle_merkle_root` and `uncle_proofs` are **not** fields of `LinearBlockTemplate`;
+they were removed (`bin/dwowd/src/registry/model.rs:104-112`).
 
 The pre-plaintext fields (`zk_proof`, `zk_public_inputs`, `commitment`,
 `value_commit_x/y`, `token_commit`, `nullifier`, `new_cumulative_x/y`,
