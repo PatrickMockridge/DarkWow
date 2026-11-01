@@ -139,4 +139,4 @@ fast-only: nightly nine-genesis heavyweight	nightly	nightly	fast-only	9000
 fast-only: nightly zk_audit	nightly	nightly	fast-only	10800
 fast-only: CI scripts parse (bash -n)	ci	fast	fast-only	10
 fast-only: path selector self-test	ci	fast	fast-only	10
-fast-only: gate coverage ratchet	ci	fast	fast-only	10
+fast-only: gate coverage ratchet	ci	fast,merge	fast-only	10

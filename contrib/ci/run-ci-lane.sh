@@ -208,6 +208,10 @@ merge_lane() {
     preflight_or_block merge
     [ "$CI_DRY_RUN" = "1" ] || ci_heavy_lock || exit 78
 
+    # A direct push has no PR fast lane, so the classification ratchet runs here too: a new
+    # unclassified gate must not be silently skipped in the merge lane.
+    gate "fast-only: gate coverage ratchet" python3 -B "$SCRIPT_DIR/check-gate-coverage.py"
+
     # make test builds the contract artifacts every downstream gate needs. It runs under this
     # lane's scope; the umbrella is then told to skip it so Lean is not wrapped in a second scope.
     gate "fast-only: merge lightweight make test" \
