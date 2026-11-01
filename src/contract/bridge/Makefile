@@ -72,7 +72,7 @@ check-source-hash:
 all: check-source-hash proof ../../../script/contract_build_recipe.txt ../../../script/contract-build-recipe.mk Makefile
 	@echo "Building bridge contract WASM..."
 	@RUSTFLAGS="$(WASM_RUSTFLAGS)" RUSTC_BOOTSTRAP=$(CONTRACT_RUSTC_BOOTSTRAP) cargo build --release --manifest-path Cargo.toml --target wasm32-unknown-unknown
-	@mv $(TARGET_DIR)/wasm32-unknown-unknown/release/$(CONTRACT).wasm ./
+	@mv ../../../target/wasm32-unknown-unknown/release/$(CONTRACT).wasm ./
 	@echo "$(COMPUTE_SOURCE_HASH)" > $(SOURCE_HASH_FILE)
 	@echo "Done: $(CONTRACT).wasm"
 

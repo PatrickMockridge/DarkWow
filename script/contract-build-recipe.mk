@@ -8,11 +8,6 @@
 # The flags are scoped to the wasm target. `$(RUSTFLAGS)` stays as it was for host tests and
 # clippy; a `-Z` flag there would require RUSTC_BOOTSTRAP on every host build for no benefit.
 
-# Cargo's target directory is overridable (`CARGO_TARGET_DIR`); CI caches the build tree outside
-# the workspace and sets it. The artifact copy below must follow cargo, not assume the workspace
-# default, or it reads a directory cargo never wrote to.
-TARGET_DIR = $(or $(CARGO_TARGET_DIR),../../../target)
-
 CONTRACT_REMAPS = --remap-path-prefix=$(HOME)/.cargo=/cargo --remap-path-prefix=$(HOME)/.rustup=/rustup
 CONTRACT_MAX_MEMORY = -C link-arg=--max-memory=268435456
 CONTRACT_PURITY = -C strip=symbols -Zlocation-detail=none

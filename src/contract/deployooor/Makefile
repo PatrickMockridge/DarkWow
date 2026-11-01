@@ -88,7 +88,7 @@ all: check-source-hash $(WASM_BIN)
 $(WASM_BIN): $(WASM_SRC) ../../../script/contract_build_recipe.txt ../../../script/contract-build-recipe.mk Makefile
 	RUSTFLAGS="$(WASM_RUSTFLAGS)" RUSTC_BOOTSTRAP=$(CONTRACT_RUSTC_BOOTSTRAP) $(CARGO) build --target=$(WASM_TARGET) \
 		--release --package $(PKGNAME)
-	cp -f $(TARGET_DIR)/$(WASM_TARGET)/release/$@ $@
+	cp -f ../../../target/$(WASM_TARGET)/release/$@ $@
 	@echo "$(COMPUTE_SOURCE_HASH)" > $(SOURCE_HASH_FILE)
 
 test-integration: all
