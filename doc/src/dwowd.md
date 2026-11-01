@@ -184,7 +184,8 @@ main() continues:
       ├── Spawn management JSON-RPC server (ManagementRpcHandler)
       ├── Start miners registry (stratum + mm_rpc listeners)
       ├── Start P2P network (listener + dialer + sync + broadcast handlers)
-      ├── Spawn consensus task (placeholder — mining is RPC-driven)
+      ├── Spawn consensus task (P2P block sync: GetTip/GetBlocks, full validation, reorg)
+      ├── Spawn built-in miner task when MINING_ENABLED=true (waits for CaughtUp)
       └── Return Ok(())
 
 main() blocks on signal handler (SIGINT/SIGTERM), then calls Dwowd::stop()
@@ -233,19 +234,27 @@ All concurrent tasks spawned by `Dwowd::start()`:
 | **P2P dialer** | Outbound connections to seed nodes | Dial loop |
 | **linear sync** | Block download from peers (GetBlocks/Blocks) | Periodic + on-connect |
 | **linear broadcast** | One-hop block relay to peers on new block | On-block-insert |
-| **consensus** | Placeholder — sleeps forever, mining is entirely RPC-driven | `pending().await` |
+| **consensus** | P2P block sync: queries peer tips, pulls blocks via GetBlocks, validates and applies them, reorgs to the heavier chain | 30 s periodic loop + on-connect |
+| **miner** | Built-in mining loop; starts only when `MINING_ENABLED=true`, waits for `SyncState::CaughtUp`, pauses when Behind, holds `mining_gate` from the CaughtUp re-check through block acceptance | Continuous loop |
 | **miner registry tick** | Periodic miner registration maintenance | Interval loop |
 
 ### Key Architectural Point
 
-There is **no background mining loop**. Mining is triggered exclusively by
-external RPC calls:
+Mining is a **built-in background loop**, and it is opt-in. `MINING_ENABLED`
+defaults to `false` (join-first: the node is an observer that syncs); when it is
+true, `Dwowd::start()` spawns `miner_task`, which waits for `SyncState::CaughtUp`,
+then mines continuously on the local RandomX VM, re-checking sync state each
+iteration and pausing while Behind (`bin/dwowd/src/lib.rs:1156,1464`). The
+consensus task is not a placeholder: it is the P2P sync loop that pulls and
+fully validates blocks (`bin/dwowd/src/task/consensus_linear.rs`).
 
-- **`miner.mine_linear`** — Dev RPC: mines one block on the local RandomX VM
-- **Stratum `submit`** — External xmrig submits a solved nonce via TCP
+Two other paths can still produce a block or a submission:
 
-The "consensus task" is a no-op placeholder (as of 2026-08). All chain progression is
-externally driven.
+- **`miner.mine_linear`** — Dev RPC: mines one block on demand
+- **Stratum `submit`** — external xmrig submits a solved nonce over TCP
+
+The built-in miner replaced the old bash `/dev/tcp` loop; it is the production
+path (`bin/dwowd/src/lib.rs:1156`).
 
 ## RPC Layer
 
@@ -411,7 +420,7 @@ rewards by declaring the same secret as the mining node in the shared `keys.toml
 | `bin/dwowd/src/registry/model.rs` | Block template generation, plaintext coinbase |
 | `bin/dwowd/src/proto/linear_sync_client.rs` | P2P sync protocol |
 | `bin/dwowd/src/proto/linear_broadcast.rs` | P2P block broadcast |
-| `bin/dwowd/src/task/consensus_linear.rs` | Consensus task (placeholder) |
+| `bin/dwowd/src/task/consensus_linear.rs` | Consensus task: P2P block sync, full validation, reorg |
 | `src/runtime/vm_runtime.rs` | WASM VM runtime (Singlepass compiler, no module cache) |
 | `src/runtime/import/db.rs` | WASM host functions: db_set, db_get, db_remove, db_contains_key |
 | `src/linear/src/block.rs` | BlockHeader, Block, UncleBlock, mining blob |
