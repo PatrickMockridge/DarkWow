@@ -108,13 +108,14 @@ if [ "$CI_ALL" = "1" ] && [ -z "$CI_GROUPS_ARG" ]; then
 fi
 
 _fast_static_groups() {
-    # Models, Lean and Docker have their own jobs; running their umbrella gates here would duplicate
-    # them. `always` is unconditional.
+    # Models, Lean, Docker and shared-sdk have their own jobs; running their umbrella gates here
+    # would duplicate them (shared-sdk's pre-build guard compiles 32 contracts, which fast-compile
+    # owns). `always` is unconditional.
     local selected="always"
     local group
     for group in $(printf '%s' "$CI_GROUPS_ARG" | tr ',' ' '); do
         case "$group" in
-            ""|models|lean|docker) continue ;;
+            ""|models|lean|docker|shared-sdk) continue ;;
             *) selected="$selected,$group" ;;
         esac
     done
@@ -184,8 +185,26 @@ ci_bash_syntax() {
     return "$ok"
 }
 
+# Build inputs the umbrella assumes a developer tree already has. A fresh checkout has no zkas and
+# no .zk.bin (.zk.bin is untracked), and the `validate_zk_bins.sh` control needs both; the
+# pre-build guard additionally needs the contract circuits. These are build steps, not gates, but
+# they are recorded as gates so a build failure is named in the lane summary.
+prepare_zkas() { ( cd "$REPO_ROOT" && make zkas ); }
+
+build_proofs_core() {
+    local zk status=0
+    for zk in "$REPO_ROOT"/proofs/core/*.zk; do
+        "$REPO_ROOT/zkas" "$zk" || status=1
+    done
+    return "$status"
+}
+
+build_contract_zk() { ( cd "$REPO_ROOT" && ./scripts/build-contract-zk.sh ); }
+
 fast_static() {
     local groups; groups="$(_fast_static_groups)"
+    gate "fast-only: zkas compiler builds" prepare_zkas
+    gate "fast-only: proofs/core circuits build" build_proofs_core
     run_umbrella fast "$groups" --tier 1
 
     # CI-only checks, cheap and unconditional.
@@ -215,8 +234,8 @@ proof_control() {
     # A fresh checkout has no zkas binary and no .zk.bin (.zk.bin is untracked); the test embeds
     # them via include_bytes!, so build both first. The test itself is one exact case: the whole
     # binary contains known-red create_tender cases.
-    ( cd "$REPO_ROOT" && make zkas ) || return 1
-    ./scripts/build-contract-zk.sh || return 1
+    prepare_zkas || return 1
+    build_contract_zk || return 1
     cargo test --release -p dwow-contract-test-harness \
         --test client_proof_self_verification -- \
         slot_commit_bet_proof_verifies_against_its_own_circuit --exact --test-threads=1
@@ -225,6 +244,15 @@ proof_control() {
 fast_proof() {
     [ "$CI_DRY_RUN" = "1" ] || ci_heavy_lock || return 78
     gate "fast-only: proof control: slot commit_bet self-verification" proof_control
+    ci_summary
+}
+
+fast_compile() {
+    # The pre-build guard compiles every contract for wasm32; each contract embeds its own
+    # include_bytes! circuits, so build the compiler and the circuits first.
+    gate "fast-only: zkas compiler builds" prepare_zkas
+    gate "fast-only: contract ZK circuits build" build_contract_zk
+    run_umbrella fast shared-sdk --tier 1
     ci_summary
 }
 
@@ -242,6 +270,9 @@ merge_lane() {
         ci_heavy_scope "${CI_MERGE_MEMORY_MAX:-20G}" \
         bash -c "cd '$REPO_ROOT' && env TEST_ARGS='$CI_TEST_SKIP' make test"
 
+    # `make test` builds the contract circuits; the always-group control also needs the twelve
+    # proofs/core circuits, which neither make test nor build-contract-zk.sh builds.
+    gate "fast-only: proofs/core circuits build" build_proofs_core
     CI_SKIP_MAKE_TEST=1 run_umbrella merge "" --tier 1
     cp -f /tmp/lean-build.log reports/ci/ 2>/dev/null || true
 
@@ -299,7 +330,7 @@ cost_report() {
 
 case "$LANE" in
     fast-static) fast_static ;;
-    fast-compile) run_umbrella fast shared-sdk --tier 1; ci_summary ;;
+    fast-compile) fast_compile ;;
     fast-models) run_umbrella fast models --tier 1; ci_summary ;;
     fast-lean) run_umbrella fast lean --tier 1; ci_summary ;;
     fast-proof) fast_proof ;;

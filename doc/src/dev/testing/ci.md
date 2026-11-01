@@ -16,7 +16,11 @@ which lane and group.
 
 A push runs **merge only**: the umbrella already contains the fast instruments, so running both
 would be duplicate work. The selector (`contrib/ci/select_groups.py`) maps changed paths to groups;
-models, Lean and Docker get their own fast jobs rather than being repeated in `fast-static`.
+models, Lean, Docker and shared-sdk get their own fast jobs rather than being repeated in
+`fast-static` (shared-sdk's pre-build guard compiles every contract, which is `fast-compile`'s job).
+The jobs that run umbrella gates on a fresh checkout build what those gates assume: `fast-static`
+builds zkas and the `proofs/core` circuits for the `validate_zk_bins.sh` control, and
+`fast-compile` builds the contract circuits for the pre-build guard.
 
 ## The `make test` split
 
