@@ -15,32 +15,24 @@ A local development network (devnet) for DarkWow testing, funded via block minin
 ## Quick Start
 
 ```bash
-# Terminal 1: Start a single node.
-#
-# This line pointed at `contrib/localnet/dwowd-single-node/dwowd.toml` until 2026-10-12, and
-# **that path does not exist** — nor does `contrib/localnet/` (`F-601`). The daemon's config
-# carries a `[network_config."localnet"]` section, but `--network` accepts only
-# `darkwow-devnet` and `darkwow-testnet` (`bin/dwowd/src/main.rs`: anything else is
-# `Error::UnsupportedChain`). The runnable single-node configuration is devnet:
-./target/release/dwowd -c bin/dwowd/dwowd_config.toml --network darkwow-devnet
+# Terminal 1: Start a single genesis-mining node. `darkwow node` execs dwowd with
+# MINING_ENABLED=true and CREATE_GENESIS=true for the genesis role.
+./target/release/darkwow node --role genesis --identity node0
 
-# Terminal 2: Mine blocks to your wallet
-./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet mine
-
-# Terminal 3: Check balance
-./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet wallet balance
+# Terminal 2: Check balance (the node's built-in miner mines; there is no wallet
+# `mine` command).
+./target/release/dwow_wallet -c bin/dww/dww_config.toml -n darkwow-devnet wallet balance
 ```
 
 ## How It Works
 
-1. **dwowd** runs a stratum mining server on port 48347 (configured in localnet toml)
-2. **dwow_wallet mine** connects via TCP, logs in with your wallet address as recipient
-3. dwowd sends mining jobs (RandomX blob + target)
-4. dwow_wallet mines RandomX hashes in a background thread
-5. Shares found are submitted back to stratum server
-6. Accepted shares = mined blocks = PoW rewards (~13.8 DRKW at height 1, decaying — see the
-   emission curve's `expected_reward`)
-7. Wallet scanning discovers the commitments
+1. **dwowd** runs the chain and, with `MINING_ENABLED=true` (the `genesis`/`miner` roles),
+   its built-in `miner_task` mines once sync reaches `CaughtUp`.
+2. Each mined block pays the node's declared key: PoW rewards (~13.8 DRKW at height 1,
+   decaying — see the emission curve's `expected_reward`).
+3. The wallet scans the chain and discovers the commitments. External xmrig miners can
+   instead submit through the stratum server (port 48347) if configured; that is an
+   alternative submission path, not a wallet command.
 
 ## Key Components
 
@@ -109,11 +101,11 @@ variants; run `dwow_wallet wallet --help` rather than trusting a copied list.
 ```
 dwow_wallet contract invoke <contract-name-or-id> <function> [--params <json-file>]
 
-# Example: Enable drain protection on DAO-Escrow
-dwow_wallet contract invoke dao_escrow enable_drain_protection --params params.json
+# Example: pay a DAO-Escrow premium
+dwow_wallet contract invoke dao_escrow pay_premium --params params.json
 
-# Where params.json contains:
-# {"dao_escrow_bulla": "...", "drain_protection_bulla": "..."}
+# params.json must match the manifest's schema for the selected function.
+# `enable_drain_protection` (0x06) was retired and is not a valid selector.
 ```
 
 ## Mining Details
@@ -134,48 +126,50 @@ dwow_wallet contract invoke dao_escrow enable_drain_protection --params params.j
 ### 1. Initialize wallet (first time only)
 
 See [Wallet Architecture](arch/wallet.md) for wallet initialization and keygen.
-Use `-c bin/dww/dww_config.toml -n localnet` for localnet dev.
+Use `-c bin/dww/dww_config.toml -n darkwow-devnet` for localnet dev.
 
 ### 2. Start localnet
+`contrib/localnet/` does not exist. Start a single genesis-mining node through the
+top-level CLI (it execs `dwowd` with `MINING_ENABLED=true` and `CREATE_GENESIS=true`):
+
 ```bash
-./target/release/dwowd -c contrib/localnet/dwowd-single-node/dwowd.toml
+./target/release/darkwow node --role genesis --identity node0
 ```
 
 ### 3. Mine blocks
-```bash
-./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet mine
-# Press Ctrl+C when sufficient DRKW accumulated
-```
+There is no wallet `mine` command. The node's built-in `miner_task` mines once sync
+reaches `CaughtUp`; for a one-off block, call the node's `miner.mine_linear` RPC. The
+wallet must use the **same** network as the daemon (`-n darkwow-devnet`, not `localnet`).
 
 ### 4. Check balance
 ```bash
-./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet wallet balance
+./target/release/dwow_wallet -c bin/dww/dww_config.toml -n darkwow-devnet wallet balance
 ```
 
 ### 5. Scan blockchain
 ```bash
-./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet scan
+./target/release/dwow_wallet -c bin/dww/dww_config.toml -n darkwow-devnet scan
 # Or reset and rescan from block 0:
-./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet scan --reset 0
+./target/release/dwow_wallet -c bin/dww/dww_config.toml -n darkwow-devnet scan --reset 0
 ```
 
-### 6. List known commitments
+### 6. List known capabilities
 ```bash
-./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet wallet commitments
+./target/release/dwow_wallet -c bin/dww/dww_config.toml -n darkwow-devnet wallet capabilities
 ```
 
 ### 7. Deploy a contract
 ```bash
 # Generate deploy authority if needed
-./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet contract generate-deploy
+./target/release/dwow_wallet -c bin/dww/dww_config.toml -n darkwow-devnet contract generate-deploy
 
 # Deploy contract (pipe output to broadcast)
-./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet contract deploy <contract-id> <wasm-path> | ./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet broadcast
+./target/release/dwow_wallet -c bin/dww/dww_config.toml -n darkwow-devnet contract deploy <contract-id> <wasm-path> | ./target/release/dwow_wallet -c bin/dww/dww_config.toml -n darkwow-devnet broadcast
 ```
 
 ### 8. Verify deployment
 ```bash
-./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet contract list
+./target/release/dwow_wallet -c bin/dww/dww_config.toml -n darkwow-devnet contract list
 ```
 
 ## Network Ports
@@ -193,7 +187,7 @@ Use `-c bin/dww/dww_config.toml -n localnet` for localnet dev.
 pkill -f "dwow_wallet.*mine"
 
 # Then retry wallet commands
-./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet wallet balance
+./target/release/dwow_wallet -c bin/dww/dww_config.toml -n darkwow-devnet wallet balance
 ```
 
 ## CLI Quirks
@@ -212,8 +206,8 @@ This differs from other wallet operations which are under `dwow_wallet wallet <s
 
 There is no default config file location. Every command requires `-c`:
 ```bash
-dwow_wallet -c bin/dww/dww_config.toml -n localnet wallet balance  # Correct
-dwow_wallet -n localnet wallet balance                              # Wrong - fails
+dwow_wallet -c bin/dww/dww_config.toml -n darkwow-devnet wallet balance  # Correct
+dwow_wallet -n darkwow-devnet wallet balance                              # Wrong - fails
 ```
 
 ### --reset uses space, not equals

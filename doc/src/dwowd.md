@@ -199,25 +199,18 @@ is no lazy ZK initialization on the mining path.
 
 ### Mining Keypair
 
-Key resolution is handled by `AccountManager::open()` in `bin/dwowd/src/lib.rs`.
-Two paths, controlled by the `LOCALNET` flag:
+Key resolution goes through `AccountManager::open(keys_toml, network, section)`; `dwowd`
+resolves the section from `NODE_NAME`. There is **one** path: the node reads exactly one
+declared `wallet_secret` from `keys.toml` section `[<section>]`, derives the keypair, and
+uses it. A missing file or section is a **hard error** — a key is never generated, cached,
+or read from an env fallback (`crates/dwow-accounts/src/lib.rs:184-232`).
 
-**Declared key (testnet/devnet only):** If `LOCALNET=true` and `{db_path}/mining_secret`
-exists (pre-written by the Docker entrypoint from the `WALLET_SECRET` env var),
-the file is read as hex and used directly. No key is generated. This enables
-deterministic key sharing between mining nodes and wallets for testing.
-
-**Generated key (production / no declared key):** If `LOCALNET=false` OR no
-`mining_secret` file exists, a random `Keypair` is generated and persisted:
-- `{db_path}/mining_address` — wallet address string
-- `{db_path}/mining_secret` — hex-encoded secret key
-
-**Security gate:** `LOCALNET=false` (production) **never** reads pre-existing
-key files. The `localnet &&` short-circuit at the top of `AccountManager::open()`
-guarantees that even if a `mining_secret` file is accidentally present on a
-production node, it is ignored. The node always generates a fresh random keypair.
-
-**NEVER set `LOCALNET=true` on mainnet.** It disables this gate.
+This is why the Docker entrypoint starts the node with `--keys /run/config/keys.toml`, and
+why there is no `LOCALNET` auto-generation gate: a non-deterministic or non-owner-declared
+identity is a catastrophic failure (broken consensus and unspendable rewards for a miner,
+loss of funds for a wallet). To share a key between a mining node and a wallet, declare the
+same `wallet_secret` in both `keys.toml` files. Only wallet forwarding keys may be copied;
+mining keys stay on the mining node.
 
 ## Task Graph
 
@@ -385,15 +378,13 @@ Dwowd::stop()
  └── Flush sled database
 ```
 
-## Key Sharing (Testnet)
+## Key Declaration
 
-For testnet deployments, mining nodes and wallets can share deterministic keys
-via `keys.toml` and the `WALLET_SECRET` env var. The Docker entrypoint writes
-the hex secret to `mining_secret` before `dwowd` starts. `AccountManager::open()`
-reads it on `LOCALNET=true`. See the Mining Keypair section above for the gate.
-
-**Never use on mainnet.** `LOCALNET=true` is required. Production nodes always
-generate random keypairs.
+Every node and wallet reads its key from a declared `keys.toml` section; there is no
+`WALLET_SECRET` env var and no `mining_secret` file. The Docker entrypoint mounts
+`--keys /run/config/keys.toml`. `AccountManager::open()` hard-errors when the file or the
+section is missing — a key is never generated. Do not copy a mining key to a wallet; only
+wallet forwarding keys may be shared.
 
 ## Coinbase Forwarding (Removed)
 

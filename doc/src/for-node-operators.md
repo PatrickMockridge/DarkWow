@@ -6,8 +6,10 @@ You want to run a DarkWow node or mine. Here's your path.
 
 - **Mining node** (`dwowd`): Produces blocks via RandomX proof-of-work.
   Requires xmrig for mining. Full chain state, validates all blocks.
-- **Observer / relay node** (`dwowd --observer`): Relays blocks and
-  transactions without mining. Useful for network health and API access.
+- **Observer / relay node** (`darkwow node --role observer`, or its
+  `--observer` alias; the top-level CLI execs `dwowd` with mining off): Relays
+  blocks and transactions without mining. Useful for network health and API
+  access. `dwowd` itself has no `--observer` flag.
 - **Wallet node** (`dww`): Full node that scans the chain for your
   capabilities. Derives identity from AccountManager, decrypts notes
   locally. Same P2P stack as dwowd — the wallet IS a full node.

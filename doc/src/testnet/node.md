@@ -42,54 +42,20 @@ mainnet, testnet and localnet. Mainnet is not active yet. Localnet can
 be setup by following the instructions [here](#local-development-and-custom-testnets). The
 rest of this tutorial assumes we are setting up a testnet node.
 
-## Quick Start
+## Supported entry points
 
-For a simplified setup, use the provided shell scripts in `contrib/testnet/`:
+> **The `contrib/testnet/` scripts are legacy and not maintained.** They pass
+> `--network testnet`, which the binary rejects (`main.rs` accepts `darkwow-devnet` or
+> `darkwow-testnet`), and they use old `darkfid` paths. Do not use
+> `setup.sh`/`start.sh`/`docker-compose` from that directory.
 
-```shell
-# 1.  dwowd and dwow_wallet
-cargo build --release -p dwowd -p dwow_wallet
-
-# 2. Setup testnet node (creates directories and config)
-cd contrib/testnet
-./setup.sh
-
-# 3. Start the daemon
-./start.sh
-
-# 4. Check status
-./status.sh
-
-# 5. View logs
-./logs.sh
-
-# 6. Stop the daemon
-./stop.sh
-```
-
-### Available Scripts
-
-| Script | Description |
-|--------|-------------|
-| `setup.sh` | First-time setup (creates directories and config) |
-| `start.sh` | Start dwowd daemon in background |
-| `stop.sh` | Stop the daemon gracefully |
-| `restart.sh` | Restart the daemon |
-| `status.sh` | Check sync status via RPC |
-| `logs.sh` | View daemon logs (tail -f) |
-| `wallet-init.sh` | Initialize a wallet |
-| `upgrade.sh` | Pull latest changes and rebuild |
-
-### Docker
-
-Alternatively, run testnet in Docker:
-
-```shell
-cd contrib/testnet
-docker-compose up -d
-docker-compose logs -f
-docker-compose down
-```
+- **A node on the public testnet:** `darkwow node --role observer --identity <section>`
+  (or `--role miner` to mine). The top-level CLI execs `dwowd` with the role's flags.
+- **The containerized localnet/devnet pipeline:**
+  `contrib/docker/darkwow-testnet/test_pipeline.sh` is the only entry point for that
+  pipeline (see [Level 3](../dev/testing/level-3-localnet.md) and
+  [Level 4](../dev/testing/level-4-devnet.md)).
+- **Manual configuration:** continue below.
 
 ### Manual Setup
 
