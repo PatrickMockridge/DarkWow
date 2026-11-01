@@ -32,6 +32,37 @@ current code with a failing-before control (the nine conditions in `hazop-rules.
 **Counts.** 47 decisions and interpretations live in [`decisions.md`](decisions.md); the gate checks
 this number.
 
+## The Lean assumption inventory, and the check that keeps it honest
+
+`proofs/lean/src/DarkFi/Axioms.lean` is the only file in `proofs/lean/` permitted to contain an
+`axiom` or a value-less `opaque`. What it contains is declared here, and
+[`script/check_lean_axioms.py`](../../../script/check_lean_axioms.py) compares the two **in both
+directions**: an assumption in `Axioms.lean` that is not listed below fails the build (a new
+assumption cannot be sneaked in), and an assumption listed below that is *not* in `Axioms.lean`
+fails it too. The second direction exists because absence was silent before it: a block replacement
+once deleted the declaration along with the code it was aimed at, and nothing noticed, because the
+four-field check validates the assumptions that are present.
+
+<!-- assumption-inventory -->
+
+```text
+aead_key_committing
+aead_open
+coinbase_blind
+pallasPrime
+poseidon_collision_resistance
+poseidon_hash_output
+```
+
+The list held eight names, then seven, and now six. `reward_monotone` was discharged *by proof*
+(`reward_nonincreasing` in `Emission.lean`; `Axioms.lean` re-exports it under the old name) and
+`NoFreeInstances` by **relocation with a recorded strength reduction**
+(`Capability.Inversion.CircuitDerivable` now carries the transcribed circuit data as a computation).
+The per-assumption histories — the composite modulus, the inconsistent `ECMulGadget`, and the gap
+between injectivity and collision resistance — are recorded beside each declaration in `Axioms.lean`
+and in the accounts in [`type-system.md`](type-system.md) and
+[`security-analysis.md`](security-analysis.md).
+
 ## Fix cycles
 
 Every `OPEN` row is in exactly one cycle. A cycle is a commitment by its owner to end every listed
