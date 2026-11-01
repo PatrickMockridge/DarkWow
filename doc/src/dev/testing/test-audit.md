@@ -40,7 +40,7 @@ it was written. Re-measured, with the command that measured each:
 | `.zk.bin` under `src/contract/*/proof/` | 175 | **167** | `ls src/contract/*/proof/*.zk.bin \| wc -l` (a whole-tree `find` gives 179 — `proofs/core` holds 10 and `bin/darkirc/proof` 2, and the cell's own scope is `src/contract/*/proof/`) |
 | `contrib/model/*.py` | 21 | **22** | `ls contrib/model/*.py \| wc -l` |
 | `#[test]` in `heavyweight_pipeline.rs` | 59 | **55** | `grep -c '#\[test\]' bin/dwowd/src/tests/heavyweight_pipeline.rs` |
-| what `heavyweight.sh --all` selects | 43 | **45** | its filter is `test_heavyweight_` + `test_relayer_lifecycle_heavyweight`; the count is *not* "all" — nine `test_fee_integration_*`/`test_bridge_*` and `test_recruitment_pipeline_call_data` are never selected by any flag, and the script's own help text still says 43 |
+| what `heavyweight.sh --all` selects | 43 | **45** | its filter is `test_heavyweight_` + `test_heavyweight_relayer_lifecycle`; the count is *not* "all" — nine `test_fee_integration_*`/`test_bridge_*` and `test_recruitment_pipeline_call_data` are never selected by any flag, and the script's own help text still says 43 |
 
 Two further claims were **false**, not merely stale, and they matter because each named
 something a reader would go looking for:

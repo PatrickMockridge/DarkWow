@@ -76,7 +76,8 @@ Cargo uses all available cores by default. On a 16-core machine, that means 16
 project uses `RAYON_NUM_THREADS` to cap parallelism:
 
 - **All cargo commands:** `RAYON_NUM_THREADS=10`
-- **Heavyweight test harnesses:** `RAYON_NUM_THREADS=20` (these manage their own internal pools)
+- **Heavyweight test harnesses:** `RAYON_NUM_THREADS=10` (the repository rule is 10 on
+  every invocation; **never 20** — see `AGENTS.md`)
 - **xmrig:** always `-t 1` (RandomX will saturate every core otherwise)
 - **monerod:** `--max-concurrency 4` in offline mode
 

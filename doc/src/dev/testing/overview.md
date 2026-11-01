@@ -21,7 +21,7 @@ public-facing (LAN/internet).
 | — | **Python Simulations** | **Contract state machines, authorization flows, business rules, edge cases** (no ZK, no crypto — pure logic) | Milliseconds | `python3 -c "from sim.contracts..."` |
 | — | **Python Consensus Models** | **Block production, PoW, uncle-merkle, chain reorg, VM concurrency, finality, merge mining** (1:1 Rust specification, 41/41 chain tests, 7/7 merge-mining, 6 VM scenarios of which 2 demonstrate the pre-fix crash) | Milliseconds | `python3 contrib/model/chain_validation_model.py`, `python3 contrib/model/vm_state_model.py`, `python3 contrib/model/merge_mining_model.py` |
 | 1.5 | **Pre-Production Bridge** | **Production-path integration: real ZK proofs, real AEAD encryption, real accept_block, real wallet scan** (BlockTarget::MAX, deterministic ZK). Enforces MoC gate before Docker pipeline. Nullifier replay + scan determinism verified. | ~2-7 min | `cargo test --release -p dwowd --lib -- test_wallet_coinbase_scan_only test_canonical_call_failure_rejects_block test_merge_mined_block_acceptance test_merge_mined_block_deterministic test_wallet_capability_scan` |
-| 2 | Heavyweight | Contract **functions, ZK proofs, uncle-merkle block execution** — all 32 contracts with exhaustive function coverage. Deployment not tested (uses direct path for setup). | Minutes | `./bin/dwowd/src/tests/heavyweight.sh --all`, `cargo test --release -p dwowd test_<contract>_heavyweight` |
+| 2 | Heavyweight | Contract **functions, ZK proofs, uncle-merkle block execution** — all 32 contracts with exhaustive function coverage. Deployment not tested (uses direct path for setup). | Minutes | `./bin/dwowd/src/tests/heavyweight.sh --all`, `cargo test --release -p dwowd test_heavyweight_<contract>` |
 | 3 | Containerized Localnet | Multi-node Docker testnet (seed + mining nodes), P2P, RandomX, bridge lifecycle, wallet, 6 modes, 21 phases, composable flags | Persistent | `./test_pipeline.sh --mode native\|merge\|bridge\|wallet\|join-native\|join-merge` in `contrib/docker/darkwow-testnet/` |
 | 4 | Containerized Devnet | Public-facing mining node for shared devnets over LAN/internet | Persistent | `docker run --network=host -e IS_SEED=true darkwow-devnet` |
 | Wallet | Wallet capabilities | L1: Bash CLI (seconds). L2: Rust in-process (`cargo test -p dwow_wallet --lib` — 60 tests, seconds; the `-- capability::tests` filter this cell used to name selected **nothing**, because `bin/dww/src/capability.rs` contains no tests — the capability assertions are in `bin/dww/src/walletdb.rs`, e.g. `test_get_capabilities_by_asset_filter`). L3: Docker container (persistent). | Seconds to Persistent | `./bin/dww/test_capability_lightweight.sh`, `cargo test -p dwow_wallet --lib -- capability::tests`, `./contrib/docker/darkwow-testnet/test-wallet.sh` |
@@ -53,12 +53,13 @@ can hold material value at mainnet, it must be tested in conditions that
 faithfully reproduce mainnet behavior. Shortcuts in the test infrastructure
 become blind spots in production.
 
-**Composability model:** The pipeline supports `--stop-after N`, `--phase N`,
-`--resume-from N`, `--skip-build`, and `--build-local` flags. These allow
-developers to run subsets of phases against an already-running devnet without
-re-running the full pipeline. But they never compromise fidelity — `--phase 9`
-still waits for real block production. There is no "fast mode" that shortens
-block times or skips PoW.
+**Composability model:** The pipeline supports `--stop-after N`, `--resume-from N` and
+`--skip-build` to bound a run against an already-running devnet. There is **no**
+`--build-local`: builds clone from origin, so local changes must be pushed before a pipeline
+run (the determinism rule). `--phase N` is only a precondition check; it does not stop the
+pipeline at N — use `--resume-from N --stop-after N` for one phase. None of these compromise
+fidelity: the phases still wait for real block production, and there is no fast mode that
+shortens block times or skips PoW.
 
 **Ecosystem responsibility:** Quick iteration tools (simulators, mock
 networks, RPC-based test harnesses) belong in the ecosystem, not in the

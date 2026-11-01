@@ -62,10 +62,12 @@ cd contrib/docker/darkwow-testnet
 #   --no-cache       Rebuild all Docker layers from scratch (default: use cache)
 #   --fresh          Aggressive clean: prune images, build cache, buildx (default: off)
 #   --skip-build     Skip Docker build — use cached images
-#   --build-local    Build from local working tree (COPY .) instead of cloning from origin
+#      Build from local working tree (COPY .) instead of cloning from origin
 #   --resume-from N  Resume from phase N (skip phases 1 through N-1, validates preconditions)
 #   --stop-after N   Run phases 1 through N, then print report and exit
-#   --phase N        Run a single phase with precondition validation (requires running devnet)
+#   --phase N        Precondition check for phase N only. It does NOT limit execution:
+#                    the pipeline then runs from phase 1. Use --resume-from/--stop-after
+#                    to bound a run.
 #   --with-wallet N  Build and start N wallet containers alongside devnet (0-5)
 #   --contract-tier N Run contract E2E tests after pipeline (1-4)
 #   --capability-tests Run L1 capability write-path tests (box put/take) in-docker (default: off)
@@ -75,9 +77,9 @@ cd contrib/docker/darkwow-testnet
 ./test_pipeline.sh --mode merge --no-cache --fresh
 
 # Local dev iteration (build from working tree, skip to just the phases you need)
-./test_pipeline.sh --mode native --build-local --stop-after 9    # Build+test through blocks, then stop
+./test_pipeline.sh --mode native --stop-after 9    # Build+test through blocks, then stop
 ./test_pipeline.sh --mode native --phase 10                      # Run wallet verify against running devnet
-./test_pipeline.sh --mode native --with-wallet 2 --build-local   # Full wallet test from local code
+./test_pipeline.sh --mode native --with-wallet 2   # Full wallet test from local code
 
 # Wallet + contract testing
 ./test_pipeline.sh --mode native --with-wallet 2 --contract-tier 2  # Full cycle: wallet + deploy + invoke
@@ -97,10 +99,10 @@ The pipeline supports running subsets of phases without re-running everything:
 ./test_pipeline.sh --mode native --stop-after 9
 
 # Re-run wallet verification against the running devnet
-./test_pipeline.sh --mode native --phase 10
+./test_pipeline.sh --mode native --resume-from 10 --stop-after 10
 
 # Re-run wallet transfer test
-./test_pipeline.sh --mode native --phase 11
+./test_pipeline.sh --mode native --resume-from 11 --stop-after 11
 
 # Run standalone wallet tests (no pipeline overhead)
 ./test-wallet-against-devnet.sh
@@ -108,18 +110,16 @@ The pipeline supports running subsets of phases without re-running everything:
 # Run contract tests against the running devnet
 ./test-contracts.sh --mode native --tier 2
 
-# Build from local working tree (no push required)
-./test_pipeline.sh --mode native --build-local --stop-after 9
-
 # Resume from phase 12 with precondition validation
 ./test_pipeline.sh --mode bridge --resume-from 12
 # Fails immediately if BRIDGE_HELPER is missing or node0 RPC is unreachable
 ```
 
-**Precondition validation:** `--resume-from` and `--phase` validate that
-the required state exists before executing. If you `--resume-from 12`
-without running phases 1-11 first, you get: "Precondition:
-bridge_test_helper not found. Run phase 3 (prereqs) first."
+**Precondition validation:** `--resume-from` validates that the required state exists before
+executing. If you `--resume-from 12` without running phases 1-11 first, you get:
+"Precondition: bridge_test_helper not found. Run phase 3 (prereqs) first." `--phase N` runs
+the same check for phase N, but it does **not** stop the pipeline at N; use
+`--resume-from N --stop-after N` to run one phase.
 
 # Check status
 docker compose ps
@@ -336,10 +336,10 @@ deploy WASM contract → transfer tokens → pay fees.
 
 ## Dwow-Devnet Variant
 
-A 3-node bridge-networked variant is available at `contrib/docker/darkwow-devnet/`
+A 3-node bridge-networked variant is available at `contrib/docker/dwow-devnet/`
 with relaxed parameters for rapid local iteration:
 
-| Feature | `darkwow-testnet` | `darkwow-devnet` |
+| Feature | `darkwow-testnet` | `dwow-devnet` |
 |---------|-------------------|---------------|
 | `localnet` | `true` (Docker self-signed overlay; the embedded public profile is `false`) | `true` |
 | Magic bytes | `[68, 82, 75, 87]` | auto-derived |
@@ -351,7 +351,7 @@ with relaxed parameters for rapid local iteration:
 | Nodes | 3 (seed + 2 miners) | 3 (lilith + 2 miners) |
 | Networking | Bridge (port-mapped) | Bridge (default) or Host |
 
-Use `darkwow-devnet` for fast local contract testing. Use `darkwow-testnet` when
+Use `dwow-devnet` for fast local contract testing. Use `darkwow-testnet` when
 you need parameters matching the public testnet.
 
 ## Base Image

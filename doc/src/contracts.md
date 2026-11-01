@@ -7,6 +7,14 @@ than repeating the list.
 DarkWow has **32 contracts** (9 genesis + 23 post-genesis works in progress),
 plus 1 library crate (rlib-only) and 1 test utility.
 
+> **Status is not uniform.** `⚠️ Experimental` means code and circuits exist, not that every
+> arm is callable. Four contracts refuse their core authority/custody arms:
+> **stablecoin** (OpenPosition/AddCollateral/MintStable/Liquidate/RedeemStable →
+> `CustodyModelUnavailable`), **bearer_bond** (IssueStake/RequestInterest/ProveCoverage →
+> `AuthorityModelUnavailable`), **drain_protection** (ExitV1), and **bridge** (DepositV1 in
+> every buildable configuration). Read the contract page and manifest before treating an
+> endpoint as live.
+
 ### Maturity Labels
 
 | Label | Meaning |
@@ -49,11 +57,11 @@ from the deployer's public key.
 | Contract | Crate | Maturity | Description |
 |----------|-------|----------|-------------|
 | [Auction](contract/auction.md) | `dwow_auction_contract` | ⚠️ Experimental | Sealed-bid auctions with escrow integration |
-| [Bearer Bond](contract/bearer_bond.md) | `dwow_bearer_bond_contract` | ⚠️ Experimental | Fixed-interest staking instruments |
+| [Bearer Bond](contract/bearer_bond.md) | `dwow_bearer_bond_contract` | ⚠️ Experimental (issuer arms refused) | Fixed-interest staking instruments |
 | [DEX](contract/dex.md) | `dwow_dex_contract` | ⚠️ Experimental | Atomic swap DAO — bilateral token swaps |
 | [Escrow](contract/escrow.md) | `dwow_escrow_contract` | ⚠️ Experimental | Timelock-based conditional payments |
 | [OTC Swap](contract/otc_swap.md) | `dwow_otc_swap_contract` | ⚠️ Experimental | Peer-to-peer OTC token swaps |
-| [Stablecoin](contract/stablecoin.md) | `dwow_stablecoin_contract` | ⚠️ Experimental | Collateralized debt position (CDP) stablecoin |
+| [Stablecoin](contract/stablecoin.md) | `dwow_stablecoin_contract` | ⚠️ Experimental (custody arms refused) | Collateralized debt position (CDP) stablecoin |
 | [Subscription](contract/subscription.md) | `dwow_subscription_contract` | ⚠️ Experimental | Recurring payments and time-based billing |
 | [Tender](contract/tender.md) | `dwow_tender_contract` | ⚠️ Experimental | Sealed-bid tendering with O-Cap gating |
 
@@ -76,13 +84,13 @@ from the deployer's public key.
 | Contract | Crate | Maturity | Description |
 |----------|-------|----------|-------------|
 | [DAO Escrow](contract/dao_escrow.md) | `dwow_dao_escrow_contract` | ⚠️ Experimental | DAO-governed endowment with three modes |
-| [Drain Protection](contract/drain_protection.md) | `dwow_drain_protection_contract` | ⚠️ Experimental | Gradual withdrawal limits and rate limiting |
+| [Drain Protection](contract/drain_protection.md) | `dwow_drain_protection_contract` | ⚠️ Experimental (member exit refused) | Gradual withdrawal limits and rate limiting |
 
 ### Infrastructure (3)
 
 | Contract | Crate | Maturity | Description |
 |----------|-------|----------|-------------|
-| [Bridge](contract/bridge.md) | `dwow_bridge_contract` | ⚠️ Experimental | Cross-chain transfers via O-Cap security |
+| [Bridge](contract/bridge.md) | `dwow_bridge_contract` | ⚠️ Experimental (deposit refused in default build) | Cross-chain transfers via O-Cap security |
 | [Pool Stake](contract/pool_stake.md) | `dwow_pool_stake_contract` | ⚠️ Experimental | Pooled staking for relayer coverage |
 | [Relayer Endowment](contract/relayer_endowment.md) | `dwow_relayer_endowment_contract` | ⚠️ Experimental | Capital deployment to relayers |
 

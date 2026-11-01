@@ -15,10 +15,10 @@ testing infrastructure is the platform that makes this possible.
 |---|---|---|---|
 | Test contract model/serialization code | 1 | `cargo test -p dwow_<contract> --test integration` | seconds |
 | Deploy all contracts (no ZK proofs) | 1 | `cargo test -p dwowd test_pipeline -- --nocapture` | ~2 min |
-| Run full contract execution with ZK proofs | 2 | `cargo test --release -p dwowd test_<contract>_heavyweight` | 30-120s |
+| Run full contract execution with ZK proofs | 2 | `cargo test --release -p dwowd test_heavyweight_<contract>` | 30-120s |
 | Run the test pipeline (4 modes) | 3 | `./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native` | ~5 min |
 | Run a multi-node blockchain locally | 3 | `docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml --profile native up -d` | persistent |
-| Join or create a shared devnet | 4 | `docker run --network=host -e IS_SEED=true darkwow-devnet` | persistent |
+| Join or create a shared devnet | 4 | `docker run --network=host -e IS_SEED=true dwow-devnet:latest` | persistent |
 | Join the public testnet as a miner | 4 | `docker run --network=host -e ROLE=dwowd darkwow-testnet:latest` | persistent |
 | Run native mining + deploy contracts | N/A | `./contrib/docker/darkwow-testnet/join-testnet.sh --mode native` | ~10 min |
 | Run the full contract test suite | 3 | `./contrib/docker/darkwow-testnet/test-contracts.sh` | ~5 min |
@@ -32,10 +32,10 @@ DarkWow ships with a four-level testing infrastructure. See the [Testing Overvie
 |---|---|---|---|
 | Test contract model/serialization code | 1 | `cargo test -p dwow_<contract> --test integration` | seconds |
 | Deploy all contracts (no ZK proofs) | 1 | `cargo test -p dwowd test_pipeline -- --nocapture` | ~2 min |
-| Run full contract execution with ZK proofs | 2 | `cargo test --release -p dwowd test_<contract>_heavyweight` | 30-120s |
+| Run full contract execution with ZK proofs | 2 | `cargo test --release -p dwowd test_heavyweight_<contract>` | 30-120s |
 | Run the test pipeline (4 modes) | 3 | `./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native` | ~5 min |
 | Run a multi-node blockchain locally | 3 | `docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml --profile native up -d` | persistent |
-| Join or create a shared devnet | 4 | `docker run --network=host -e IS_SEED=true darkwow-devnet` | persistent |
+| Join or create a shared devnet | 4 | `docker run --network=host -e IS_SEED=true dwow-devnet:latest` | persistent |
 | Join the public testnet as a miner | 4 | `docker run --network=host -e ROLE=dwowd darkwow-testnet:latest` | persistent |
 | Run native mining + deploy contracts | N/A | `./contrib/docker/darkwow-testnet/join-testnet.sh --mode native` | ~10 min |
 | Run the full contract test suite | 3 | `./contrib/docker/darkwow-testnet/test-contracts.sh` | ~5 min |
@@ -168,7 +168,7 @@ cargo test -p dwowd test_pipeline       # Level 1: deploy check
 
 # Validate ZK proofs
 RAYON_NUM_THREADS=10 cargo test --release -p dwowd \
-    test_<contract>_heavyweight         # Level 2: full ZK
+    test_heavyweight_<contract>         # Level 2: full ZK
 
 # Spin up a local network
 docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml --profile native up -d
