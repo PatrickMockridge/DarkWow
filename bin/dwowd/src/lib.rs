@@ -933,14 +933,13 @@ impl Dwowd {
         // Initialize the miners registry (placeholder for now)
         let registry = DwowMinersRegistry::init_linear(network, chain_state.clone()).await?;
 
-        // Genesis block creation with proper coinbase (Bitcoin-style).
-        // Construct MiningRecipient from the AccountManager BEFORE calling
-        // init_genesis. This separates Concern 1 (account management) from
-        // Concern 2 (block construction / nullifier signing).
-        let linear_genesis_hash: HeaderHash = if create_genesis {
-            // Authority restart guard: a persistent volume already holds
-            // genesis — verify it against the compile-time pin instead of
-            // re-creating (accept_block would reject a duplicate height 1).
+        // Stored-genesis admission: every restart, authority or not, verifies
+        // the genesis already on disk against the compiled-in pin before it is
+        // adopted as this node's chain identity. This check used to live inside
+        // the `create_genesis` branch, so a non-authority restart adopted its
+        // stored genesis unverified — a poisoned datadir survived reboots
+        // (safety.md §13).
+        let stored_genesis_hash: Option<HeaderHash> =
             if chain_state.get_height() >= BlockHeight::GENESIS {
                 let stored_genesis = chain_state.get_block(BlockHeight::GENESIS)
                     .map_err(|e| Error::Custom(format!(
@@ -954,11 +953,24 @@ impl Dwowd {
                 // a freshly created one, so a database belonging to a different
                 // network or build is refused rather than silently reused.
                 check_genesis_pin(stored_hash.as_bytes(), "stored")?;
-                let stored = HeaderHash(stored_hash.into());
+                Some(HeaderHash(stored_hash.into()))
+            } else {
+                None
+            };
+
+        // Genesis block creation with proper coinbase (Bitcoin-style).
+        // Construct MiningRecipient from the AccountManager BEFORE calling
+        // init_genesis. This separates Concern 1 (account management) from
+        // Concern 2 (block construction / nullifier signing).
+        let linear_genesis_hash: HeaderHash = if create_genesis {
+            // Authority restart guard: a persistent volume already holds
+            // genesis — reuse it instead of re-creating (accept_block would
+            // reject a duplicate height 1). Its pin was checked above.
+            if let Some(stored) = stored_genesis_hash {
                 info!(
                     target: "dwowd::Dwowd::init_linear",
                     "Genesis already exists (height {}), reusing stored genesis hash={}",
-                    chain_state.get_height(), stored_hash,
+                    chain_state.get_height(), stored,
                 );
                 stored
             } else {
@@ -974,11 +986,18 @@ impl Dwowd {
                 created
             }
         } else {
-            info!(
-                target: "dwowd::Dwowd::init_linear",
-                "Skipping genesis creation — will sync from network"
-            );
-            HeaderHash([0u8; 32])
+            // A joining node that already holds a chain adopts the stored
+            // genesis as its identity; a fresh datadir has none yet.
+            match stored_genesis_hash {
+                Some(stored) => stored,
+                None => {
+                    info!(
+                        target: "dwowd::Dwowd::init_linear",
+                        "Skipping genesis creation — will sync from network"
+                    );
+                    HeaderHash([0u8; 32])
+                }
+            }
         };
 
         // Here we initialize various subscribers that can export live blockchain/consensus data.
@@ -1095,29 +1114,36 @@ impl Dwowd {
         info!(target: "dwowd::Dwowd::start", "Starting P2P network");
         self.node.p2p_handler.start(executor, &self.node).await?;
 
-        // Broadcast genesis if this node created it. The broadcast in
+        // Broadcast genesis only if this node created it. The broadcast in
         // init_linear() happens before p2p.start() and is silently dropped.
         // Now that P2P is running, connected peers can receive the broadcast.
-        if let Some(linear_chain) = &self.node.chain_state {
-            if linear_chain.get_height() >= BlockHeight::GENESIS {
-                if let Ok(genesis) = linear_chain.get_block(BlockHeight::GENESIS) {
-                    info!(target: "dwowd::Dwowd::start",
-                        "Broadcasting genesis to connected peers...");
-                    crate::proto::linear_broadcast::broadcast_block(
-                        &self.node.p2p_handler.p2p,
-                        genesis.clone(),
-                        vec![],
-                    ).await;
-                    // NO DAG announce for genesis: the genesis block carries
-                    // the 9 contract deployments (multi-MB WASM payload), so
-                    // flood broadcast + GetBlocks sync are the load-bearing
-                    // delivery paths for it; the DAG substrate (§10.4) carries
-                    // only post-genesis blocks.
-                    //
-                    // (This read "and is exempt from the block size cap" until
-                    // 2026-09-25. There is no block size cap — the constant was
-                    // removed as an invented number. The decision on this line
-                    // never depended on it, so only the citation changed.)
+        //
+        // The authority gate is load-bearing: before it, every node at height
+        // >= 1 re-broadcast the multi-MB genesis block, and a node holding a
+        // foreign genesis would amplify it. A joiner learns genesis from the
+        // authority (or from sync), never from its own broadcast (safety.md §13).
+        if config.genesis_authority.is_some() {
+            if let Some(linear_chain) = &self.node.chain_state {
+                if linear_chain.get_height() >= BlockHeight::GENESIS {
+                    if let Ok(genesis) = linear_chain.get_block(BlockHeight::GENESIS) {
+                        info!(target: "dwowd::Dwowd::start",
+                            "Broadcasting genesis to connected peers...");
+                        crate::proto::linear_broadcast::broadcast_block(
+                            &self.node.p2p_handler.p2p,
+                            genesis.clone(),
+                            vec![],
+                        ).await;
+                        // NO DAG announce for genesis: the genesis block carries
+                        // the 9 contract deployments (multi-MB WASM payload), so
+                        // flood broadcast + GetBlocks sync are the load-bearing
+                        // delivery paths for it; the DAG substrate (§10.4) carries
+                        // only post-genesis blocks.
+                        //
+                        // (This read "and is exempt from the block size cap" until
+                        // 2026-09-25. There is no block size cap — the constant was
+                        // removed as an invented number. The decision on this line
+                        // never depended on it, so only the citation changed.)
+                    }
                 }
             }
         }

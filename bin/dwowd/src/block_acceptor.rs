@@ -148,6 +148,27 @@ fn accept_block_locked(
         .map_err(|e| dwow_core::Error::Custom(format!("Block {} structure invalid: {}", block.header.height, e)))?;
     tracing::debug!(target: "block_acceptor", "structure validated");
 
+    // 0.1 Genesis admission — the chain's identity is the compiled-in pin.
+    // Every path that can adopt a genesis (pull sync, block broadcast, the miner
+    // RPCs) reaches the store through this function, so the pin is enforced at
+    // the boundary rather than at one caller. `init_genesis` reaches it too: the
+    // authority's own creation must satisfy the same pin. The check is by height,
+    // not by local height: a node that already holds genesis can also be handed a
+    // second genesis at the tip, which the competing-at-height path would store
+    // and a height-2 extension could then make canonical. Before this check the
+    // broadcast rail accepted a height-1 block with no pin comparison, which let
+    // a peer install a forged genesis and the genesis-authorized contracts
+    // (safety.md §13).
+    if block.header.height == BlockHeight::GENESIS {
+        let genesis_hash = {
+            let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
+            block
+                .hash_with_vm(&guard)
+                .map_err(|e| dwow_core::Error::Custom(format!("genesis hash failed: {e}")))?
+        };
+        crate::check_genesis_pin(genesis_hash.as_bytes(), "accepted")?;
+    }
+
     // 0.2 Uncle validation — HAZOP F5: check_uncles() was dead code (zero
     // non-test callers). Wire it into the acceptance path after structural
     // validation, before expensive WASM execution. 5 checks enforced:
@@ -892,6 +913,23 @@ pub fn activate_best_chain(
     // sync-path reorgs cannot interleave on the nullifier/commitment sets.
     let _reorg = chain_state.lock_reorg();
 
+    // 0. Finality veto: a reorg that would disconnect a block carrying a
+    //    verified anchor proof is refused before any state is touched. The
+    //    depth-1 path checks the canonical tip in `detect_reorg`; this shared
+    //    boundary also covers the general sync-path reorg, which had no such
+    //    check and would have disconnected a finalized ancestor (`safety.md`
+    //    §13).
+    let displaced_is_finalized = chain_state
+        .displaced_range_is_finalized(fork_point)
+        .map_err(|e| dwow_core::Error::Custom(format!("reorg finality check: {e}")))?;
+    if displaced_is_finalized {
+        return Err(dwow_core::Error::Custom(format!(
+            "Reorg refused: disconnecting heights {}..={} would orphan a finalized block",
+            fork_point.succ(),
+            chain_state.get_height(),
+        )));
+    }
+
     // 1. Restore the cumulative-commit singletons to S_{fork_point} (the shared prefix).
     rollback_cumulative_commit(chain_state, fork_point)?;
 
@@ -903,9 +941,21 @@ pub fn activate_best_chain(
         let block = chain_state.get_block(h).map_err(|e| {
             dwow_core::Error::Custom(format!("Reorg: get_block({}) before disconnect: {}", h, e))
         })?;
-        chain_state.disconnect_block(h).map_err(|e| {
-            dwow_core::Error::Custom(format!("disconnect_block({}) failed: {}", h, e))
-        })?;
+        if let Err(e) = chain_state.disconnect_block(h) {
+            log_reorg_failure(
+                chain_state,
+                fork_point,
+                &disconnected,
+                &format!("disconnect_block({h}) failed: {e}"),
+            );
+            return Err(reorg_failure_after_restore(
+                chain_state,
+                &disconnected,
+                fork_point,
+                fee_estimator,
+                format!("disconnect_block({h}) failed: {e}"),
+            ));
+        }
         disconnected.push(block);
         h = h.pred().unwrap_or(BlockHeight::new(0));
     }
@@ -918,14 +968,20 @@ pub fn activate_best_chain(
             Ok(c) => c,
             Err(e) => {
                 log_reorg_failure(chain_state, fork_point, &disconnected, &format!("RandomX cache: {e}"));
-                return Err(dwow_core::Error::Custom(format!("Reorg: RandomX cache: {}", e)));
+                return Err(reorg_failure_after_restore(
+                    chain_state, &disconnected, fork_point, fee_estimator,
+                    format!("RandomX cache: {e}"),
+                ));
             }
         };
         let vm = match randomx::RandomXVM::new(flags, Some(rx_cache), None) {
             Ok(v) => Arc::new(std::sync::Mutex::new(v)),
             Err(e) => {
                 log_reorg_failure(chain_state, fork_point, &disconnected, &format!("RandomX VM: {e}"));
-                return Err(dwow_core::Error::Custom(format!("Reorg: competing block RandomX VM: {}", e)));
+                return Err(reorg_failure_after_restore(
+                    chain_state, &disconnected, fork_point, fee_estimator,
+                    format!("competing block RandomX VM: {e}"),
+                ));
             }
         };
         let target = competing.header.target;
@@ -933,7 +989,10 @@ pub fn activate_best_chain(
             Ok(o) => o,
             Err(e) => {
                 log_reorg_failure(chain_state, fork_point, &disconnected, &format!("accept_block: {e}"));
-                return Err(e);
+                return Err(reorg_failure_after_restore(
+                    chain_state, &disconnected, fork_point, fee_estimator,
+                    format!("accept_block: {e}"),
+                ));
             }
         };
         if !matches!(outcome, BlockConnectOutcome::CanonicalExtension { .. }) {
@@ -943,10 +1002,13 @@ pub fn activate_best_chain(
                 &disconnected,
                 &format!("non-canonical outcome {outcome:?}"),
             );
-            return Err(dwow_core::Error::Custom(format!(
-                "Reorg: competing block at {} not accepted as canonical (got {:?})",
-                competing.header.height, outcome
-            )));
+            return Err(reorg_failure_after_restore(
+                chain_state, &disconnected, fork_point, fee_estimator,
+                format!(
+                    "competing block at {} not accepted as canonical (got {:?})",
+                    competing.header.height, outcome
+                ),
+            ));
         }
     }
 
@@ -1008,6 +1070,75 @@ fn log_reorg_failure(
             Ok(bh) => tracing::info!(target: "block_acceptor", "  disconnected block {}: {bh}", b.header.height),
             Err(_) => tracing::info!(target: "block_acceptor", "  disconnected block {}", b.header.height),
         }
+    }
+}
+
+/// Re-apply the canonical blocks a failed reorg disconnected, in ascending
+/// height order, so a failed [`activate_best_chain`] does not leave the chain
+/// truncated. This is the rollback half of the reorg: `activate_best_chain`
+/// disconnects before it knows the competing chain will connect, and a peer
+/// can supply a chain that is heavier by accumulated work but fails full
+/// validation on connect (`safety.md` §13).
+///
+/// No mempool is passed: the displaced transactions are returned only after a
+/// *successful* reorg, so a restore must not touch the mempool.
+fn restore_disconnected_chain(
+    chain_state: &CChainState,
+    disconnected: &[Block],
+    fee_estimator: Option<&std::sync::Arc<dwow_chain::fee_estimator::FeeEstimator>>,
+) -> Result<()> {
+    let flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
+    for block in disconnected.iter().rev() {
+        let rx_cache = chain_state.get_cache(block.header.randomx_key).map_err(|e| {
+            dwow_core::Error::Custom(format!(
+                "restore RandomX cache at height {}: {e}",
+                block.header.height
+            ))
+        })?;
+        let vm = randomx::RandomXVM::new(flags, Some(rx_cache), None).map_err(|e| {
+            dwow_core::Error::Custom(format!(
+                "restore RandomX VM at height {}: {e}",
+                block.header.height
+            ))
+        })?;
+        let vm = Arc::new(std::sync::Mutex::new(vm));
+        let outcome = accept_block_locked(
+            chain_state,
+            block,
+            &[],
+            &vm,
+            block.header.target,
+            fee_estimator,
+            None,
+        )?;
+        if !matches!(outcome, BlockConnectOutcome::CanonicalExtension { .. }) {
+            return Err(dwow_core::Error::Custom(format!(
+                "restore: canonical block at height {} reconnected as {outcome:?}",
+                block.header.height
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Turn a reorg failure into the error the caller sees after attempting to put
+/// the disconnected canonical chain back. If the restore also fails, the error
+/// says so explicitly — a silent truncation is worse than a loud one.
+fn reorg_failure_after_restore(
+    chain_state: &CChainState,
+    disconnected: &[Block],
+    fork_point: BlockHeight,
+    fee_estimator: Option<&std::sync::Arc<dwow_chain::fee_estimator::FeeEstimator>>,
+    cause: String,
+) -> dwow_core::Error {
+    match restore_disconnected_chain(chain_state, disconnected, fee_estimator) {
+        Ok(()) => dwow_core::Error::Custom(format!(
+            "Reorg failed ({cause}); canonical chain restored, {} block(s) reconnected",
+            disconnected.len()
+        )),
+        Err(restore) => dwow_core::Error::Custom(format!(
+            "Reorg failed ({cause}) AND rollback failed ({restore}) — chain truncated at height {fork_point}"
+        )),
     }
 }
 

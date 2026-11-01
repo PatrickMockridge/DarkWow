@@ -755,6 +755,76 @@ mod tests {
         })
     }
 
+    /// The acceptance boundary is the adoption point every rail shares (pull
+    /// sync, block broadcast, the miner RPCs). A genesis that is not this
+    /// build's genesis MUST be refused there, before it can be stored as a
+    /// competing block at height 1 and then made canonical by a height-2
+    /// extension.
+    ///
+    /// The fixture is the same second identity as
+    /// `the_adopt_path_refuses_a_second_genesis`; the pinned genesis is the
+    /// positive control, exercised by `test_genesis_determinism`.
+    #[test]
+    fn accept_block_refuses_a_foreign_genesis_at_the_boundary() -> TestResult<()> {
+        dwow_native_token_contract::enable_deterministic_zk();
+
+        smol::block_on(async {
+            const OTHER_KEYS_TOML: &str = "[node0]\nwallet_secret = \
+                \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685406\"\n";
+
+            let har =
+                GenesisHarness::new_without_contracts().infra("creating the harness")?;
+            let prev_entry = har.chain_state.supply_chain.get_latest();
+            let path = std::env::temp_dir()
+                .join(format!("dwow_boundary_{}.toml", std::process::id()));
+            std::fs::write(&path, OTHER_KEYS_TOML).infra("writing the second keys file")?;
+            let mgr = crate::accounts::AccountManager::open(
+                &path, dwow_sdk::crypto::keypair::Network::Testnet, "node0",
+            ).infra("opening the second account")?;
+            let recipient = crate::accounts::MiningRecipient::from_account(&mgr, BlockHeight::new(1))
+                .infra("deriving the second mining recipient")?;
+            drop(mgr);
+            let _ = std::fs::remove_file(&path);
+
+            let second = crate::build_genesis_block(
+                &prev_entry,
+                recipient,
+                crate::tests::modules::chain_setup::DRKW_MAGIC,
+            ).await.infra("building the second genesis block")?;
+            let vm = genesis_vm(&second)?;
+
+            let err = match crate::block_acceptor::accept_block(
+                &har.chain_state, &second, &[], &vm, BlockTarget::MAX, None,
+            ) {
+                Ok(_) => {
+                    return Err(TestError::Test {
+                        contract: "genesis",
+                        endpoint: "accept_block",
+                        cause: "a genesis that is not this build's genesis MUST be refused at \
+                                the acceptance boundary, before it can be stored as a competing \
+                                block"
+                            .into(),
+                    })
+                }
+                Err(e) => e,
+            };
+            ensure!(
+                err.to_string().contains("does not match the compiled-in pin"),
+                format!("the boundary refusal must name the pin, got: {err}"),
+            );
+            ensure_eq!(
+                har.chain_state.get_height(),
+                BlockHeight::new(0),
+                "a refused genesis MUST NOT advance the chain",
+            );
+            ensure!(
+                har.chain_state.genesis_hash().is_none(),
+                "a refused genesis MUST NOT become the chain's identity",
+            );
+            Ok(())
+        })
+    }
+
     /// Block creation: genesis → build height-2 block with PoWRewardV1 coinbase
     /// → submit through `accept_block` (production path, WASM executes).
     ///

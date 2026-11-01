@@ -480,3 +480,169 @@ Fix: admit `None` (bootstrap) while still rejecting a *different* hash (chain id
 
 Principle (both): a consensus rule SHALL be introduced together with the change on every path that must
 satisfy it — the barrier without the upstream prevention rejects legitimate production output.
+
+## 13. Genesis, join, and heaviest-chain HAZOP (2026-11)
+
+### 13.1 Baseline (verbatim)
+
+**Top event.** Two chains exist, or the pinned genesis is not the chain every node adopts, or the
+chain a node adopts is not the heaviest by accumulated work. The audit covers the three paths a node
+can take: create genesis, adopt it from a peer, and choose between chains, plus the persistent peer
+bond that makes the second path repeatable. The verbatim run record is in §13.5.
+
+**Baseline (pre-fix).** F1–F6 were established by reading the code against the live control
+surface (R6). F1 was then reproduced at runtime: with the boundary check planted out, the new
+control adopts a foreign genesis and fails (§13.5). All controls pass with the fixes in place. No
+Docker devnet run or umbrella sweep was performed (out of scope; see §13.5).
+
+### 13.2 Spec→Code→Test Traceability Matrix
+
+Verdict = PASS (code implements AND a test asserts at the required level), WARN (implemented but the
+control is structural/deployment-only), FAIL (not implemented / wrong).
+
+| Invariant | Verdict | Code anchor | Test anchor |
+|-----------|---------|-------------|-------------|
+| I1 one creator (role, env, marker) | WARN | `bin/dwowd/src/main.rs:287-292`; `task/consensus_linear.rs:59-87` | deployment gate `phase_09_blocks.sh:200-288`; observer panic has no dedicated failing-before test |
+| I2 one block per node, no in-place re-creation | PASS | `bin/dwowd/src/lib.rs:936-1015` (stored-genesis pin hoisted) | `genesis_pin_rejects_a_wrong_hash`, `genesis_pin_is_current` |
+| I3 sync adoption pinned | PASS | `task/consensus_linear.rs:549-575` | `the_adopt_path_refuses_a_second_genesis` |
+| I4 broadcast adoption pinned | PASS (fixed here) | `bin/dwowd/src/block_acceptor.rs:162` | `accept_block_refuses_a_foreign_genesis_at_the_boundary` |
+| I5 joiner converges to the authority's genesis and tip | PASS | `task/consensus_linear.rs:340-640` | `test_daemon_pull_sync_converges` |
+| I6 caught-up before mining | PASS | `task/consensus_linear.rs:631-640` | `test_sync_state_gates_mining_until_caught_up` |
+| I7 heaviest chain is the default rule | PASS | `src/linear/src/chain_state.rs:1846-1861`; `consensus_linear.rs:275` | `test_detect_reorg_*`, `test_sync_path_reorg_to_heavier_chain` |
+| I8 finality vetoes only a verified anchor | PASS (fixed here) | `src/linear/src/chain_state.rs:1876`; `block_acceptor.rs:923` | `test_displaced_range_is_finalized` |
+| I9 peer bond (seed/peer discovery, hostlist, reconnect) | WARN | `src/net/session/refine_session.rs:74-118`; `outbound_session.rs:335,610,739` | none — durability limitation, G23 |
+
+### 13.3 HAZOP Guide-Word Table
+
+| # | Deviation | Verdict |
+|---|-----------|---------|
+| G1 | NO genesis authority in the network | DEPLOYMENT-ONLY — no code control; the network simply has no block 1. `contrib/docker/darkwow-testnet/docker-compose.yml` names exactly one `NODE_ROLE=genesis` |
+| G2 | MORE than one genesis authority | RULED OUT for a *different* genesis — the acceptance boundary checks the pin before any genesis commits (`bin/dwowd/src/block_acceptor.rs:162`), so a different-key authority fails its own startup ceremony. Two authorities with the same declared key produce the identical block; uniqueness remains deployment-owned |
+| G3 | Observer AS WELL AS genesis | RULED OUT — startup panic (`bin/dwowd/src/main.rs:287-292`); the panic has no dedicated failing-before test |
+| G4 | Genesis received via broadcast OTHER THAN the pinned hash | **CONFIRMED → FIXED** — the broadcast rail reached `accept_block` with no pin comparison. The check now sits at the shared acceptance boundary (`bin/dwowd/src/block_acceptor.rs:162`), control `accept_block_refuses_a_foreign_genesis_at_the_boundary` |
+| G5 | Genesis REVERSED out by a heavier competing chain | **CONFIRMED → FIXED by G4's root** — a foreign genesis can no longer be stored as a competing block at height 1, so the height-2 extension that would have made it canonical is never reached |
+| G6 | Second genesis stored as a competing block at height 1 | **CONFIRMED → FIXED** — same boundary. The competing-at-height path admits two blocks with `previous = [0u8;32]`; the block is now refused before `connect_block` can see it |
+| G7 | Pin NOT checked on restart of a non-authority | **CONFIRMED → FIXED** — the stored-genesis check is hoisted out of `create_genesis` (`bin/dwowd/src/lib.rs:936`). A non-authority restart now verifies its stored genesis and adopts the stored hash as its identity |
+| G8 | Every node rebroadcasts genesis AS WELL AS the creator | **CONFIRMED → FIXED** — the startup broadcast is gated on `config.genesis_authority.is_some()` (`bin/dwowd/src/lib.rs:1125`). Before it, the code did the opposite of its comment and every node at height ≥ 1 re-broadcast the multi-MB block |
+| G9 | Joiner presents `None` in the handshake | BY DESIGN — `src/linear/src/sync_connection.rs:468-475`; the pin downstream now covers both adoption rails, not only the pull path |
+| G10 | Path B plurality lets `None` outvote `Some` | RULED OUT — Rust's `(count, is_some)` key matches the model's sort and its equal-count re-tie-break (`src/linear/src/sync_boundary.rs:160-176`); a strict `None` majority wins in both, by design |
+| G11 | Path B selects a minority genesis | RULED OUT — the received block is pinned; a wrong plurality is refused and the peer scored, so no wrong chain is adopted |
+| G12 | `Relaxed`/`Off` reachable in production | RULED OUT — `const GENESIS_FILTER: GenesisFilterMode = Strict` (`bin/dwowd/src/task/consensus_linear.rs:397`) |
+| G13 | Genesis-less node declared CaughtUp at 0 | PARTIAL — `caught_up` is local (`bin/dwowd/src/task/consensus_linear.rs:631`), but mining also needs a peer or authority, and a block at height 0 cannot be mined. `skip_sync` sets CaughtUp outright; it is false in the devnet compose and is a test/legacy escape hatch |
+| G14 | Authority mines MORE than its pinned chain permits | RULED OUT — block acceptance binds to the local genesis; creation and stored genesis are pinned |
+| G15 | Accumulated work NOT recomputed on restart | RULED OUT — recomputed `1..=height` with the sled cache corrected (`src/linear/src/chain_state.rs:281-320`) |
+| G16 | Recomputation disagrees at target 0 or across a chain gap | RESIDUAL — unreachable from validated blocks; `BlockTarget::chain_work` returns 0 for target 0 while the restart recompute uses `max(1)` |
+| G17 | Equal-work longer chain loses | RULED OUT — strict `>` in both comparison sites (`src/linear/src/chain_state.rs:1846-1861`; `bin/dwowd/src/task/consensus_linear.rs:275`) |
+| G18 | Finality veto blocks a heavier chain by default | BY DESIGN — the veto requires a **verified** anchor proof; an unanchored block is displaceable (`src/linear/src/chain_state.rs:1827-1831`) |
+| G19 | Finality NOT applied on the general sync reorg | **CONFIRMED → FIXED** — `displaced_range_is_finalized` is checked at the shared reorg executor (`bin/dwowd/src/block_acceptor.rs:923`), control `test_displaced_range_is_finalized` |
+| G20 | Reorg depth LESS than the heavier chain needs | DECLARED — `MAX_REORG_DEPTH = 100` (`bin/dwowd/src/task/consensus_linear.rs:129`) |
+| G21 | Failed reconnect leaves the chain truncated | **CONFIRMED → FIXED** — the disconnected canonical blocks are reconnected before the error returns (`bin/dwowd/src/block_acceptor.rs:1085,1127`), control `test_failed_reorg_restores_the_disconnected_chain` |
+| G22 | Fork-choice changed by a config flag | RULED OUT — no flag selects height over work; finality is a separate veto layer |
+| G23 | Wrong-genesis peer persists in hostlist/greylist | LIMITATION — the sync-rail score is per-process and the hostlist is saved only on graceful stop; the spec says *skip* a mismatched peer, and `seeds`/`peers` re-bootstrap, so retention costs a retry rather than a lock-out |
+| G24 | Wallet adopts the first peer's genesis | OUT OF SCOPE — the wallet follows the daemon's reported tip; recorded as a client posture gap, not a node rule |
+
+### 13.4 Findings and remediation
+
+**F1 — the genesis pin did not cover the broadcast rail (CONFIRMED → FIXED).** `handle_receive_block`
+(`bin/dwowd/src/proto/linear_broadcast.rs:401-548`) accepted a height-1 block at local height 0 through
+`accept_block_with_mempool` without the pin comparison the pull loop performs
+(`bin/dwowd/src/task/consensus_linear.rs:549-573`), and without the magic-byte check. Genesis PoW is
+`BlockTarget::MAX`, so a forged genesis costs no mining; the pin is its only authenticity. The root cause
+is the principle at the foot of §12: the rule was introduced on one caller rather than on the boundary
+every caller shares. The fix moves it to `accept_block_locked` (`bin/dwowd/src/block_acceptor.rs:162`),
+which is reached by pull sync, broadcast, stratum, mm_rpc and the built-in miner alike. The pull loop's
+own early call remains, because it also scores the peer before the block is handed over.
+
+**F2 — a foreign genesis could be made canonical (CONFIRMED → FIXED by F1).** A foreign genesis stored as
+a competing block at height 1 (`previous = [0u8;32]` matches the canonical sibling) followed by a
+height-2 block made `detect_reorg` return `Heavier`; `accept_block` then called
+`activate_best_chain(..., fork_height.pred() = 0, ...)`, which disconnected the canonical genesis and
+connected the forged one. With F1 the block never reaches the competing store, so the extension has no
+parent to build on. No separate genesis-immutability guard is added: the identity check at the boundary
+is the guard, and the sync-path reorg already requires a common ancestor above genesis
+(`reorg_to_heavier_chain` returns `Failed` when `fork_point` is zero).
+
+**F3 — a non-authority restart adopted an unverified stored genesis (CONFIRMED → FIXED).** The stored
+genesis was re-hashed and pinned only inside the `create_genesis` branch
+(`bin/dwowd/src/lib.rs:940-978` before the fix). A joining node restarting on a poisoned datadir never
+looked at the pin, and its `genesis_hash()` then became the filter's definition of "compatible". The
+check is hoisted (`bin/dwowd/src/lib.rs:936`), and a joining node now records the stored hash as its
+identity instead of the all-zero sentinel. No new control is added: the comparison itself is already
+covered by `genesis_pin_rejects_a_wrong_hash`; the change is *when* it runs, and `init_linear` is too
+heavy for the fast tier.
+
+**F4 — every node rebroadcast genesis (CONFIRMED → FIXED).** The comment said "if this node created it";
+the condition was only `height >= GENESIS` (`bin/dwowd/src/lib.rs` before the fix). Every node at height
+≥ 1 re-broadcast the multi-MB genesis block, and a node holding a foreign genesis amplified it. The
+broadcast is now authority-gated (`bin/dwowd/src/lib.rs:1125`).
+
+**F5 — a failed reorg truncated the chain (CONFIRMED → FIXED).** `activate_best_chain` disconnects the
+canonical blocks before it knows the competing chain will connect. A peer can supply a chain that is
+heavier by accumulated work (the sync walk validates each block's own PoW, not the difficulty rule) but
+fails full validation on connect; the old failure paths logged and returned, leaving the chain at the
+fork point. The failure paths now reconnect the disconnected blocks in ascending order
+(`bin/dwowd/src/block_acceptor.rs:1085,1127`) and report a loud truncation if restoration also fails.
+
+**F6 — the general sync reorg ignored finality (CONFIRMED → FIXED).** The depth-1 path consulted the
+finality predicate before reorging (`src/linear/src/chain_state.rs:1827-1831`); `reorg_to_heavier_chain`
+did not, and `activate_best_chain` disconnects before `connect_block`'s finality check can see the
+displaced block. The shared executor now refuses a reorg whose displaced range contains a verified
+anchor (`displaced_range_is_finalized`, `src/linear/src/chain_state.rs:1876`; call at
+`bin/dwowd/src/block_acceptor.rs:923`).
+
+**F7 — adjudicated, no code change.** G10's `None` majority is the model's rule, not a Rust divergence
+(the model's guard re-tie-breaks equal counts only); G23's hostlist retention is a durability limitation
+bounded by re-bootstrap; G2's one-authority uniqueness is deployment-owned and the pin is its
+defence-in-depth; G24 is a wallet posture gap outside the node's fork-choice rule.
+
+`§12.2` said a `None` peer's identity "is enforced downstream by the pinned `genesis_hash.txt`". Before
+F1 that was true only of the pull path; with the boundary check it is now true of both adoption rails.
+
+### 13.5 Verification
+
+The controls are named in §13.3 and §13.4. Run 2026-11-01, debug profile (`-j 8`,
+`RAYON_NUM_THREADS=10`, `--test-threads 4`, `DWOW_TEST_LOGS=1`, output in full under `/tmp/`). The
+plan asked for `--release`; the debug binary was the one already built and the release tree did not
+exist on this host (43 GiB free, swap exhausted), so the runs were made in debug. The assertions
+are profile-independent; only duration differs.
+
+1. `cargo test -p dwow_chain --lib --features pow,sync-p2p -- test_genesis_filter --test-threads 4`
+   → `test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 313 filtered out; finished in 0.00s`
+   (Path A identity, Path B plurality, tie-break, Off).
+2. `cargo test -p dwow_chain --lib --features pow -- detect_reorg --test-threads 4`
+   → `test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 303 filtered out; finished in 2.28s`
+   (strict-greater work, finalized-tip veto).
+3. `cargo test -p dwow_chain --lib --features pow -- test_displaced_range_is_finalized --test-threads 4`
+   → `test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 307 filtered out; finished in 1.38s`
+   (F6/G19; positive and negative arms in one test).
+4. `cargo test -p dwowd --lib -- genesis --test-threads 4`
+   → `test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 139 filtered out; finished in 1384.18s`
+   (pin, determinism, tampered-WASM refusal, second-genesis refusal, boundary refusal, sync
+   materialisation, the nine contract ids).
+   The boundary control alone:
+   `test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 149 filtered out; finished in 4.03s`
+5. `cargo test -p dwowd --lib -- test_failed_reorg_restores_the_disconnected_chain --test-threads 4`
+   → `test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 149 filtered out; finished in 1438.35s`
+   (F5/G21).
+6. `cargo test -p dwowd --lib -- daemon_sync_integration --test-threads 4`
+   → `test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 138 filtered out; finished in 1398.13s`
+   (pull convergence, caught-up gating, broadcast propagation, the reorg family, and F5).
+
+**Negative control for the F1 boundary check (R8).** The genesis admission at
+`bin/dwowd/src/block_acceptor.rs:162` was planted out (`if false && height == GENESIS`), the tree
+rebuilt, and control (4) re-run:
+`test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 149 filtered out; finished in 666.99s`
+with
+`Error: TEST-FAIL [genesis::accept_block]: a genesis that is not this build's genesis MUST be refused at the acceptance boundary, before it can be stored as a competing block`.
+The plant was reverted, the tree rebuilt, and the control re-run:
+`test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 149 filtered out; finished in 2.22s`.
+The check can fail, and it fails on the pre-fix behaviour.
+
+**Not run (R7).**
+- The Docker devnet pipeline and the umbrella sweep: out of scope, require a separate request.
+- The observer+genesis panic has no dedicated failing-before test (I1 is WARN; deployment gate only).
+- Hostlist durability has no test (I9 is WARN; G23 records the limitation).
+- The F5 restore control was not executed against a reverted pre-fix tree. Its assertions (the
+  "canonical chain restored" error text and the unchanged height/tip) fail by construction under
+  the old truncating path; the executed negative control was for the F1 boundary check, the other
+  new admission check.

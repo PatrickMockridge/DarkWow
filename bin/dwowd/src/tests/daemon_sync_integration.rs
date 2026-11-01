@@ -1006,6 +1006,53 @@ fn test_multi_block_reorg_state_consistency() {
     });
 }
 
+/// A reorg that disconnects canonical blocks and then fails to connect the
+/// competing chain must put the canonical blocks back. Before the fix,
+/// `activate_best_chain` disconnected first and only logged on a connect
+/// failure, leaving the chain truncated — a peer could force that with a chain
+/// that is heavier by accumulated work but fails full validation on connect.
+#[test]
+fn test_failed_reorg_restores_the_disconnected_chain() {
+    dwow_native_token_contract::enable_deterministic_zk();
+
+    smol::block_on(async {
+        let (chain, keys_path) = build_authority_chain().await; // genesis + height 2
+        mine_coinbase_block(&chain, &keys_path, BlockHeight::new(3)).await;
+
+        let before_height = chain.get_height();
+        assert_eq!(before_height, BlockHeight::new(3));
+        let before_tip = chain.tip_hash().expect("canonical tip").1;
+
+        // A candidate at the fork height that passes the reorg executor's
+        // assumptions but cannot connect: no transactions, so structure
+        // validation refuses it after the canonical blocks are gone.
+        let mut invalid = chain.get_block(BlockHeight::new(2)).expect("canonical block 2");
+        invalid.transactions.clear();
+
+        let err = crate::block_acceptor::activate_best_chain(
+            &chain,
+            std::slice::from_ref(&invalid),
+            BlockHeight::new(1),
+            None,
+            None,
+        )
+        .expect_err("an invalid competing block must fail the reorg");
+
+        assert!(
+            err.to_string().contains("canonical chain restored"),
+            "the failure must put the disconnected blocks back, got: {err}",
+        );
+        assert_eq!(chain.get_height(), before_height, "height must be restored");
+        assert_eq!(
+            chain.tip_hash().expect("restored tip").1,
+            before_tip,
+            "the canonical tip hash must be unchanged after a failed reorg",
+        );
+
+        let _ = std::fs::remove_file(&keys_path);
+    });
+}
+
 /// OBL-C269: a failure while reversing a block's contracts writes must not remove the
 /// supply-chain entry first. The undo record is corrupted so the disconnect cannot decode it;
 /// the whole disconnect must abort with both trees untouched. Under the pre-fix shape the

@@ -1865,6 +1865,29 @@ impl CChainState {
         }
     }
 
+    /// Whether disconnecting `fork_point + 1 ..= tip` would orphan a block
+    /// carrying a **verified** finality anchor.
+    ///
+    /// Finality is a veto over fork choice, not a fork-choice flag. The
+    /// depth-1 path checks the canonical tip inside [`Self::detect_reorg`];
+    /// this is the shared predicate over every displaced height, used by the
+    /// reorg executor so the general sync-path reorg cannot disconnect a
+    /// finalized ancestor either (`safety.md` §13).
+    pub fn displaced_range_is_finalized(&self, fork_point: BlockHeight) -> Result<bool> {
+        let tip = self.get_height();
+        let mut h = fork_point.succ();
+        while h <= tip {
+            let block = self.get_block(h)?;
+            if self.finality_config.should_enforce(block.header.finality_flags)
+                && caribina::verify_anchor_proof(&block.header)
+            {
+                return Ok(true);
+            }
+            h = h.succ();
+        }
+        Ok(false)
+    }
+
     /// Store a lighter uncle-chain extension as a competing block at `height`
     /// (M4 / sync-protocol.md §19.1). Extracted from `connect_block` so
     /// `accept_block` can store it BEFORE WASM execution.
@@ -3777,6 +3800,40 @@ mod tests {
             ReorgSignal::Heavier { .. } => panic!("expected Lighter, got Heavier"),
             ReorgSignal::None => panic!("expected Lighter, got None"),
         }
+    }
+
+    /// Finality is a veto over fork choice: `activate_best_chain` must refuse
+    /// to disconnect a range containing a block whose anchor proof verifies.
+    /// The positive and negative arms are both required — a predicate that
+    /// returned `true` for everything would pass the first assertion alone.
+    #[test]
+    fn test_displaced_range_is_finalized() {
+        // Positive: an anchored canonical tip inside the displaced range.
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let cs = CChainState::new(Arc::new(db), 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
+            FinalityConfig::default()).unwrap();
+        let mut anchored = dr_block(1, BlockTarget::MAX, blake3::hash(b"g"), 0);
+        attach_anchor_proof(&mut anchored);
+        seed_canonical(&cs, anchored);
+        assert!(
+            cs.displaced_range_is_finalized(BlockHeight::new(0)).unwrap(),
+            "a verified anchor in fork_point+1..=tip MUST confer finality",
+        );
+        assert!(
+            !cs.displaced_range_is_finalized(BlockHeight::new(1)).unwrap(),
+            "nothing is displaced when the fork point is the tip",
+        );
+
+        // Negative control: the same predicate on an unanchored canonical tip
+        // must not report finality, or every reorg would be refused.
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let cs = CChainState::new(Arc::new(db), 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
+            FinalityConfig::default()).unwrap();
+        seed_canonical(&cs, dr_block(1, BlockTarget::MAX, blake3::hash(b"g"), 0));
+        assert!(
+            !cs.displaced_range_is_finalized(BlockHeight::new(0)).unwrap(),
+            "an unanchored tip is displaceable",
+        );
     }
 
     #[test]
