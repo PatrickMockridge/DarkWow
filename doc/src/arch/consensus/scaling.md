@@ -359,9 +359,9 @@ merge deterministically.
 
 **What's in place:**
 
-- **Independent per-call overlays** (`execution.rs:163`): each contract call
-  executes against a clone of the base sled overlay (`Arc<Mutex<SledTreeOverlay>>`),
-  so calls do not share mutable state during execution.
+- **One shared canonical overlay** (`execution.rs:241-245`): canonical calls execute
+  sequentially against a single `SledTreeOverlay`; call N observes the writes of calls
+  1..N-1. Isolation is by ordering, not by per-call clones (`:393-397`).
 - **`JoinSet<T>`** (`src/concurrency/join_set.rs`): concurrent task collection
   for spawning parallel work and joining results — the Rust mapping of
   ρ-calculus `P | Q | merge!`.
@@ -375,13 +375,11 @@ merge deterministically.
   is exactly the safety condition for parallel execution: calls with
   disjoint keys are bisimilar to sequential execution.
 
-**The gate: wasmer Runtime concurrency.** The `wasmer::Runtime` type
-handles WASM compilation, caching, and execution. Its internal state
-(compiler, code cache, instance pool) may not be safe for concurrent
-access from multiple smol tasks. Each call already creates a fresh
-`Runtime::new()` instance (`execution.rs:232`), so the per-call state
-is independent — the question is whether the underlying compiler
-internals are thread-safe.
+**The gate: wasmer concurrency.** The `Runtime` type (`vm_runtime.rs:289-296`) holds
+an `Arc<Instance>`, a `Store` and a `FunctionEnv`; instances are created at
+`execution.rs:458,920,968`. The question is whether the wasmer `Store` and compiler
+internals are safe for concurrent use from multiple smol tasks, not whether each call
+has a private runtime object.
 
 **Path to enablement:**
 
