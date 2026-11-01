@@ -12,7 +12,7 @@ which lane and group.
 |---|---|---|---|
 | `fast` | `pull_request` to `linear-master` | < 5 min typical | Path-selected static, circuit, manifest and doc instruments, compile guard, one production-path proof test; tracker advisory |
 | `merge` | `push` to `linear-master` | 30–60 min | Tracker preflight, the lightweight majority of Tier 1, the L1.5 production-path controls |
-| `nightly` | `schedule` and `workflow_dispatch` | 2–4 h across jobs | Nine-genesis heavyweight, `zk_audit`, the Docker pipeline, and a cost report |
+| `nightly` | `schedule` and `workflow_dispatch` | 2–4 h across jobs | Nine-genesis heavyweight, `zk_audit`, the `dao_escrow` PoW-determinism repeat (`OBL-C279`), the Docker pipeline, and a cost report |
 
 A push runs **merge only**: the umbrella already contains the fast instruments, so running both
 would be duplicate work. The selector (`contrib/ci/select_groups.py`) maps changed paths to groups;
@@ -26,8 +26,10 @@ builds zkas and the `proofs/core` circuits for the `validate_zk_bins.sh` control
 
 `make test` is a full workspace `--release` sweep, and that sweep includes the heavyweight
 functions and `zk_audit` (~82 minutes measured). CI passes `TEST_ARGS` to it: the merge lane skips
-`test_all_harnesses_zk_coverage`, `test_heavyweight_` and `test_relayer_lifecycle_heavyweight`;
-nightly runs those classes explicitly. A local `make test` with no `TEST_ARGS` is unchanged.
+`test_all_harnesses_zk_coverage`, `test_heavyweight_` and `test_relayer_lifecycle_heavyweight`.
+Nightly does **not** run that whole skipped set: it runs the nine genesis contracts, `zk_audit`,
+and — because it is the only test that ever showed `OBL-C279` — `test_heavyweight_dao_escrow` with
+`DWOW_POW_FORENSIC=1`. A local `make test` with no `TEST_ARGS` is unchanged.
 
 ## Tracker policy
 

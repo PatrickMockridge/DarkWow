@@ -3,7 +3,8 @@ name: ci
 # Pareto lanes:
 #   fast    — path-selected instruments on a PR; tracker is advisory, no verification verdict
 #   merge   — tracker-gated lightweight Tier 1 on a push to linear-master
-#   nightly — tracker-gated nine-genesis heavyweight, zk_audit and the Docker pipeline
+#   nightly — tracker-gated nine-genesis heavyweight, zk_audit, the dao_escrow PoW determinism
+#             repeat (OBL-C279) and the Docker pipeline
 #
 # The repo-owned executor is contrib/ci/run-ci-lane.sh. The umbrella remains the gate inventory;
 # contrib/ci/gate-groups.tsv decides which gate runs in which lane/group, and
@@ -247,6 +248,31 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  nightly-pow:
+    # OBL-C279: the only test that ever showed a validator PoW rejection. No other lane runs it,
+    # and it runs here with DWOW_POW_FORENSIC=1 so a recurrence captures the validator's key,
+    # blob digest and a fresh-VM comparison.
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && inputs.lane == 'nightly')
+    runs-on: [self-hosted, linux, x64, darkwow]
+    timeout-minutes: 60
+    concurrency:
+      group: darkwow-heavy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: linear-master, fetch-depth: 0, persist-credentials: false }
+      - shell: bash
+        run: contrib/ci/run-ci-lane.sh nightly-pow
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nightly-pow-${{ github.run_id }}
+          path: reports/ci/
+          if-no-files-found: warn
+          retention-days: 14
+
   nightly-docker:
     if: >-
       github.event_name == 'schedule' ||
@@ -282,7 +308,7 @@ jobs:
         run: contrib/ci/run-ci-lane.sh nightly-controls
 
   nightly-cost:
-    needs: [nightly-heavyweight, nightly-zk, nightly-docker, nightly-controls]
+    needs: [nightly-heavyweight, nightly-zk, nightly-pow, nightly-docker, nightly-controls]
     if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.lane == 'nightly'))
     runs-on: [self-hosted, linux, x64, darkwow]
     timeout-minutes: 10

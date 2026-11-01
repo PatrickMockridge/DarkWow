@@ -343,6 +343,21 @@ nightly_zk() {
     ci_summary
 }
 
+nightly_pow() {
+    # OBL-C279: the one observed PoW rejection happened in this test, which no lane ran — merge
+    # skips every heavyweight class and the genesis job names nine other contracts. It runs here
+    # with the forensic rehash enabled, so a recurrence records the validator's key, blob digest
+    # and a fresh-VM comparison instead of only the rejected hash.
+    nightly_common nightly-pow
+    gate "fast-only: nightly dao_escrow pow determinism" \
+        ci_heavy_scope "${CI_POW_MEMORY_MAX:-18G}" \
+        env DWOW_TEST_LOGS=1 DWOW_POW_FORENSIC=1 \
+        cargo test --release -p dwowd --lib -- test_heavyweight_dao_escrow \
+        --nocapture --test-threads=1
+    cp -f /tmp/hw_*.log reports/ci/ 2>/dev/null || true
+    ci_summary
+}
+
 nightly_docker() {
     nightly_common nightly-docker
     gate "Docker test pipeline (native, 2 wallets)" \
@@ -369,6 +384,7 @@ case "$LANE" in
     merge) merge_lane ;;
     nightly-heavyweight) nightly_heavyweight ;;
     nightly-zk) nightly_zk ;;
+    nightly-pow) nightly_pow ;;
     nightly-docker) nightly_docker ;;
     nightly-controls) nightly_controls ;;
     cost) cost_report ;;

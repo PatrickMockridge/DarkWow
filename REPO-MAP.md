@@ -151,7 +151,8 @@ tracker state, not a documentation defect. Build the book with `mdbook build` fr
 CI is three Pareto lanes, executed by `contrib/ci/run-ci-lane.sh` and selected by
 [`contrib/ci/gate-groups.tsv`](contrib/ci/gate-groups.tsv): `fast` on a PR (path-selected
 instruments, tracker advisory, no verdict), `merge` on a push (tracker-gated lightweight Tier 1),
-and `nightly` (nine-genesis heavyweight, `zk_audit`, Docker). `scripts/run-all-tests.sh --list-gates`
+and `nightly` (nine-genesis heavyweight, `zk_audit`, the `dao_escrow` PoW-determinism repeat,
+Docker). `scripts/run-all-tests.sh --list-gates`
 is the inventory; `contrib/ci/check-gate-coverage.py` refuses a gate with no lane/group row. See
 [`doc/src/dev/testing/ci.md`](doc/src/dev/testing/ci.md). While the tracker is undecided, only the
 fast instruments run; merge and nightly exit 78 as blocked.
