@@ -1,0 +1,142 @@
+# label	group	lanes	source	budget_s
+# One row per gate. Every `run_gate` label in scripts/run-all-tests.sh must appear here
+# exactly once (source=umbrella); every label used only by a CI group script is
+# source=fast-only. check-gate-coverage.py enforces both directions.
+control: fee guardrails can fail [FI-GEN-2]	always	fast,merge,nightly	umbrella	0
+fee guardrails	always	fast,merge,nightly	umbrella	0
+control: verdict runner keeps cargo's exit status	always	fast,merge,nightly	umbrella	0
+control: authority gate can report a dead citation	always	fast,merge,nightly	umbrella	0
+control: sync conformance reports a missing header	always	fast,merge,nightly	umbrella	0
+sync conformance (spec header + dispatch)	consensus	fast,merge	umbrella	0
+genesis model conformance	consensus	fast,merge	umbrella	0
+control: the report generator's verdicts can fail	always	fast,merge,nightly	umbrella	0
+control: heavyweight anti-patterns can fail	always	fast,merge,nightly	umbrella	0
+control: heavyweight coverage can fail	always	fast,merge,nightly	umbrella	0
+control: coverage table can contradict the tree	always	fast,merge,nightly	umbrella	0
+control: a status-only closure is refused	always	fast,merge,nightly	umbrella	0
+control: manifest↔entrypoint agreement can fail	always	fast,merge,nightly	umbrella	0
+control: manifest/decoder agreement can fail	always	fast,merge,nightly	umbrella	0
+control: wasm artifact purity can fail	always	fast,merge,nightly	umbrella	0
+control: clippy unwrap/expect census can fail	always	fast,merge,nightly	umbrella	0
+control: circuit metadata alignment can fail	always	fast,merge,nightly	umbrella	0
+control: the tx-pair-last gate can fail	always	fast,merge,nightly	umbrella	0
+control: the zkbin freshness check can fail	always	fast,merge,nightly	umbrella	0
+control: a stale pubkey-binding exception is reported	always	fast,merge,nightly	umbrella	0
+control: a stale domain exception is reported	always	fast,merge,nightly	umbrella	0
+control: the dead-value gate can fail	always	fast,merge,nightly	umbrella	0
+control: host domain separation can fail	always	fast,merge,nightly	umbrella	0
+control: store key agreement can fail	always	fast,merge,nightly	umbrella	0
+control: codec size derivation can fail	always	fast,merge,nightly	umbrella	0
+contract artifact freshness	contracts	fast,merge	umbrella	0
+circuit metadata alignment	contracts	fast,merge	umbrella	0
+manifest ↔ entrypoint agreement	contracts	fast,merge	umbrella	0
+manifest ↔ decoder agreement	contracts	fast,merge	umbrella	0
+genesis purity (syntactic)	consensus	fast,merge	umbrella	0
+control: genesis purity can fail	always	fast,merge,nightly	umbrella	0
+genesis primitive purity	contracts	fast,merge	umbrella	0
+control: genesis primitive purity can fail	always	fast,merge,nightly	umbrella	0
+circuit domain separation	contracts	fast,merge	umbrella	0
+a contract doc's function table ↔ its manifest	docs	fast,merge	umbrella	0
+control: the doc-function-table gate can fail	always	fast,merge,nightly	umbrella	0
+doc circuit/contract census ↔ the tree	docs	fast,merge	umbrella	0
+control: the census gate can fail	always	fast,merge,nightly	umbrella	0
+a contract doc's circuit table ↔ proof/	docs	fast,merge	umbrella	0
+control: the circuit-table gate can fail	always	fast,merge,nightly	umbrella	0
+doc code-path citations resolve	docs	fast,merge	umbrella	0
+control: the doc-code-path gate can fail	always	fast,merge,nightly	umbrella	0
+circuit instance derivation	contracts	fast,merge	umbrella	0
+circuit transcription freshness (OBL-T7)	lean	fast,merge	umbrella	0
+circuit index freshness (OBL-T7)	lean	fast,merge	umbrella	0
+exec/apply phase rule	contracts	fast,merge	umbrella	0
+circuit pubkey binding	contracts	fast,merge	umbrella	0
+circuit dead values (blocking; OBL-Z23 baseline)	contracts	fast,merge	umbrella	0
+circuit quotient bounds (OBL-Z12)	contracts	fast,merge	umbrella	0
+control: quotient bounds can fail	always	fast,merge,nightly	umbrella	0
+host domain separation (report-only)	contracts	fast,merge	umbrella	0
+store key agreement	contracts	fast,merge	umbrella	0
+codec size derivation	contracts	fast,merge	umbrella	0
+circuit tx pair last	contracts	fast,merge	umbrella	0
+client params alignment	contracts	fast,merge	umbrella	0
+hidden tests declared (OBL-C76)	always	fast,merge,nightly	umbrella	0
+control: hidden tests can fail	always	fast,merge,nightly	umbrella	0
+documentation index	always	fast,merge,nightly	umbrella	0
+control: the documentation index can fail	always	fast,merge,nightly	umbrella	0
+defect tracker (green is code + control)	always	fast,merge,nightly	umbrella	0
+verification preflight (no undecided findings)	integration	merge	umbrella	0
+control: the verification preflight can refuse an open finding	always	fast,merge,nightly	umbrella	0
+control: the pipeline parsers can fail [C264/C268/C270]	always	fast,merge,nightly	umbrella	0
+control: the umbrella's tier parser reaches Tier 2	always	fast,merge,nightly	umbrella	0
+authority resolves (cited clause exists)	always	fast,merge,nightly	umbrella	0
+heavyweight anti-patterns (spec §4.11)	contracts	fast,merge	umbrella	0
+heavyweight coverage (genesis endpoints)	contracts	fast,merge	umbrella	0
+heavyweight coverage table (doc vs tree)	docs	fast,merge	umbrella	0
+barb alphabet agreement (OBL-T3/T9)	shared-sdk	fast,merge	umbrella	0
+primitive barb mapping (OBL-T3)	shared-sdk	fast,merge	umbrella	0
+capability type correspondence (F5)	shared-sdk	fast,merge	umbrella	0
+coinbase classifier (shared, not selector-only)	consensus	fast,merge	umbrella	0
+empty metadata arms declared	contracts	fast,merge	umbrella	0
+ledger promotion (every row reaches a home)	always	fast,merge,nightly	umbrella	0
+control: the promotion gate can fail	always	fast,merge,nightly	umbrella	0
+zkbin freshness (WASM embeds its circuits)	contracts-artifacts	merge	umbrella	0
+build contract ZK circuits	contracts-artifacts	merge	umbrella	0
+expected build failures are declared	always	fast,merge,nightly	umbrella	0
+control: the expected-failure list can fail	always	fast,merge,nightly	umbrella	0
+clippy unwrap/expect census (40 crates)	integration	merge	umbrella	0
+ZK binaries well-formed	contracts-artifacts	merge	umbrella	0
+circuit fidelity (source vs compiled)	contracts-artifacts	merge	umbrella	0
+pre-build guard (dwowd + wallet + 32 contracts→wasm32)	shared-sdk	fast,merge	umbrella	0
+Rust tests (make test)	integration	merge	umbrella	0
+wasm artifact purity (genesis)	contracts-artifacts	merge	umbrella	0
+wasm memory bound (all 32 contracts)	contracts-artifacts	merge	umbrella	0
+Lean proofs (lake build DarkFi + Transcribed + CircuitIndex)	lean	fast,merge	umbrella	0
+Lean assumption boundary (axioms/budgets)	lean	fast,merge	umbrella	0
+Axiom gate's record channel (negative control)	lean	fast,merge	umbrella	0
+Lean IO simulation suite	lean	fast,merge	umbrella	0
+control: the Lean suite gate can fail	always	fast,merge,nightly	umbrella	0
+capability kernel (bespoke paths, OBL-C130)	wallet	fast,merge	umbrella	0
+L1 wire conformance (declared-leak ledger)	contracts	fast,merge	umbrella	0
+L1 wire conformance — planted defect (negative control)	contracts	fast,merge	umbrella	0
+Python: pipeline model	models	fast,merge	umbrella	0
+Python: supply chain model	models	fast,merge	umbrella	0
+Python: chain model	models	fast,merge	umbrella	0
+control: chain model maturity is nullifier-keyed	always	fast,merge,nightly	umbrella	0
+Python: chain validation model	models	fast,merge	umbrella	0
+Python: dex lock model	models	fast,merge	umbrella	0
+Python: dockernet model	models	fast,merge	umbrella	0
+Python: fee model	models	fast,merge	umbrella	0
+Python: fee window model	models	fast,merge	umbrella	0
+Python: halo2 math	models	fast,merge	umbrella	0
+Python: key management	models	fast,merge	umbrella	0
+Python: merge mining spec	models	fast,merge	umbrella	0
+Python: nullifier lifecycle	models	fast,merge	umbrella	0
+Python: proof of token balance	models	fast,merge	umbrella	0
+Python: sync model	models	fast,merge	umbrella	0
+Python: test oracle	models	fast,merge	umbrella	0
+Python: transaction lifecycle	models	fast,merge	umbrella	0
+Python: uncle fork model	models	fast,merge	umbrella	0
+Python: vm state model	models	fast,merge	umbrella	0
+control: the vm state model can fail	always	fast,merge,nightly	umbrella	0
+Python: wallet model	models	fast,merge	umbrella	0
+Python: wallet simulation	models	fast,merge	umbrella	0
+Python: merge mining model	models	fast,merge	umbrella	0
+control: barb_alphabet_diff.sh can fail	always	fast,merge,nightly	umbrella	0
+control: capability_type_diff.sh can fail	always	fast,merge,nightly	umbrella	0
+control: primitive_barbs_diff.sh can fail	always	fast,merge,nightly	umbrella	0
+control: check-circuit-domain-separation.sh can fail	always	fast,merge,nightly	umbrella	0
+control: check-circuit-instance-derivation.sh can fail	always	fast,merge,nightly	umbrella	0
+control: check-client-params-alignment.sh can fail	always	fast,merge,nightly	umbrella	0
+control: check-coinbase-classifier.sh can fail	always	fast,merge,nightly	umbrella	0
+control: check-metadata-arms.sh can fail	always	fast,merge,nightly	umbrella	0
+control: check-phase-host-functions.sh can fail	always	fast,merge,nightly	umbrella	0
+control: check-pubkey-binding.sh can fail	always	fast,merge,nightly	umbrella	0
+control: validate_zk_bins.sh can fail	always	fast,merge,nightly	umbrella	0
+Docker test pipeline (native, 2 wallets)	docker	nightly	umbrella	0
+fast-only: repo doc links resolve	docs	fast,merge	fast-only	20
+fast-only: proof control: slot commit_bet self-verification	contracts	fast	fast-only	600
+fast-only: merge L1.5 production-path control	integration	merge	fast-only	600
+fast-only: merge lightweight make test	integration	merge	fast-only	3600
+fast-only: nightly nine-genesis heavyweight	nightly	nightly	fast-only	9000
+fast-only: nightly zk_audit	nightly	nightly	fast-only	10800
+fast-only: CI scripts parse (bash -n)	ci	fast	fast-only	10
+fast-only: path selector self-test	ci	fast	fast-only	10
+fast-only: gate coverage ratchet	ci	fast	fast-only	10

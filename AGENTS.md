@@ -121,6 +121,10 @@ These are mechanical, not advisory. They are here because agents have broken eac
   `doc/src/dev/hazop-rules.md`, "The binary finding lifecycle".
 - **Never modify `src/zk/vm.rs`.** The VM is off-limits.
 - **Never `sed` Rust.** Use precise edits so changes are auditable.
+- **A new gate needs a CI disposition.** The umbrella is the inventory; add the gate, then add its
+  row to `contrib/ci/gate-groups.tsv` (group, lanes, source, budget). The CI entrypoint is
+  `contrib/ci/run-ci-lane.sh`; `contrib/ci/check-gate-coverage.py` fails a fast lane on an
+  unclassified gate. Local verification still uses the umbrella directly.
 - **Never `git add -A`, `git stash`, `checkout` or `reset` in the shared tree.** Several sessions share it; commit
   by explicit pathspec (`git commit -F - -- <paths>`). Re-run `git status --porcelain` before every edit, and
   commit early — another session staging whole files can otherwise carry your edit away.

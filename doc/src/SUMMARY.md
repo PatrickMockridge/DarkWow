@@ -195,6 +195,7 @@
     - [Production Test Standard](dev/testing/production-test-standard.md)
     - [L1 Capability Write-Path Spec](dev/testing/l1-capability-write-path-spec.md)
     - [Test Suite Audit](dev/testing/test-audit.md)
+    - [Continuous Integration](dev/testing/ci.md) ← the Pareto lanes and the gate ratchet
   - [Wallet Testing](dev/testing/wallet-testing.md)
   - [Local Devnet Setup](localnet-dev.md)
 

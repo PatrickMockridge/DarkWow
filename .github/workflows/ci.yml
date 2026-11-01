@@ -1,0 +1,300 @@
+name: ci
+
+# Pareto lanes:
+#   fast    — path-selected instruments on a PR; tracker is advisory, no verification verdict
+#   merge   — tracker-gated lightweight Tier 1 on a push to linear-master
+#   nightly — tracker-gated nine-genesis heavyweight, zk_audit and the Docker pipeline
+#
+# The repo-owned executor is contrib/ci/run-ci-lane.sh. The umbrella remains the gate inventory;
+# contrib/ci/gate-groups.tsv decides which gate runs in which lane/group, and
+# contrib/ci/check-gate-coverage.py refuses a gate that has no classification.
+
+on:
+  pull_request:
+    branches: [linear-master]
+  push:
+    branches: [linear-master]
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      lane:
+        description: "Lane to run"
+        type: choice
+        options: [auto, fast, merge, nightly]
+        default: auto
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: darkwow-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  RAYON_NUM_THREADS: "10"
+  RUST_MIN_STACK: "67108864"
+  CARGO_TERM_COLOR: never
+  CARGO_HOME: /var/cache/darkwow/cargo
+  CARGO_TARGET_DIR: /var/cache/darkwow/target
+
+jobs:
+  select:
+    runs-on: [self-hosted, linux, x64, darkwow]
+    timeout-minutes: 5
+    outputs:
+      groups: ${{ steps.sel.outputs.groups }}
+      code: ${{ steps.sel.outputs.code }}
+      models: ${{ steps.sel.outputs.models }}
+      lean: ${{ steps.sel.outputs.lean }}
+      proof: ${{ steps.sel.outputs.proof }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: sel
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ github.event_name }}" in
+            pull_request)
+              B="${{ github.event.pull_request.base.sha }}"
+              H="${{ github.event.pull_request.head.sha }}"
+              python3 -B contrib/ci/select_groups.py --base "$B" --head "$H" --github-output "$GITHUB_OUTPUT" ;;
+            push)
+              B="${{ github.event.before }}"
+              H="${{ github.sha }}"
+              python3 -B contrib/ci/select_groups.py --base "$B" --head "$H" --github-output "$GITHUB_OUTPUT" ;;
+            *)
+              python3 -B contrib/ci/select_groups.py --all --github-output "$GITHUB_OUTPUT" ;;
+          esac
+
+  fast-static:
+    needs: select
+    if: >-
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'workflow_dispatch' &&
+       (inputs.lane == 'auto' || inputs.lane == 'fast'))
+    runs-on: [self-hosted, linux, x64, darkwow]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 1, persist-credentials: false }
+      - shell: bash
+        run: contrib/ci/run-ci-lane.sh fast-static --groups "${{ needs.select.outputs.groups }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fast-static-${{ github.run_id }}
+          path: |
+            reports/ci/
+            ${{ runner.temp }}/ci/
+          if-no-files-found: warn
+          retention-days: 14
+
+  fast-compile:
+    needs: select
+    if: >-
+      ((github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository) ||
+       (github.event_name == 'workflow_dispatch' && (inputs.lane == 'auto' || inputs.lane == 'fast')))
+      && needs.select.outputs.code == 'true'
+    runs-on: [self-hosted, linux, x64, darkwow]
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 1, persist-credentials: false }
+      - shell: bash
+        run: contrib/ci/run-ci-lane.sh fast-compile
+
+  fast-models:
+    needs: select
+    if: >-
+      ((github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository) ||
+       (github.event_name == 'workflow_dispatch' && (inputs.lane == 'auto' || inputs.lane == 'fast')))
+      && needs.select.outputs.models == 'true'
+    runs-on: [self-hosted, linux, x64, darkwow]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 1, persist-credentials: false }
+      - shell: bash
+        run: contrib/ci/run-ci-lane.sh fast-models
+
+  fast-lean:
+    needs: select
+    if: >-
+      ((github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository) ||
+       (github.event_name == 'workflow_dispatch' && (inputs.lane == 'auto' || inputs.lane == 'fast')))
+      && needs.select.outputs.lean == 'true'
+    runs-on: [self-hosted, linux, x64, darkwow]
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 1, persist-credentials: false }
+      - uses: actions/cache@v4
+        with:
+          path: proofs/lean/.lake
+          key: lean-${{ hashFiles('proofs/lean/lean-toolchain', 'proofs/lean/lake-manifest.json') }}
+          restore-keys: lean-
+      - shell: bash
+        run: contrib/ci/run-ci-lane.sh fast-lean
+
+  fast-proof:
+    needs: select
+    if: >-
+      ((github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository) ||
+       (github.event_name == 'workflow_dispatch' && (inputs.lane == 'auto' || inputs.lane == 'fast')))
+      && needs.select.outputs.proof == 'true'
+    runs-on: [self-hosted, linux, x64, darkwow]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 1, persist-credentials: false }
+      - shell: bash
+        run: contrib/ci/run-ci-lane.sh fast-proof
+
+  fast:
+    # The single required branch-protection check. A skipped sibling (no relevant paths) is fine;
+    # a failed one is not.
+    needs: [fast-static, fast-compile, fast-models, fast-lean, fast-proof]
+    if: always() && (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch')
+    runs-on: [self-hosted, linux, x64, darkwow]
+    timeout-minutes: 5
+    steps:
+      - shell: bash
+        run: |
+          rc=0
+          for result in "${{ needs.fast-static.result }}" "${{ needs.fast-compile.result }}" \
+                        "${{ needs.fast-models.result }}" "${{ needs.fast-lean.result }}" \
+                        "${{ needs.fast-proof.result }}"; do
+            case "$result" in success|skipped) ;; *) rc=1 ;; esac
+          done
+          exit "$rc"
+
+  merge:
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/linear-master') ||
+      (github.event_name == 'workflow_dispatch' && inputs.lane == 'merge')
+    runs-on: [self-hosted, linux, x64, darkwow]
+    timeout-minutes: 150
+    concurrency:
+      group: darkwow-heavy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: linear-master, fetch-depth: 0, persist-credentials: false }
+      - uses: actions/cache@v4
+        with:
+          path: proofs/lean/.lake
+          key: lean-${{ hashFiles('proofs/lean/lean-toolchain', 'proofs/lean/lake-manifest.json') }}
+          restore-keys: lean-
+      - shell: bash
+        run: contrib/ci/run-ci-lane.sh merge
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: merge-${{ github.run_id }}
+          path: |
+            reports/ci/
+            /tmp/hw_*.log
+            /tmp/lean-build.log
+          if-no-files-found: warn
+          retention-days: 30
+
+  nightly-heavyweight:
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && inputs.lane == 'nightly')
+    runs-on: [self-hosted, linux, x64, darkwow]
+    timeout-minutes: 150
+    concurrency:
+      group: darkwow-heavy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: linear-master, fetch-depth: 0, persist-credentials: false }
+      - shell: bash
+        run: contrib/ci/run-ci-lane.sh nightly-heavyweight
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nightly-heavyweight-${{ github.run_id }}
+          path: |
+            reports/ci/
+            /tmp/hw_*.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  nightly-zk:
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && inputs.lane == 'nightly')
+    runs-on: [self-hosted, linux, x64, darkwow]
+    timeout-minutes: 180
+    concurrency:
+      group: darkwow-heavy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: linear-master, fetch-depth: 0, persist-credentials: false }
+      - shell: bash
+        run: contrib/ci/run-ci-lane.sh nightly-zk
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nightly-zk-${{ github.run_id }}
+          path: reports/ci/
+          if-no-files-found: warn
+          retention-days: 14
+
+  nightly-docker:
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && inputs.lane == 'nightly')
+    runs-on: [self-hosted, linux, x64, darkwow]
+    timeout-minutes: 240
+    concurrency:
+      group: darkwow-heavy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: linear-master, fetch-depth: 0, persist-credentials: false }
+      - shell: bash
+        run: contrib/ci/run-ci-lane.sh nightly-docker
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nightly-docker-${{ github.run_id }}
+          path: reports/ci/
+          if-no-files-found: warn
+          retention-days: 14
+
+  nightly-controls:
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && inputs.lane == 'nightly')
+    runs-on: [self-hosted, linux, x64, darkwow]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: linear-master, fetch-depth: 1, persist-credentials: false }
+      - shell: bash
+        run: contrib/ci/run-ci-lane.sh nightly-controls
+
+  nightly-cost:
+    needs: [nightly-heavyweight, nightly-zk, nightly-docker, nightly-controls]
+    if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.lane == 'nightly'))
+    runs-on: [self-hosted, linux, x64, darkwow]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: linear-master, fetch-depth: 1, persist-credentials: false }
+      - shell: bash
+        run: contrib/ci/run-ci-lane.sh cost

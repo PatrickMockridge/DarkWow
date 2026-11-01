@@ -15,6 +15,7 @@
 #   ./scripts/run-all-tests.sh --tier 1   # same
 #   ./scripts/run-all-tests.sh --tier 2   # Tier 1 + Docker pipeline
 #   ./scripts/run-all-tests.sh --fail-fast  # stop at the first failing gate
+#   ./scripts/run-all-tests.sh --list-gates # print the expanded gate inventory, run nothing
 #
 # Tier 1 — fast + hermetic (seconds to minutes, no Docker, no network)
 # Tier 2 — heavyweight E2E (Docker devnet, minutes to hours)
@@ -38,9 +39,64 @@ FAILED=0
 FAILED_GATES=()
 FAIL_FAST=0
 GATE_RESULTS=()
+SKIPPED=0
+CI_LANE_MODE=""
+CI_GROUPS=""
+GATE_MANIFEST="$SCRIPT_DIR/../contrib/ci/gate-groups.tsv"
+
+# CI selection: the manifest is the contract (see contrib/ci/check-gate-coverage.py). A gate is
+# selected when its group is in CI_GROUPS (empty = all groups) and its lanes include
+# CI_LANE_MODE. Lane `fast` is instrument-only: it makes no verification verdict, so its lane
+# script runs the tracker probe as an advisory and this umbrella does not run the preflight.
+_ci_manifest_meta() {
+    awk -F'\t' -v l="$1" '$1==l {print $2 "\t" $3; found=1; exit} END{exit !found}' \
+        "$GATE_MANIFEST" 2>/dev/null
+}
 
 run_gate() {
     local label="$1"; shift
+    # --list-gates: print the expanded label and execute nothing. This is the machine-readable
+    # gate inventory CI's coverage ratchet reads; it must reach every call site, including the
+    # control loop below, without invoking a gate or the tracker preflight.
+    if [ "${LIST_GATES:-0}" = "1" ]; then
+        echo "$label"
+        return 0
+    fi
+    # --controls-only: the negative controls are instruments, not a verification verdict, so they
+    # may run while the tracker is undecided (CI's fast lane uses this). Every non-control gate is
+    # skipped without executing.
+    if [ "${CONTROLS_ONLY:-0}" = "1" ]; then
+        case "$label" in
+            "control: "*) ;;
+            *) return 0 ;;
+        esac
+    fi
+    # CI lane/group selection. A label with no manifest row is a coverage defect: skip it loudly
+    # rather than run an unclassified gate (the ratchet runs first in the `always` group and fails).
+    if [ -n "${CI_LANE_MODE:-}" ]; then
+        local meta group lanes
+        if ! meta=$(_ci_manifest_meta "$label"); then
+            echo "CI WARNING: gate '$label' is not classified in $GATE_MANIFEST; skipping"
+            SKIPPED=$((SKIPPED + 1))
+            return 0
+        fi
+        group="${meta%%$'\t'*}"
+        lanes="${meta#*$'\t'}"
+        if [ -n "${CI_GROUPS:-}" ]; then
+            case ",${CI_GROUPS}," in
+                *",${group},"*) ;;
+                *) SKIPPED=$((SKIPPED + 1)); return 0 ;;
+            esac
+        fi
+        case ",${lanes}," in
+            *",${CI_LANE_MODE},"*) ;;
+            *) SKIPPED=$((SKIPPED + 1)); return 0 ;;
+        esac
+    fi
+    if [ "${DRY_RUN:-0}" = "1" ]; then
+        printf '[dry-run] %s :: %s\n' "$label" "$*"
+        return 0
+    fi
     echo ""
     echo -e "=== ${label} ==="
     local status=0
@@ -76,21 +132,43 @@ _parse_args() {
     TIER=1
     _WANT_TIER=0
     FAIL_FAST=0
+    LIST_GATES=0
+    CONTROLS_ONLY=0
+    DRY_RUN=0
+    CI_LANE_MODE=""
+    CI_GROUPS=""
+    _WANT_GROUPS=0
     for arg in "$@"; do
         case "$arg" in
             --tier) _WANT_TIER=1 ;;
             --tier=*) TIER="${arg#*=}" ;;
             --fail-fast) FAIL_FAST=1 ;;
+            --list-gates) LIST_GATES=1 ;;
+            --controls-only) CONTROLS_ONLY=1 ;;
+            --dry-run) DRY_RUN=1 ;;
+            --ci-lane) _WANT_TIER=0; _WANT_GROUPS=0; _WANT_LANE=1 ;;
+            --ci-lane=*) CI_LANE_MODE="${arg#*=}" ;;
+            --groups) _WANT_TIER=0; _WANT_GROUPS=1 ;;
+            --groups=*) CI_GROUPS="${arg#*=}" ;;
             *)
-                if [ "$_WANT_TIER" -eq 1 ]; then
+                if [ "${_WANT_LANE:-0}" -eq 1 ]; then
+                    CI_LANE_MODE="$arg"; _WANT_LANE=0
+                elif [ "$_WANT_TIER" -eq 1 ]; then
                     TIER="$arg"; _WANT_TIER=0
+                elif [ "$_WANT_GROUPS" -eq 1 ]; then
+                    CI_GROUPS="$arg"; _WANT_GROUPS=0
                 else
                     echo "Unknown argument: $arg" >&2
-                    echo "Usage: $0 [--tier 1|2] [--fail-fast]" >&2
+                    echo "Usage: $0 [--tier 1|2] [--fail-fast] [--list-gates] [--controls-only]
+       [--ci-lane fast|merge|nightly] [--groups GROUP,...]" >&2
                     return 2
                 fi ;;
         esac
     done
+    case "$CI_LANE_MODE" in
+        ""|fast|merge|nightly) ;;
+        *) echo "Invalid --ci-lane '$CI_LANE_MODE' (want fast, merge or nightly)" >&2; return 2 ;;
+    esac
     if [ "$_WANT_TIER" -eq 1 ]; then
         echo "--tier needs a value (1 or 2)" >&2
         return 2
@@ -130,6 +208,11 @@ _umbrella_self_test() {
     _case_refuse "invalid tier" --tier 3
     _case_refuse "unknown argument" --bogus
     _case_refuse "bare tier" 2
+    # --list-gates is accepted in any position and sets the flag without changing the tier.
+    if ! _parse_args --tier 2 --list-gates >/dev/null 2>&1 || [ "${LIST_GATES:-0}" != 1 ] || [ "$TIER" != 2 ]; then
+        echo "SELF-TEST FAIL: --list-gates not parsed with --tier 2"
+        fails=$((fails + 1))
+    fi
     if [ "$fails" -ne 0 ]; then
         echo "SELF-TEST FAIL: ${fails} case(s)"
         return 1
@@ -151,10 +234,12 @@ _parse_args "$@" || exit $?
 # before the first gate, so its summary can never be read as a verdict over a tree the register
 # calls defective. A targeted control is run directly by the fix in progress; that is not a verdict.
 # No override.
-if ! bash "$SCRIPT_DIR/check-tracker-settled.sh" --require-clean; then
-    echo ""
-    echo "REFUSED: the umbrella is a verification surface. Run the targeted control directly."
-    exit 1
+if [ "${LIST_GATES:-0}" != "1" ] && [ "${CONTROLS_ONLY:-0}" != "1" ] && [ "${DRY_RUN:-0}" != "1" ] && [ "${CI_LANE_MODE:-}" != "fast" ]; then
+    if ! bash "$SCRIPT_DIR/check-tracker-settled.sh" --require-clean; then
+        echo ""
+        echo "REFUSED: the umbrella is a verification surface. Run the targeted control directly."
+        exit 1
+    fi
 fi
 
 # ── Negative controls, before anything they judge ────────────────────────────────
@@ -764,7 +849,14 @@ run_gate "circuit fidelity (source vs compiled)" \
                                           python3 "$REPO_ROOT/scripts/check-circuit-fidelity.py" --quiet
 run_gate "pre-build guard (dwowd + wallet + 32 contracts→wasm32)" \
                                           "$SCRIPT_DIR/check_pipeline_build.sh"
-run_gate "Rust tests (make test)"          make test
+# CI's merge lane runs `make test` itself under a cgroup scope (the umbrella also contains Lean,
+# whose own wrapper must not be nested), then asks the umbrella to run everything else.
+if [ "${LIST_GATES:-0}" = "1" ] || [ "${CI_SKIP_MAKE_TEST:-0}" != "1" ]; then
+    run_gate "Rust tests (make test)"          env TEST_ARGS="${CI_TEST_SKIP:-}" make test
+else
+    echo "=== Rust tests (make test) — run by the CI lane under its own scope; skipped here ==="
+    SKIPPED=$((SKIPPED + 1))
+fi
 # OBL-C140, blocking: `make test` has built the 32 contract artifacts, including the nine genesis
 # ones. A missing artifact is a failure (the 2026-10-20 fix); the `--self-test` control above proves
 # the detector can fail and pass. This line closes the "gate nobody enforces" half of the row.
@@ -976,14 +1068,20 @@ do
     run_gate "control: $(basename "$gate") can fail" bash "$REPO_ROOT/$gate" --self-test
 done
 
-if [ "$TIER" = "2" ]; then
+# The Tier-2 gate is a call site outside the Tier-1 flow. A listing prints it even at Tier 1 (so
+# the inventory is complete), but never executes it; a real Tier-2 run executes it.
+if [ "$TIER" = "2" ] || [ "${LIST_GATES:-0}" = "1" ]; then
     run_gate "Docker test pipeline (native, 2 wallets)" \
         "$REPO_ROOT/contrib/docker/darkwow-testnet/test_pipeline.sh" --mode native --with-wallet 2
 fi
 
+if [ "${LIST_GATES:-0}" = "1" ] || [ "${CONTROLS_ONLY:-0}" = "1" ] || [ "${DRY_RUN:-0}" = "1" ]; then
+    exit 0
+fi
+
 echo ""
 echo "========================================"
-echo -e "Umbrella summary: ${GREEN}${PASSED} passed${NC}, ${RED}${FAILED} failed${NC}"
+echo -e "Umbrella summary: ${GREEN}${PASSED} passed${NC}, ${RED}${FAILED} failed${NC}, ${SKIPPED} skipped"
 echo ""
 for result in "${GATE_RESULTS[@]}"; do
     echo -e "  ${result}"

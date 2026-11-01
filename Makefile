@@ -8,6 +8,11 @@ CARGO = cargo
 
 # Compile target for system binaries
 RUST_TARGET = $(shell rustc -Vv | grep '^host: ' | cut -d' ' -f2)
+
+# Extra libtest arguments appended to `make test`. Empty by default; CI's merge lane sets it to
+# `-- --skip <heavy classes>` so the lightweight majority runs there and the heavy classes run in
+# the nightly jobs. Local behaviour is unchanged unless the variable is set.
+TEST_ARGS ?=
 # Uncomment when doing musl static builds
 #RUSTFLAGS = -C target-feature=+crt-static -C link-self-contained=yes
 # If building natively, this might give you more speed
@@ -214,7 +219,7 @@ rustdoc: contracts $(PROOFS_BIN)
 test: contracts $(PROOFS_BIN)
 	feats="$$(python3 scripts/check_build_expected_failures.py --cargo-features)" && \
 		RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) test --target=$(RUST_TARGET) \
-			--release --features "$$feats" --workspace --no-fail-fast
+			--release --features "$$feats" --workspace --no-fail-fast $(TEST_ARGS)
 
 bench-zk-from-json: contracts $(PROOFS_BIN)
 	rm -f src/contract/test-harness/*.bin
