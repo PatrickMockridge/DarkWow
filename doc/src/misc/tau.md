@@ -4,6 +4,9 @@ Encrypted tasks management app using peer-to-peer network.
 Multiple users can collaborate by working on the same tasks, 
 and all users will have synced tasks.
 
+For the O-Cap task-delegation design that integrates tau with Tender and the Labor Market, see
+[Tau Task Delegation](tau-delegation.md).
+
 
 ## Install 
 

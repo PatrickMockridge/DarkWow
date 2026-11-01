@@ -417,13 +417,13 @@ When a worker claims a task with `verification_mode: OnChain`:
 - [ ] Add rate limiting for claim operations
 
 ## See Also
-- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for the contracts tau integrates with
 - [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
 - [Contract Safety](../dev/contracts/safety.md) — Capability safety analysis
 
 
-- [Identity Contract](./identity.md) - O-Cap implementation
+- [Identity Contract](../contract/identity.md) - O-Cap implementation
 - [O-Cap & Composable Privacy](../arch/ocap.md) - Authorization inversion theory
-- [Labor Market Contract](./labor_market.md) - Job creation and payment
-- [Tender Contract](./tender.md) - Sealed bid procurement
+- [Labor Market Contract](../contract/labor_market.md) - Job creation and payment
+- [Tender Contract](../contract/tender.md) - Sealed bid procurement
 - [Zero-Knowledge Authorization](https://technologytruth.substack.com/p/the-zero-knowledge-authorization) - Mathematical foundation

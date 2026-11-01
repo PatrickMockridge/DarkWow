@@ -173,7 +173,6 @@
 
 - [Relayer Endowment](contract/relayer_endowment.md)
 - [Transaction Commitment](contract/tx-commitment.md)
-- [Tau Task Delegation](contract/tau.md)
 
 # Developer Resources
 
@@ -221,6 +220,7 @@
   - [ZK Circuit Troubleshooting](dev/zk-circuit-troubleshooting.md)
   - [Wallet FFI](dev/wallet-ffi.md)
   - [Debugging FAQ](arch/debugging_faq.md)
+  - [Tau Task Delegation (design)](misc/tau-delegation.md)
   - [Start Here (Directory Tour)](start-here.md)
 
 ## zkas

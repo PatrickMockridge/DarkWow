@@ -201,7 +201,7 @@ below for what that call actually establishes):
 Three more rows were listed here and are not callers: `dao_escrow` never makes the call (its
 capabilities are handled by its own circuit), `subscription` proves access with its **own**
 `subscribe.zk` rather than an identity child, and **`tau` is not a contract** — there is no
-`src/contract/tau`; `taud` is an off-chain task daemon (`contract/tau.md`), and no `task_role`
+`src/contract/tau`; `taud` is an off-chain task daemon (`misc/tau-delegation.md`), and no `task_role`
 capability exists in any entrypoint. What the four `dao_escrow` rows described
 (`member_vote`, `board_treasury`, `board_endowment`, `dispute_arbitrator`) is a vocabulary the
 DAO doc still uses, but no child call of that name is made anywhere.
@@ -341,6 +341,6 @@ notes, matching multisig's non-note capability shape.
 
 - [O-Cap Architecture](../arch/ocap.md)
 - [DAO-Escrow Contract](dao_escrow.md) — primary consumer of O-Cap verification
-- [Tau Task Delegation](tau.md) — Authorization Inversion with O-Cap
+- [Tau Task Delegation](../misc/tau-delegation.md) — Authorization Inversion with O-Cap
 - [Composability](composability.md) — Cross-contract call mechanism
 - [ZK Verified Competency DAGs](https://technologytruth.substack.com/p/zk-verified-competency-dags)
