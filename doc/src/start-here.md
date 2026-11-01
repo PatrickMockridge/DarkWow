@@ -100,16 +100,13 @@ Source code is under `src/` subdirectory. Main interesting modules are:
       to check before verification).
     * Verifying sigs or call depth ahead of time helps make the chain
       more attack resistant.
-* `contract/` contains our native smart contracts. Namely:
-    * `native_token`, the consensus-first native token for block rewards and fees.
-      Handles FeeV3 (fees), TransferV1, and PoWRewardV1 (block rewards), plus
-      FeeCollectV1 and UncleMintV1.
-    * `deployooor` for deploying WASM smart contracts.
-    * `dao_escrow`, a DAO with three modes (Escrow/Treasury/Endowment) for governance.
-    * `game_room`, a generalized betting and pot management contract for
-      privacy-preserving staked games. App developers build poker rooms,
-      backgammon rooms, etc. on top using the SDK. The room owner uses
-      an escrow-DAO to organize game rules and resolve disputes.
+* `contract/` contains the native smart contracts: 32 in total, 9 of them
+  genesis. See the [Contract Catalog](contracts.md) for the canonical list.
+  The genesis set is `native_token` (block rewards and fees: FeeV3, TransferV1,
+  PoWRewardV1, FeeCollectV1, UncleMintV1), `deployooor`, `promissory_note`,
+  `box`, `purse`, `identity`, `oracle`, `attestation` and `multisig`.
+  `dao_escrow` and `game_room` are the main post-genesis governance and
+  betting examples.
 
 > Note: We try to minimize external dependencies in our code as much as
 > possible. We even try to limit dependencies within submodules.
@@ -146,7 +143,8 @@ Our design philosophy and simplicity oriented approach to systemd dev:
 * [Suckless Philosophy: software that sucks less](https://suckless.org/philosophy/)
 * [How to Design Perfect (Software) Products  by Pieter Hintjens](http://hintjens.com/blog:19/noredirect/true)
 
-Recent crypto code audit: [ZK Security DarkWow Code Audit](https://darkwow.org/zksecurity-audit-q124.pdf)
+The 2024 ZK security audit: [ZK Security DarkWow Code Audit](https://darkwow.org/zksecurity-audit-q124.pdf).
+It is a dated record of that review, not a statement about the current tree.
 
 Useful link on [our ZK toolchain](zkas/writing-zk-proofs.md)
 
