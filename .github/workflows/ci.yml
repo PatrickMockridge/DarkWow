@@ -36,8 +36,8 @@ env:
   RAYON_NUM_THREADS: "10"
   RUST_MIN_STACK: "67108864"
   CARGO_TERM_COLOR: never
-  CARGO_HOME: ${{ runner.workspace }}/../cache/cargo
-  CARGO_TARGET_DIR: ${{ runner.workspace }}/../cache/target
+  CARGO_HOME: ${{ github.workspace }}/../cache/cargo
+  CARGO_TARGET_DIR: ${{ github.workspace }}/../cache/target
 
 jobs:
   select:
