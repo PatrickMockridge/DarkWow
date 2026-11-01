@@ -226,11 +226,11 @@ The escrow contract uses only opcodes that are well-established in the zkVM:
 
 ## Key Blockers
 
-| Blocker | Severity | Description |
-|---------|----------|-------------|
-| ZK circuit compilation | **High** | `.zk` files need compilation to `.zk.bin` via zkas |
-| ZK proof verification | **High** | Wire proofs into `get_metadata()` |
-| Money integration (Phase 2) | **Medium** | Spend_hook integration with money contract |
+| Blocker | Status |
+|---------|--------|
+| ZK circuit compilation | **None** — all five `.zk` files are compiled |
+| ZK proof verification | **None** — wired through `get_metadata()` |
+| Composition | **None** — PN + Purse (Fund), PN + Box (Claim), PN (Refund) |
 
 **Escrow has no opcode blockers** — unlike other contracts, escrow's requirements are fully satisfied by existing opcodes.
 
@@ -305,51 +305,29 @@ escrow/
 
 ```bash
 # Build WASM contract
-cargo build -p darkfi_escrow_contract
+cargo build -p dwow_escrow_contract
 
 # Compile ZK circuits (requires zkas binary)
 make proof
 
 # Run tests
-cargo test -p darkfi_escrow_contract
+cargo test -p dwow_escrow_contract
 ```
 
-## Integration with Money Contract
+## Composition with PromissoryNote, Purse and Box
 
-The escrow contract manages its own value commitments but integrates with the Money contract for token operations:
+Escrow moves value through the genesis composition primitives; it does not emit
+spend-hook calls and the removed `money` contract is not a dependency.
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                     Integration Architecture                         │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                       │
-│   Money Contract                                                     │
-│   ├── Owns commitment ledger (commitments, nullifiers, Merkle tree)             │
-│   ├── Issues tokens (Mint/Burn)                                      │
-│   └── Transfer semantics                                              │
-│                                                                       │
-│   Escrow Contract                                                    │
-│   ├── Owns escrow state machine (Created → Funded → Claimed/Refunded)│
-│   ├── Verifies ZK proofs for claim/refund                            │
-│   └── Emits spend_hook calls to Money for fund release               │
-│                                                                       │
-│   Flow:                                                               │
-│   1. User creates escrow + funds via Money::Transfer                 │
-│   2. Escrow::Claim → spend_hook → Money::Burn (consumes commitment)        │
-│                    + Money::Mint (mints to seller)                   │
-│                                                                       │
-└─────────────────────────────────────────────────────────────────────┘
-```
+| Endpoint | Children (in order) | What each does |
+|---|---|---|
+| `FundV1` (0x02) | `promissory_note::TransferV1` (0x04), `purse::DepositV1` (0x01) | Moves the note and locks the funded amount in a genesis `Purse` |
+| `ClaimV1` (0x03) | `promissory_note::TransferV1` (0x04), `box::TakeV1` (0x02) | Releases the note and consumes the seller's claim `Box` by nullifier |
+| `RefundV1` (0x04) | `promissory_note::TransferV1` (0x04) | Returns the note on the refund path |
 
-### Phase 1: Standalone (MVP)
-- Escrow manages its own value pool
-- No money contract integration
-- Simplified trust model
-
-### Phase 2: Full Integration
-- Uses Money contract's `spend_hook` mechanism
-- Funds locked as Money contract commitments
-- Claim/refund triggers atomic burn+mint
+Escrow owns the state machine and the ZK proofs; the value and its custody live in PN's
+commitment ledger and the Purse. There is no standalone value pool and no Phase-2
+integration to await.
 
 ## Security Considerations
 
@@ -389,14 +367,14 @@ Pedersen commitment `C = value * G + blind * H` ensures:
 |---------|--------|-------|
 | Entrypoint (`entrypoint.rs`) | ✅ Complete | init, get_metadata, process_instruction, process_update |
 | State Machine | ✅ Complete | Created → Funded → Claimed/Refunded/Cancelled |
-| ZK Circuits | ⚠️ Stubs | .zk files need compilation via zkas |
-| Money Integration | ❌ TODO | Phase 2 spend_hook integration |
+| ZK Circuits | ✅ Complete | All five `.zk` files are compiled and loaded; `get_metadata()` publishes their proof inputs |
+| Composition | ✅ Complete | Fund = PN `TransferV1` + Purse `DepositV1`; Claim = PN `TransferV1` + Box `TakeV1`; Refund = PN `TransferV1` |
 
-### What It Needs
+### Composition notes
 
-1. **ZK Circuit Compilation**: Convert `.zk` files to `.zk.bin` using zkas
-2. **ZK Proof Verification**: Wire ZK proof verification into `get_metadata()`
-3. **Money Integration**: Phase 2 spend_hook integration
+- There is no spend-hook path and no "Phase 2" pending integration.
+- The removed `money` contract is not a dependency; the escrow manifest names
+  `promissory_note` and `native_token_v1`.
 
 ### No Opcode Blockers
 
@@ -409,7 +387,7 @@ Unlike other contracts, escrow has **no opcode blockers**. All required function
 The contract includes a heavyweight test that exercises all endpoints:
 
 ```bash
-cargo test --release -p darkfid test_escrow_heavyweight
+cargo test --release -p dwowd test_heavyweight_escrow
 ```
 
 **Test Coverage**:

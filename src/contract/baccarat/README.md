@@ -93,7 +93,7 @@ COMMITTED ──[DrawCards]──> CARDS_DRAWN ──[SettleBet]──> SETTLED
 Cards are derived using cumulative PoW entropy from K consecutive block hashes (where K = confirmation_depth) via the [Entropy Module](../entropy/):
 
 ```rust
-use darkfi_sdk::crypto::entropy::{tx_hash_to_base, mix_entropy};
+use dwow_sdk::crypto::entropy::{tx_hash_to_base, mix_entropy};
 
 // Combine entropy from multiple block hashes
 let mut entropy = bet_id;
@@ -121,14 +121,14 @@ The player specifies `confirmation_depth` when placing the bet—more blocks mea
 ./target/debug/zkas proof/settle_bet.zk -o proof/settle_bet.zk.bin
 
 # Build WASM
-cargo build --target wasm32-unknown-unknown --release -p darkfi_baccarat_contract
+cargo build --target wasm32-unknown-unknown --release -p dwow_baccarat_contract
 ```
 
 ## Usage Example
 
 ```rust
-use darkfi_baccarat_contract::client::CommitBetV1Builder;
-use darkfi_baccarat_contract::model::BetType;
+use dwow_baccarat_contract::client::CommitBetV1Builder;
+use dwow_baccarat_contract::model::BetType;
 
 // Create a bet: 100 tokens, bet on Player
 let (params, own_bet) = CommitBetV1Builder::new(
@@ -141,67 +141,18 @@ let (params, own_bet) = CommitBetV1Builder::new(
 .build();
 ```
 
-## Integration with Money Contract
+## Integration with PromissoryNote
 
-The Baccarat contract integrates with the Money contract for value transfers:
+The contract does not compose with the removed `money` contract and has no spend-hook
+path. Value moves as promissory notes: the manifest depends on `promissory_note` and
+`native_token_v1`, and the entrypoint stores the PN contract id and validates
+`promissory_note::transfer_v1` (0x04) children on the staking and payout paths. A bet's
+stake is a PN transfer; a winning payout is a PN transfer to the player. The older
+`Money::Burn`/`Money::TokenMint` transaction sketch described a contract that no longer
+exists and is removed rather than translated.
 
-### Transaction Structure
-
-A complete Baccarat bet transaction should include:
-
-1. **Money::Burn** (parent call)
-   - Burns the player's bet value
-   - Sets `spend_hook` to authorize Baccarat::CommitBet
-   - Use `user_data_enc` to pass bet metadata
-
-2. **Baccarat::CommitBetV1** (child call, `parent_index=0`)
-   - Receives burn authorization via spend_hook
-   - Stores bet in Committed state
-   - Validates burn value matches bet_value
-
-3. **Baccarat::DrawCardsV1**
-   - Calculates cards from block hash entropy
-   - Evaluates drawing rules
-   - Transitions bet to CardsDrawn state
-
-4. **Baccarat::SettleBetV1** + **Money::TokenMint** (if player won)
-   - Settles bet and determines payout
-   - Player-winning bets: client creates Money::TokenMint call to mint payout
-   - House-winning bets: house balance credited automatically
-
-### Client Integration
-
-```rust
-// 1. Create Money::Burn to lock bet value
-let burn_params = MoneyBurnParamsV1 {
-    inputs: vec![Input {
-        value_commit,
-        token_commit: asset_id,
-        nullifier,
-        merkle_root,
-        user_data_enc: encode_bet_metadata(&bet_metadata),
-        signature_public: player_pubkey,
-    }],
-};
-
-// 2. Create Baccarat::CommitBet as child of Money::Burn
-let commit_params = CommitBetParamsV1 {
-    player_pub: player_pubkey,
-    bet_type: BetType::Player as u8,
-    bet_value: 100,
-    secret_nonce,
-    blind,
-    asset_id,
-    value_commit,
-    house_edge: 150,  // 1.5%
-    confirmation_depth: 3,
-};
-
-// 3. After draw and settle (if won), create Money::TokenMint
-let mint_params = MoneyTokenMintParamsV1 {
-    commitment: create_winning_commitment(player_pubkey, payout, asset_id),
-};
-```
+See [`doc/src/contract/baccarat.md`](../../../doc/src/contract/baccarat.md) for the
+current function and circuit surface.
 
 ## Confirmation Depth and Security
 

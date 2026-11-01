@@ -165,10 +165,10 @@ The `prediction_market` contract is deprecated. DarkBet AMM mode (`market_type=1
 
 ```bash
 # Build WASM
-cargo build --target wasm32-unknown-unknown --release -p darkfi_darkbet_exchange_contract
+cargo build --target wasm32-unknown-unknown --release -p dwow_darkbet_exchange_contract
 
 # Run tests (library only)
-cargo test -p darkfi_darkbet_exchange_contract --lib
+cargo test -p dwow_darkbet_exchange_contract --lib
 ```
 
 ## Implementation Status

@@ -142,7 +142,7 @@ This contract composes with:
 ## Usage Example
 
 ```rust
-use darkfi_relayer_endowment_contract::{
+use dwow_relayer_endowment_contract::{
     InitializeParamsV1, DeployCapitalParamsV1, ClaimFeesParamsV1
 };
 

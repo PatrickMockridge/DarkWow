@@ -46,7 +46,7 @@ pub struct TransparencyConfig {
 
 ## ZK Circuits
 
-The DEX uses **six ZK circuits**:
+The DEX uses **eight ZK circuits** (the manifest declares 8):
 
 | Circuit | Description | Dark | Aggregate | Anonymized | Full |
 |---------|-------------|------|-----------|------------|------|
@@ -125,7 +125,7 @@ net_received = fill_amount - fee;
 - [x] Contract structure and entrypoint
 - [x] All 9 functions (0x00-0x08)
 - [x] Atomic swap DAO implementation
-- [x] 6 ZK circuits (all compiled)
+- [x] 8 ZK circuits (all compiled; `update_config.zk` and `set_transparency_level.zk` included)
 - [x] Partial fill via LessThanOrEqual
 - [x] Open execution (open_execution + immediate_execute)
 - [x] Slippage tolerance circuits (execute_swap_slippage.zk)

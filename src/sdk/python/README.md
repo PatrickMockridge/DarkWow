@@ -1,6 +1,6 @@
-# darkfi-sdk-py
+# dwow-sdk-py
 
-Python bindings for some parts of the `darkfi-sdk` and the `zkvm`.
+Python bindings for some parts of the `dwow-sdk` and the `zkvm`.
 
 ## Build and install
 
@@ -22,8 +22,8 @@ $ source venv/bin/activate
 
 ```
 $ python
->>> import darkfi_sdk
->>> from darkfi_sdk.pasta import Fp
+>>> import dwow_sdk
+>>> from dwow_sdk.pasta import Fp
 >>> a = Fp.from_u64(42)
 >>> b = Fp.from_u64(69)
 >>> a + b == Fp.from_u64(111)

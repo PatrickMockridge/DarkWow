@@ -107,7 +107,7 @@ let update_risk = UpdateRiskParamsV1 {
 ## Usage Example
 
 ```rust
-use darkfi_betting_stake_contract::{InitializeParamsV1, StakeParamsV1};
+use dwow_betting_stake_contract::{InitializeParamsV1, StakeParamsV1};
 
 // 1. Initialize staking for a Dice table
 let init_params = InitializeParamsV1 {

@@ -46,14 +46,14 @@ A privacy-preserving auction contract that uses the escrow contract for bid depo
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Key Insight: Composing with Escrow
+## Composition with PromissoryNote
 
-The auction contract **uses** the escrow contract as a building block, rather than rebuilding escrow functionality:
-
-- Each bid creates a separate escrow to hold the deposit
-- When outbid, the bidder refunds via `escrow.refund()`
-- Winner claims via `escrow.claim()`
-- Seller settles to receive the winning bid amount
+The auction does **not** use the escrow contract: its manifest depends on
+`promissory_note` and `native_token_v1`, and each bid/deposit path validates a
+`promissory_note::transfer_v1` (0x04) child. The `escrow_id` parameter is currently an
+inert caller-supplied field (`src/model/mod.rs:190`). The earlier "each bid creates a
+separate escrow / escrow.refund() / escrow.claim()" description named a composition that is
+not implemented.
 
 ## Auction State Machine
 
@@ -158,13 +158,13 @@ auction/
 
 ```bash
 # Build WASM contract
-cargo build -p darkfi_auction_contract
+cargo build -p dwow_auction_contract
 
 # Compile ZK circuits (requires zkas binary)
 for f in proof/*.zk; do ~/Darkfi/dwow/target/release/zkas "$f"; done
 
 # Run tests
-cargo test -p darkfi_auction_contract
+cargo test -p dwow_auction_contract
 ```
 
 ## Integration with Escrow

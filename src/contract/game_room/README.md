@@ -57,30 +57,34 @@ The Game Room contract provides on-chain infrastructure for games with betting, 
 | SettlePotV1 | 0x08 | Settle pot to winners (owner DAO) |
 | ContributeEntropyV1 | 0x09 | TrustedSetup entropy commit/reveal |
 | ClaimV1 | 0x0A | Claim winnings from pot |
+| CreatePotV1 | 0x0b | Create a pot in an open/active room |
 
 ## Data Structures
 
 ### PlayerAccount
 ```rust
 pub struct PlayerAccount {
+    pub version: u8,
     pub pubkey: PublicKey,
-    pub balance: u64,      // Cash available
-    pub locked: u64,       // Currently in pot (not withdrawable)
     pub last_action_block: u64,
     pub has_folded: bool,
     pub entropy_contribution: Option<EntropyContribution>,
+    pub instance_seed: [u8; 32],
 }
+// There is no balance/locked field: value stays in PN commitments.
 ```
 
 ### Pot
 ```rust
 pub struct Pot {
+    pub version: u8,
     pub pot_id: PotId,
     pub room_id: RoomId,
     pub total: u64,
     pub contributions: Vec<PotContribution>,
     pub state: PotState,   // Open, Closed, Settled
     pub betting_round: u8,
+    pub created_at: u64,
 }
 ```
 
@@ -157,8 +161,8 @@ pub struct SettleParamsV1 {
 App developers use the Game Room SDK to integrate:
 
 ```rust
-use darkfi_sdk::game_room::{GameRoomClient, RoomConfig, BetType, EntropyMode};
-use darkfi_sdk::crypto::{ContractId, Keypair};
+use dwow_sdk::game_room::{GameRoomClient, BetType};
+use dwow_sdk::crypto::{ContractId, Keypair};
 
 // Create a client
 let keypair = Keypair::random();

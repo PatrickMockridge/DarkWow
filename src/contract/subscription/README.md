@@ -254,9 +254,11 @@ less_than_strict(required_tier - 1, permissions_claimed);
 - ❌ Leaks tier level (privacy regression)
 - ❌ Cannot have arbitrary bitmask combinations (e.g., READ+ADMIN without WRITE)
 
-### PROPER VERSION: True Bitmask Checking (Requires base_div)
+### PROPER VERSION: True Bitmask Checking (BaseDiv is available)
 
-**Requires**: `base_div` opcode (not yet available)
+**Requires**: `base_div` opcode — **implemented** as `BaseDiv = 0x58`
+(`src/zkas/opcode.rs:217`, executed in `src/zk/vm.rs`). The true-bitmask version has not
+been built, but its blocker is gone.
 
 The proper implementation would be:
 
@@ -288,7 +290,8 @@ less_than_strict(required_tier - 1, permissions_claimed);
 - ✅ Arbitrary permission combinations (READ+ADMIN, WRITE only, etc.)
 - ✅ True zero-knowledge permission verification
 
-**Status**: SHIT VERSION implemented to enable access control. PROPER VERSION awaits `base_div` opcode.
+**Status**: the current tiered version is implemented. The true-bitmask version is not
+blocked by `base_div` (0x58 is implemented) and remains unbuilt.
 
 ## Cancellation Verification: PROVISIONAL FIX
 

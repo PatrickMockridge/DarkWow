@@ -64,7 +64,7 @@ COMMITTED ──[RevealRoll]──> REVEALED ──[SettleBet]──> SETTLED
 Rolls are derived using the [Entropy Module](../entropy/):
 
 ```rust
-use darkfi_sdk::crypto::entropy::{tx_hash_to_base, mix_entropy};
+use dwow_sdk::crypto::entropy::{tx_hash_to_base, mix_entropy};
 
 // Simple roll from single block
 let block_hash = tx_hash_to_base(&tx_hash_bytes);
@@ -72,7 +72,7 @@ let roll_entropy = mix_entropy(block_hash, &[bet_id, secret_nonce]);
 let roll = (roll_entropy % 100) as u8;
 
 // High-security roll with multiple block confirmations
-use darkfi_sdk::crypto::entropy::{combine_block_hashes, draw_with_depth};
+use dwow_sdk::crypto::entropy::{combine_block_hashes, draw_with_depth};
 let entropy = combine_block_hashes(&block_hashes);
 let roll = draw_with_depth(&block_hashes, bet_id, 100);
 ```
@@ -89,8 +89,8 @@ The DarkToshi Dice contract was successfully deployed and tested on localnet.
 ### Prerequisites
 
 ```bash
-# Start darkfid with localnet config
-./target/release/darkfid -c contrib/localnet/darkfid-single-node/darkfid.toml
+# Start dwowd with localnet config
+./target/release/dwowd -c contrib/localnet/dwowd-single-node/dwowd.toml
 
 # Mine blocks to fund wallet
 ./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet mine
@@ -107,7 +107,7 @@ dwow_wallet -c bin/dww/dww_config.toml -n localnet contract generate-deploy
 # Deploy contract (pipe to broadcast)
 dwow_wallet -c bin/dww/dww_config.toml -n localnet contract deploy \
   BNLNkr1DrDLqVE3SovLkqHYukwvin1W93xwTpfsxmwh1 \
-  target/wasm32-unknown-unknown/release/darkfi_darktoshi_dice_contract.wasm \
+  target/wasm32-unknown-unknown/release/dwow_darktoshi_dice_contract.wasm \
   | dwow_wallet -c bin/dww/dww_config.toml -n localnet broadcast
 ```
 
@@ -142,13 +142,13 @@ dwow_wallet -c bin/dww/dww_config.toml -n localnet contract list
 ./target/debug/zkas proof/settle_bet.zk -o proof/settle_bet.zk.bin
 
 # Build WASM
-cargo build --target wasm32-unknown-unknown --release -p darkfi_darktoshi_dice_contract
+cargo build --target wasm32-unknown-unknown --release -p dwow_darktoshi_dice_contract
 ```
 
 ## Usage Example
 
 ```rust
-use darkfi_darktoshi_dice_contract::client::CommitBetV1Builder;
+use dwow_darktoshi_dice_contract::client::CommitBetV1Builder;
 
 // Create a bet: 100 tokens, target 50 (50% chance to win)
 let (params, own_bet) = CommitBetV1Builder::new(
@@ -160,76 +160,15 @@ let (params, own_bet) = CommitBetV1Builder::new(
 .build();
 ```
 
-## Integration with Money Contract
+## Integration with PromissoryNote
 
-The Dice contract integrates with the Money contract for value transfers:
+The contract does not compose with the removed `money` contract and has no spend-hook
+path. The manifest depends on `promissory_note` and `native_token_v1`; stakes and payouts
+are `promissory_note::transfer_v1` (0x04) children. The older `Money::Burn`/`Money::TokenMint`
+sketch described a contract that no longer exists and is removed rather than translated.
 
-### Transaction Structure
-
-A complete Dice bet transaction should include:
-
-1. **Money::Burn** (parent call)
-   - Burns the player's bet value
-   - Sets `spend_hook` to authorize Dice::CommitBet
-   - Use `user_data_enc` to pass bet metadata
-
-2. **Dice::CommitBetV1** (child call, `parent_index=0`)
-   - Receives burn authorization via spend_hook
-   - Stores bet in committed state
-   - Validates burn value matches bet_value
-
-3. **Dice::RevealRollV1**
-   - Calculates roll from block hash + commitment
-   - Transitions bet to REVEALED state
-
-4. **Dice::SettleBetV1** + **Money::TokenMint** (if player won)
-   - Settles bet and determines payout
-   - Player-winning bets: client creates Money::TokenMint call to mint payout
-   - House-winning bets: house balance credited automatically
-
-### Client Integration
-
-```rust
-// 1. Create Money::Burn to lock bet value
-let burn_params = MoneyBurnParamsV1 {
-    inputs: vec![Input {
-        value_commit,
-        token_commit: asset_id,
-        nullifier,
-        merkle_root,
-        user_data_enc: encode_bet_metadata(&bet_metadata),
-        signature_public: player_pubkey,
-    }],
-};
-
-// 2. Create Dice::CommitBet as child of Money::Burn
-let commit_params = CommitBetParamsV1 {
-    player_pub: player_pubkey,
-    bet_value: 100,
-    target: 50,
-    secret_nonce,
-    blind,
-    asset_id,
-    value_commit,
-    signature,
-    house_edge: 200, // 2%
-};
-
-// 3. After reveal and settle (if won), create Money::TokenMint
-let mint_params = MoneyTokenMintParamsV1 {
-    commitment: create_winning_commitment(player_pubkey, payout, asset_id),
-};
-```
-
-### House Balance Tracking
-
-The contract tracks house funds in `DICE_CONTRACT_HOUSE_TREE`:
-- Key: `b"balance"` - accumulated house balance
-- Updated on:
-  - `SettleBetV1` when house wins: +house_take
-  - `HouseCloseV1` when bet cancelled: +house_take
-
-The house must maintain sufficient balance to cover winning payouts.
+See [`doc/src/contract/darktoshi_dice.md`](../../../doc/src/contract/darktoshi_dice.md)
+for the current function and circuit surface.
 
 ## Security Considerations
 
@@ -260,7 +199,7 @@ Dice presents a clear yield opportunity for capital providers. See [Betting Capi
 The contract includes a heavyweight test that exercises two endpoints:
 
 ```bash
-cargo test --release -p darkfid test_darktoshi_dice_heavyweight
+cargo test --release -p dwowd test_heavyweight_darktoshi_dice
 ```
 
 **Test Coverage**:

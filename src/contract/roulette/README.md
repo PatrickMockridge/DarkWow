@@ -124,16 +124,16 @@ See [BettingStake Contract](../betting_stake/) for staking infrastructure.
 ./target/debug/zkas proof/settle_bet.zk -o proof/settle_bet.zk.bin
 
 # Build WASM
-cargo build --target wasm32-unknown-unknown --release -p darkfi_roulette_contract
+cargo build --target wasm32-unknown-unknown --release -p dwow_roulette_contract
 
 # Run tests
-cargo test -p darkfi_roulette_contract --lib
+cargo test -p dwow_roulette_contract --lib
 ```
 
 ## Usage Example
 
 ```rust
-use darkfi_roulette_contract::{
+use dwow_roulette_contract::{
     model::*, BetType, RouletteFunction, EUROPEAN_WHEEL_SIZE, AMERICAN_WHEEL_SIZE,
 };
 
@@ -174,7 +174,7 @@ let settle_params = SettleBetsParamsV1 {
 Winning number is derived from block hash using the [Entropy Module](../entropy/):
 
 ```rust
-use darkfi_sdk::crypto::entropy::draw_single;
+use dwow_sdk::crypto::entropy::draw_single;
 
 // Draw winning number (0 to wheel_size-1)
 let winning_number = draw_single(block_hash, nonce, wheel_size);

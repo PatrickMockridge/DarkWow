@@ -2,6 +2,13 @@
 
 > **USE AT YOUR OWN RISK.** The smart contracts in this repository have undergone internal review and simulation-based security analysis but have NOT been audited by an independent third-party firm. Smart contracts carry inherent risks including but not limited to bugs, economic exploits, and cross-chain bridge vulnerabilities. No warranty is provided. You are solely responsible for any funds you deposit.
 
+> **Historical record (2026-05-16/17).** This audit describes the May-2026 code. Since then the
+> bridge was reduced to `InitializeV1`/`DepositV1`/`WithdrawV1` with no HTLC, cancel, execute or
+> reassign path; identity's enum ends at `RegisterIssuerV1` (0x08); and several findings were
+> re-adjudicated in the HAZOP register. Read this as evidence about the audited commit, not as a
+> description of the current tree; the live status is in `doc/src/contract/*` and
+> `doc/src/arch/verification-hazop.md`.
+
 ## Scope
 
 | Contract | Version | Audit Date | Auditor |
@@ -12,7 +19,8 @@
 | Attestation (`src/contract/attestation/`) | v1 (May 2026 hardening) | 2026-05-17 | Internal — Phase 2d integration |
 | Pool Stake (`src/contract/pool_stake/`) | v1 (May 2026 hardening) | 2026-05-17 | Internal — Phase 2d integration |
 
-**Out of scope**: universal_relayer binary, all other 28 contracts in this repository, ZK circuit soundness proofs, external chain integration code.
+**Out of scope**: universal_relayer binary, the other 27 contracts (5 audited of 32), ZK circuit
+soundness proofs, external chain integration code.
 
 ## Methodology
 

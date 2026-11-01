@@ -187,7 +187,7 @@ let (params, bid_id) = SubmitBidWithCapabilityV1Builder::new(
 | Contract | Integration |
 |----------|-------------|
 | Identity | O-Cap authorization via capabilities and DAGs |
-| Labor Market | Winner automatically creates a job |
+| Labor Market | No automatic job creation: the win records `labor_job_id: None`; a job is created separately |
 | Attestation | Legacy competency verification (phase 0) |
 
 ## Data Structures
@@ -248,10 +248,10 @@ src/contract/tender/
 
 ```bash
 # Build WASM
-cargo build --target wasm32-unknown-unknown --release -p darkfi_tender_contract
+cargo build --target wasm32-unknown-unknown --release -p dwow_tender_contract
 
 # Run tests
-cargo test -p darkfi_tender_contract
+cargo test -p dwow_tender_contract
 ```
 
 ## See Also
