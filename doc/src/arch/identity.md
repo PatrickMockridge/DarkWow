@@ -597,147 +597,38 @@ Why this matters:
 
 ## ZK Circuit Design
 
-### Level 0: zk_only (Maximum Privacy)
+The contract ships **two** circuits (`src/contract/identity/proof/`):
 
-Level 0 uses the `less_than_strict` assertion pattern. The verifier learns **only** whether the proof is valid or invalid:
+- `issue_credential.zk` — proves the credential preimage and binds its commitment.
+- `verify_capability.zk` — proves the predicate over one attribute
+  (`less_than_or_equal(threshold, attribute_value)` pinned to `predicate_result`, both operands
+  range-checked), computes the nullifier over the **bound commitment** and exposes it, and publishes
+  the schema, issuer, attribute name, threshold, predicate result and commitment as instances. The
+  host reads the revocation marker and refuses a revoked credential.
 
-```zk
-# From create_claim_v1.zk
-# Proves: threshold <= attribute_value
-# Verifier learns: only "proof valid/invalid"
-
-range_check(64, attribute_value);
-range_check(64, threshold);
-ONE = witness_base(1);
-attribute_plus_one = base_add(attribute_value, ONE);
-less_than_strict(threshold, attribute_plus_one);
-```
-
-### Level 1: Selective Disclosure
-
-Level 1 uses the **bounded equation construction** to return a public `predicate_result` bit:
-
-```
-threshold + delta = attribute_value + (1 - predicate_result) * 2^64
-```
-
-### Level 1 v2: LessThanOrEqual
-
-The `create_claim_v1_l1_v2.zk` circuit uses the verified-sound `LessThanOrEqual` opcode:
-
-```zk
-range_check(64, attribute_value);
-range_check(64, threshold);
-bool_check(predicate_result);
-
-is_lte = less_than_or_equal(threshold, attribute_value);
-constrain_equal_base(is_lte, predicate_result);
-```
-
-### Multi-Credential Claims
-
-The `create_claim_v1_multi.zk` circuit supports AND logic across multiple credentials:
-
-```zk
-is_lte_1 = less_than_or_equal(threshold_1, attribute_1);
-is_lte_2 = less_than_or_equal(threshold_2, attribute_2);
-is_lte_3 = less_than_or_equal(threshold_3, attribute_3);
-
-# AND logic via multiplication
-combined_predicates = base_mul(is_lte_1, is_lte_2);
-combined_predicates = base_mul(combined_predicates, is_lte_3);
-```
-
-### Competency DAG Claims (CreateClaimV1 mode 4)
-
-The `create_claim_v1_dag.zk` circuit supports multiple credential paths with OR logic between paths:
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Competency DAG Example                            │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  PATH A:                          PATH B:                         │
-│  High School → Associate's → Bachelor's (AND chain)               │
-│                                    │                             │
-│                                    ▼                             │
-│                        Industry Certification                    │
-│                                    │                             │
-│                                    ▼                             │
-│                    "Qualified Developer" (either path)           │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-```zk
-# For each credential in the path (AND logic):
-is_lte_1 = less_than_or_equal(threshold_1, attribute_1);
-is_lte_2 = less_than_or_equal(threshold_2, attribute_2);
-is_lte_3 = less_than_or_equal(threshold_3, attribute_3);
-
-# Path satisfied if all credentials pass
-path_satisfied = base_mul(is_lte_1, is_lte_2);
-path_satisfied = base_mul(path_satisfied, is_lte_3);
-
-constrain_equal_base(path_satisfied, ONE);
-```
-
-**Function:** `CreateClaimV1` (0x03) — mode 4 (dag)
-
-**Data structures:**
-```rust
-/// A single credential in a DAG path
-pub struct DAGCredential {
-    pub nullifier: IntentNullifier,
-    pub predicate_result: u8,
-    pub claim_type: [u8; 32],
-}
-
-/// A single path (AND chain)
-pub struct CredentialPath {
-    pub credentials: Vec<DAGCredential>,
-    pub path_hash: [u8; 32],
-}
-
-/// Full DAG structure
-pub struct CompetencyDAG {
-    pub dag_id: [u8; 32],
-    pub name: Vec<u8>,
-    pub paths: Vec<CredentialPath>,  // OR between paths
-    pub dag_root: [u8; 32],
-    pub issuer_pub: [u8; 32],
-    pub created_at: u64,
-    pub expires_at: u64,
-}
-```
-
-### Ratio-Based Claims
-
-The `create_claim_v1_ratio.zk` circuit enables supply-relative predicates:
-
-```zk
-ratio = base_div(my_value, total_supply);
-is_lte = less_than_or_equal(threshold_ratio, ratio);
-constrain_equal_base(is_lte, predicate_result);
-```
+**The earlier design section here described `create_claim_v1*.zk` (L0/L1/multi/DAG/ratio) and a
+`CreateClaimV1 (0x03)` endpoint. Both were removed.** There is no `0x03` in the enum
+(`0x00-0x02, 0x04-0x08`; `0x03` is unassigned), and no such circuit file exists. Claims are expressed
+through `verify_capability` predicates; multi-credential AND and ratio predicates are design notes,
+not shipped circuits.
 
 ## Roadmap
 
 ```
-Level 0 (COMPLETE — May 2026)
+Level 0 (shipped)
 ├── O-Cap authorization (Register/Issue/Verify/Revoke)
 ├── Issuer-Holder-Verifier model
-├── Single issuer credentials
-├── Basic predicates (>=, ==, etc.)
+├── Single-issuer credentials
+├── Basic predicates (the shipped circuit proves one less_than_or_equal)
 ├── On-chain verification
 └── ZK proofs for attribute hiding
 
-Level 1 (COMPLETE — May 2026)
+Design notes (not shipped)
 ├── Competency DAG structure
 ├── Derived competencies (prerequisite chains)
-├── Multiple issuer support
-├── Multi-credential AND claims (0x07)
-├── Ratio-based predicates (0x08)
+├── Multi-issuer credentials
+├── Multi-credential AND claims (no opcode assigned; 0x07 is RevokeCapabilityV1)
+├── Ratio-based predicates (no opcode assigned; 0x08 is RegisterIssuerV1)
 └── Credential chaining
 
 Level 2 (Future)

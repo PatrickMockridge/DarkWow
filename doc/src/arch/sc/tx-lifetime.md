@@ -20,11 +20,15 @@ where each `C_i` is a `ContractCall` ([type-system.md §8.2](../type-system.md))
 with fields `{ contract_id: ContractId, data: Vec<u8> }`. The `data` field SHALL
 carry a function selector byte followed by serialized call parameters.
 
-Every contract call exercises a held capability. The caller SHALL possess the
-capability's authorization secret before constructing the call. The call SHALL
-include a nullifier — evidence that the capability has been exercised — and a
-ZK proof that the caller knows the witness without revealing it
-([ocap.md §6](../ocap.md)).
+An L1 contract call that exercises a held capability SHALL carry a nullifier —
+evidence that the capability has been exercised — and a ZK proof that the caller knows
+the witness without revealing it ([ocap.md §6](../ocap.md)).
+
+**Exception — the three plaintext native-token functions.** `PoWRewardV1` (0x05),
+`FeeCollectV1` (0x06) and `UncleMintV1` (0x07) carry **no ZK proof and derive no
+nullifier**; the verifier exempts them (`zk_verifier.rs:396-405`), and the WASM
+entrypoint checks their arithmetic in the clear. Other L2/static-record calls may also
+derive no nullifier.
 
 Transactions SHALL be atomic: either all calls succeed or none do. A
 transaction that partially executes SHALL be rejected by the consensus layer.
@@ -129,10 +133,12 @@ by publishing a nullifier:
 Commitment → ZK Proof (witness hidden) → Nullifier (public evidence)
 ```
 
-The nullifier SHALL be unique across the entire chain history. The nullifier
-SMT (Sparse Merkle Tree) enforces this: any duplicate nullifier SHALL cause
-block rejection. The wallet detects its own spent capabilities during scan by
-matching nullifiers against its held commitments.
+The nullifier SHALL be unique across the chain history. There is no single global
+enforcer: native-token paths read a nullifier set with `db_contains_key`
+(`native_token/src/entrypoint/mod.rs:241,776,864`), and the Sparse Merkle Tree is
+retained by promissory_note ([consensus.md](../consensus/consensus.md)). A duplicate on
+an enforced path causes block rejection. The wallet detects its own spent capabilities
+during scan by matching nullifiers against its held commitments.
 
 This is the same pattern for every capability exercise: coinbase claim
 (`PoWRewardV1`), fee payment (`FeeV3`), value transfer (`TransferV1`),

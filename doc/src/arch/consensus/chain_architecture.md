@@ -69,7 +69,7 @@ CChainState {
 ```
 
 Single insertion path: `connect_block()` returns `BlockConnectOutcome` with
-five variants — canonical extension (`CanonicalExtension{new_height}`),
+four variants — canonical extension (`CanonicalExtension{new_height}`),
 competing block storage (`CompetingStored`), uncle chain extension
 (`UncleExtended`), and already-known block (`AlreadyKnown`). Used by genesis,
 sync, broadcast, miner RPC, stratum, and merge mining. All callers MUST match

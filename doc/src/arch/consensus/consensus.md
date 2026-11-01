@@ -26,7 +26,7 @@ rationale and architectural divergence.
 | Target adjustment algorithm | [IMPLEMENTED] | `src/linear/src/consensus.rs` |
 | mark_mined — 5 block acceptance paths | [IMPLEMENTED] | `bin/dwowd/` (5 call sites) |
 | Caribina (Arweave) anchoring | [IMPLEMENTED] | `src/linear/src/caribina/` |
-| Monero merge-mining anchoring | [IMPLEMENTED] | `src/linear/src/monero/` |
+| Monero merge-mining anchoring | [PARTIAL] — merge mining is implemented; the anchor fields are never written and `verify_monero_anchor` has no production caller (`OBL-C67`) | `src/linear/src/monero/` |
 | Sharding (uncle merkle topology) | [VISION] | Design exploration — see [scaling.md](scaling.md) |
 | Parallel contract execution | [VISION] | Gated on wasmer thread safety |
 | Block size cap | **NONE — by decision** | There is no cap; see "Block and Payload Size" below |
@@ -201,9 +201,9 @@ Several validation gaps were closed as part of the HAZOP remediation:
   were only checked against absolute min/max bounds (1 to `u32::MAX`), allowing
   trivially-easy uncle chain extensions.
 
-- **Block reward upper bound (H-1):** A 2x sanity cap on `total_reward` at the host
-  level prevents runaway inflation if the WASM `pow_reward_v1` contract is compromised.
-  The WASM contract independently enforces the exact emission schedule.
+- **Block reward check (H-1):** the host requires `total_reward` to equal the exact
+  emission schedule (`block_acceptor.rs:384-410`); the old 2x sanity cap was removed and is
+  subsumed by that exact check.
 5. If rejected: Uncle loses coinbase entirely, canonical absorbs transactions anyway
 
 **Why this is elegant:**
@@ -433,10 +433,11 @@ The two-property supply audit system covers uncle splits:
   `r_i` deterministically and verify `C_effective + Σ C_uncle_i = C_base` for
   every block, using only public data (uncle hashes, pins, heights).
 
-Together: the ZK proof guarantees correct total emission, and the Pedersen
-mass balance guarantees correct distribution. A ZK bug could hide which
-commitment is which, but not create value. A Pedersen binding break could
-falsify a split, but not increase total supply.
+Together: the **plaintext entrypoint check** guarantees correct total emission — there is
+no ZK proof on the coinbase (`transaction.rs:241-244`) — and the Pedersen mass balance
+guarantees correct distribution. The distribution check could be bypassed by a
+commitment mix-up, but it cannot create value; a Pedersen binding break could falsify a
+split, but not increase total supply.
 
 > **Status:** full uncle minting (each `C_uncle_i` spendable in `commitment_set`,
 > reversed on disconnect) is a tracked gap — see
@@ -583,9 +584,11 @@ The 1-deep bound is a deliberate engineering choice:
 1. **Bounded by the height-gap check**: The `HeightDiscontinuity` guard limits
    competing chains to at most 1 block ahead of the canonical tip, making the
    1-deep bound a property of the architecture.
-2. **Anchored finality prevents deep reorgs**: Caribina (Arweave) and Monero
-   finality make reorgs past anchored blocks cryptographically infeasible. The
-   1-deep window covers unanchored blocks awaiting finality confirmation.
+2. **Anchored finality prevents deep reorgs**: a verified Caribina (Arweave) anchor makes a
+   reorg past the anchored block refuse (`chain_state.rs:1825-1829`). The Monero anchor is
+   **not** an enforced finality source — its fields are never written and
+   `verify_monero_anchor` has no production caller. The 1-deep window covers unanchored
+   blocks awaiting finality confirmation.
 3. **Uncle Merkle handles the common case**: Simultaneous blocks at the same
    height earn uncle rewards without reorg. Cumulative-work fork selection only
    activates when one chain has objectively more work.
@@ -742,6 +745,11 @@ as `PowSource::Monero(MoneroPowData)`; the anchor fields are a separate, unauthe
 same thing. See `OBL-C67` — which also records that this is a **block-minting** hole, not only a finality
 one, because the three receipts prove coinbase-inclusion in *some serialized* block and merge-mined blocks
 skip native PoW entirely.
+
+**Admission today:** a merge-mined block with no `monerod_url` configured is **refused**
+unless the operator explicitly sets `accept_unverified_merge_blocks = true`
+(`block_acceptor.rs:298-312`; the setting defaults false). The opt-out is the only way to
+admit one, and it logs a warning naming the unchecked PoW.
 
 `verify_monero_anchor` supports two modes, and neither is called by anything outside its own tests:
 - **Lightweight plausibility** (default): accepts any block with non-zero
@@ -1123,20 +1131,13 @@ written to sled and could be found by `query_contract_state` (a direct
 sled lookup bypassing the overlay), but the WASM exec path — which gates
 block acceptance — always saw "not spent."
 
-**Fix:** Internal presence sentinels distinguish three states:
-
-| Sentinel | Meaning | Written By |
-|----------|---------|------------|
-| `[0x01]` | Key present, value empty | `db_insert(key, &[])` — transformed at storage boundary |
-| `[0x00]` | Key absent (tombstone) | `db_remove(key)` |
-| Any other value | Key present with data | `db_insert(key, non_empty_value)` |
-
-`db_get` returns `Some(vec![])` for `[0x01]`, `None` for `[0x00]`.
-`db_contains_key` returns `true` for `[0x01]`, `false` for `[0x00]`.
-Contract code is unchanged — the transformation happens at the storage
-boundary. This is backward-compatible: contracts that already write
-`&[1]` (native_token nullifiers post-commit `181df3b0e5`) continue
-to work identically.
+**What actually protects a spent nullifier.** The host does **not** carry a three-state
+presence sentinel: `db_get` returns `None` for an empty value, `db_remove` writes `&[]`, and
+`db_contains_key` is `!value.is_empty()` (`execution.rs:1185-1218`). Replay protection
+therefore depends on the writer storing a non-empty marker. `db_mark_spent` writes `&[1]`
+(`sdk/wasm/db.rs:185`), which is what native_token's nullifiers do; a contract that writes
+`&[]` to mean "spent" is not protected by the host. This section previously described a
+sentinel design that is not in the execution path.
 
 ### SMT Namespace Isolation
 

@@ -320,7 +320,7 @@ fork choice.
 
 | Property | Monero Anchor (p2pool) | Caribina (Arweave) |
 |----------|----------------------|---------------------|
-| Status | **anchoring live; the anchor fields are never set and the Monero block's own PoW is never checked** (`OBL-C67`), so a fabricated merge-mined block is accepted | **anchoring and verification live** (2026-09-22); enforcement requires a verified proof |
+| Status | **anchoring live; the anchor fields are never set and the Monero block's own PoW is never checked** (`OBL-C67`). A merge-mined block is **refused by default** when no `monerod_url` is configured; it is admitted only under the explicit `accept_unverified_merge_blocks` opt-out | **anchoring and verification live** (2026-09-22); enforcement requires a verified proof |
 | Requires p2pool | Yes | No |
 | Requires Monero node | Yes, and `get_block_by_hash` is being added for the admission policy | No |
 | Requires funding | No (merge mining) | No (ArDrive free tier) |

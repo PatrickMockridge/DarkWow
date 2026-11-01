@@ -699,9 +699,10 @@ The fee summation MUST:
    `contract_id == NATIVE_TOKEN_CONTRACT_ID` AND selector `0x08` (FeeV3) count.
    Without the contract_id filter, any contract's call whose data begins with
    `0x00` would be miscounted as a fee.
-2. **Deserialize properly:** extract the fee via `FeeParamsV1` layout
-   (`[selector: u8][fee: u64 LE][FeeParamsV1]`). Malformed call data MUST be
-   an error, never silently treated as zero.
+2. **Deserialize properly:** use `as_mass_balance_fee_v3()` and decode `FeeParamsV3`;
+   the selector is `0x08`. Malformed params are **skipped with a warning** — the
+   block still builds and that call's fee is not collected
+   (`bin/dwowd/src/registry/model.rs:393-410`).
 3. **Use checked arithmetic:** the sum MUST use `checked_add` — overflow is an
    explicit block-preparation error, never a wrap or panic.
 
@@ -1546,10 +1547,10 @@ Input:  recipient (MiningRecipient), fee_txs (Vec<Transaction>), height
 
 1.  Sum fees from fee_txs:
     for each tx in fee_txs:
-      for each call where contract_id == NATIVE_TOKEN_CONTRACT_ID
-                      and call.data[0] == 0x00:
-        fee = u64::from_le_bytes(call.data[1..9])
-        total_fees = total_fees.checked_add(fee)?  // overflow = block error
+      for each call where call.as_mass_balance_fee_v3() is Some (selector 0x08):
+        match FeeParamsV3::decode(call.params_bytes()):
+          Ok(params) => total_fees = total_fees.checked_add(params.fee)?
+          Err(_)     => warn and skip this call's fee  // block still builds
     if total_fees == 0: return None  // no FeeCollectV1 needed
 2.  Derive sk_H = mining secret key at height (deterministic)
 3.  Compute value_blind = ScalarBlind(poseidon([sk_H, height, domain=10]))

@@ -248,7 +248,12 @@ The DAO Escrow contract (`src/contract/dao_escrow/`) manages endowment funds for
 | WithdrawV1 | 0x03 | Owner withdraws from endowment |
 | EndowmentWithdrawV1 | 0x04 | DAO governance withdrawal (not implemented) |
 | TreasurySpendV1 | 0x05 | Treasury spending (not implemented) |
-| EnableDrainProtectionV1 | 0x06 | Enable fund drain protection |
+| ProposeClaimV1 | 0x07 | Propose a claim (group approval child) |
+| VoteClaimV1 | 0x08 | Group vote; writes `Approved`/`Rejected` |
+| ExecuteClaimV1 | 0x09 | Execute an approved claim |
+| CancelClaimV1 | 0x0d | Cancel a pending claim |
+
+`EnableDrainProtectionV1 (0x06)` was retired and is not in the enum (`dao_escrow/src/lib.rs:62,92-101`).
 
 ### Common Implementation Patterns
 
@@ -463,7 +468,12 @@ Example function selectors from DAO-Escrow:
 - `WithdrawV1` = 0x03
 - `EndowmentWithdrawV1` = 0x04
 - `TreasurySpendV1` = 0x05
-- `EnableDrainProtectionV1` = 0x06
+- `ProposeClaimV1` = 0x07
+- `VoteClaimV1` = 0x08
+- `ExecuteClaimV1` = 0x09
+- `CancelClaimV1` = 0x0d
+
+`EnableDrainProtectionV1 (0x06)` was retired; it is not in the enum.
 
 ---
 

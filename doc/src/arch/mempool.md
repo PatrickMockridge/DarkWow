@@ -250,8 +250,8 @@ fee = ((wasm_kB × BASELINE_STORAGE × WASM_CF) + (Σ opcode_difficulty × CIRCU
 `premium` and `standard` tier values, governed by a dual PID controller
 (see [fee-spec.md §12.7](consensus/fee-spec.md)). At zero congestion,
 both equal `SCALE` (1,000,000). Congestion increases the factors above
-`SCALE` via a log₂ formula based on mempool queue depth. Each factor is
-constrained to ±10% change per 20-block window.
+`SCALE` via a log₂ formula over the completed window's applied FeeV3 counts — chain data,
+not the local mempool. Each factor is constrained to ±10% change per 20-block window.
 
 Miners signal CF direction in the `fee_window_flags` field of each
 block header at the final block of the fee window (see

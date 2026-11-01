@@ -459,7 +459,8 @@ impl FeeWindowState {
 
     // ── Congestion factor computation ─────────────────────────────
 
-    /// Compute raw congestion factors from mempool queue depths.
+    /// Compute raw congestion factors from the completed window's applied FeeV3
+    /// counts (premium vs standard), not from a node-local mempool (FI-WINDOW-7).
     /// [1:1] Python model: `compute_congestion_factor()`.
     pub fn compute_cf(
         premium_pending: u64,

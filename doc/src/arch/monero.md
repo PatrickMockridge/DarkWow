@@ -2,6 +2,17 @@
 
 DarkWow's Monero integration spans three key areas: **merge mining** for security, **bridging** for asset transfer, and **stable collateralization** for price stability. These components work together to enable XMR as a foundational primitive for DarkWow's privacy-preserving financial system.
 
+> **Status (2026-11-01): the bridging and stablecoin flows on this page are design targets, not live
+> capabilities.**
+> - Bridge deposits are inert: `bridge-verify` is enabled by no build, `verify_chain_proof` refuses
+>   every chain in the default build, and `DepositV1` issues no wrapped PN
+>   ([bridge.md](../contract/bridge.md) §Status; `OBL-C21`).
+> - The stablecoin's custody arms refuse with `CustodyModelUnavailable`
+>   ([stablecoin.md](../contract/stablecoin.md) §Status; `OBL-C92`/`C273`).
+> - There is no `bin/xmr_relayer/`; the relayer binaries are excluded from the workspace.
+> - Merge mining itself is real and implemented; see the consolidated
+>   [Merge Mining](merge-mining.md) chapter.
+
 ## Overview
 
 ```
@@ -33,7 +44,7 @@ setup guide, and Monero-anchor finality — see the consolidated
 
 ## 2. Bridging & Wrapping
 
-The bridge contract enables moving XMR between Monero and DarkWow using an **Object Capability Security** model instead of VSS-based approaches.
+The bridge design moves XMR between Monero and DarkWow using an **Object Capability Security** model instead of VSS-based approaches. The deposit path is currently inert (see the status block above): the external proof is fail-closed, so no wrapped XMR can be minted.
 
 ### Object Capability vs VSS
 
@@ -79,40 +90,39 @@ Relayer broadcasts TX to Monero
 If timeout expires → User can cancel and reclaim
 ```
 
-**Trust Model:**
-- **Relayer**: Honest-but-curious (view key only), economically motivated to execute
-- **Timeout**: 100 blocks — prevents relayer censorship
-- **Slashing**: Relayer loses funds if they fail to execute
+**Trust Model (design; the release path is not implemented).**
+- **Relayer**: honest-but-curious (view key only). No relayer binary is in this workspace.
+- **No timeout, cancel or slashing path exists in the bridge contract.** `WithdrawV1` records an
+  external-release signal; executing the release is the relayer's responsibility, and the contract
+  defines no timeout, cancel or slash constant (`bridge/src/lib.rs:78-83`).
 
 ### Bridge Contract Functions
 
 | Function | ID | Description |
 |----------|-----|-------------|
 | InitializeV1 | 0x00 | Initialize bridge state |
-| DepositV1 | 0x01 | Register external chain deposit |
-| WithdrawV1 | 0x02 | Claim withdrawal to external chain |
-| UpdateConfigV1 | 0x03 | Update bridge operators |
-| CancelWithdrawV1 | 0x04 | Cancel timed-out withdrawal |
+| DepositV1 | 0x01 | Register external chain deposit (inert in the default build) |
+| WithdrawV1 | 0x02 | Record the external-release signal for a burned wrapped note |
+
+The enum defines exactly these three; there is no `UpdateConfigV1` or `CancelWithdrawV1`
+(`bridge/src/lib.rs:78-83`).
 
 ### Relayer Service
 
-The `bin/xmr_relayer/` binary handles the observation and execution layer:
-
-```
-bin/xmr_relayer/
-├── src/
-│   ├── main.rs           # CLI (start, derive-address, status)
-│   ├── monero_rpc.rs     # Monero wallet/node RPC client
-│   ├── proof.rs          # ZK proof construction
-│   └── withdrawal.rs      # Withdrawal execution + timeout
-└── xmr_relayer_config.toml
-```
+**There is no relayer binary in this workspace.** The universal relayer and per-chain relayers are
+excluded from the workspace as stub code; `bin/xmr_relayer/` has never existed. Withdrawal execution
+is therefore an external responsibility, and the contract only records the signal.
 
 **Reference:** [Bridge Contract](../contract/bridge.md), [Bridge Contract (Dev)](../dev/contracts/bridge.md)
 
 ## 3. Stable Collateralization
 
 wXMR can be used as collateral in DarkWow's [stablecoin contract](../contract/stablecoin.md) to mint privacy-preserving stablecoins.
+
+**Status: this flow is a design target.** `OpenPositionV1`, `AddCollateralV1`, `MintStableV1`,
+`LiquidateV1` and `RedeemStableV1` refuse with `CustodyModelUnavailable` before any state read, so
+no collateral can be deposited and no stablecoin minted ([stablecoin.md](../contract/stablecoin.md)
+§Status; `OBL-C92`/`C273`).
 
 ### Pooled Debt Model
 
@@ -203,14 +213,13 @@ with Monero anchor verification" — described code that does not exist: that fi
 of `anchor`, `finality` or `verify_monero_anchor`. The row was removed on 2026-09-22 rather than
 corrected in place, because there is no such component to name. `bin/xmr_relayer/src/withdrawal.rs`
 was likewise listed here and the directory does not exist; withdrawal handling and its timeout live in
-the bridge contract (`BRIDGE_CONTRACT_WITHDRAWAL_TIMEOUT_BLOCKS`).
+the bridge contract, and that contract defines no timeout or cancel path.
 
 ### Constants
 
 **Bridge:**
 - `BRIDGE_CONTRACT_XMR_CONFIRMATIONS`: 10 blocks
-- `BRIDGE_CONTRACT_WITHDRAWAL_TIMEOUT_BLOCKS`: 100 blocks
-- `BRIDGE_CONTRACT_SLASH_AMOUNT`: 1,000,000 units
+- No withdrawal-timeout or slash constant exists in the bridge.
 
 **Stablecoin:**
 - `CDP_MIN_COLLATERALIZATION_RATIO`: 150% (15000 bp)
@@ -229,10 +238,11 @@ enforce — `should_enforce` reads only the mode and, in `Signaled` mode, the `F
 they are excluded from the mining blob, so a relaying peer sets them freely; since 2026-09-22 they also do
 not confer finality, which now requires a verified Caribina anchor proof. And the Monero anchor fields
 are never populated in production (`mm_rpc.rs:630-631`), so `FINALITY_MONERO` has never been set on a real
-block. See `OBL-C67` (closed — the anchor is now derived and enforced), `OBL-C80`
-(**accepted-with-reason**, severity `C`, and a block-minting gap rather than a finality one: with
-`monerod_url` unset the admission policy checks nothing), `OBL-C66` (settlement,
-accepted-with-reason) and `OBL-C63` (closed).
+block. See `OBL-C67` (settled; the anchor fields are still zeroed in production and
+`verify_monero_anchor` has no production caller), `OBL-C80` (**accepted-with-reason**, severity `C`;
+since the admission policy's fail-closed change a node with `monerod_url` unset **refuses** a
+merge-mined block unless `accept_unverified_merge_blocks` is set), `OBL-C66` (settlement,
+accepted-with-reason) and `OBL-C63` (settled).
 
 ## See Also
 

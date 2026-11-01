@@ -288,10 +288,10 @@ factor reduces total message count from O(N²) (flood) to O(k·N) (structured)
 and propagation rounds from O(N) to O(log N). When N ≤ 2, the function falls
 back to flood broadcast — with fewer than 3 peers, fan-out = flood.
 
-**Known limitation**: The receive-side relay at `linear_broadcast.rs:385`
-currently uses `p2p.broadcast()` (flood). This means receivers still relay
-to all peers, partially defeating the fan-out benefit. This is an acknowledged
-issue tracked for a future hardening pass.
+**Receive-side relay.** Both the miner and the receive-side relay call `fan_out_block`
+(`linear_broadcast.rs:349,532`); the `p2p.broadcast()` flood path remains only as the
+≤2-peer fallback. The "known limitation" this paragraph used to record described a
+flood relay that has since been replaced — the comment at `:349` records the C1 rule.
 
 **Performance**:
 

@@ -107,33 +107,17 @@ are the ones the caller already holds.
 
 ```rust
 pub fn verify_uncle_proof(
-    uncle: &UncleProof,
+    header: &BlockHeader,
+    proof: &UncleProof,
     merkle_root: &[u8; 32],
-    _vm: &randomx::RandomXVM,
-    target: u32,
-) -> bool {
-    // Step 1: Verify pow_hash matches re-computed hash from header
-    // We create a VM with the uncle's specific randomx_key
-    let header_bytes = serde_json::to_vec(&uncle.header).unwrap();
-    let cache = randomx::RandomXCache::new(flags, &uncle.header.randomx_key)?;
-    let verify_vm = randomx::RandomXVM::new(flags, Some(cache), None)?;
-    let rx_hash = verify_vm.calculate_hash(&header_bytes)?;
-    let computed_pow_hash: [u8; 32] = rx_hash[..32];
-
-    if computed_pow_hash != uncle.pow_hash {
-        return false;  // PoW hash mismatch
-    }
-
-    // Step 2: Verify pow_hash meets target (hash_u32 <= target)
-    let hash_u32 = u32::from_le_bytes(computed_pow_hash[0..4].try_into().unwrap());
-    if hash_u32 > target {
-        return false;  // Target not met
-    }
-
-    // Step 3: Verify merkle proof against uncle_merkle_root
-    // ... merkle verification ...
-}
+    target: BlockTarget,
+) -> bool
 ```
+
+It recomputes the PoW from `header` and checks the target, then checks `proof`'s Merkle
+path and position against `merkle_root`. `UncleProof` holds only `merkle_path` and
+`position` — there is no `pow_hash` field and no embedded `header` (`block.rs:297-302,
+495-536`).
 
 ### Uncle Merkle Tree Construction
 
@@ -282,9 +266,10 @@ DarkWow does not implement depth-based confirmation: no code reads a
 block-depth threshold. Confirmation comes from two mechanisms, per
 [consensus.md §Fork Choice Rule](consensus.md#fork-choice-rule):
 
-1. **Finality anchors** — a block carrying an active Caribina (Arweave) or
-   Monero finality anchor SHALL NOT be displaced by reorg (the finality guard
-   inside `detect_reorg`).
+1. **Finality anchors** — a block carrying a **verified Caribina (Arweave) anchor** SHALL
+   NOT be displaced by reorg (the finality guard inside `detect_reorg`). The Monero anchor
+   is not an enforced finality source: its fields are never written and
+   `verify_monero_anchor` has no production caller.
 2. **Heaviest-chain fork choice** — the canonical chain is the one with the
    most accumulated work (Bitcoin chainwork, `u32::MAX / target` per block).
    A displaced block is not discarded but reused as an uncle with a partial
@@ -310,15 +295,14 @@ ZK proof verification follows a two-point model ([mempool.md §4](../mempool.md)
 
 1. **dwowd validates all proofs** at mempool admission and block acceptance —
    the first verification point, preventing invalid transactions from propagating.
-2. The wallet scanner **independently verifies ZK proofs** — it does not trust
-   dwowd's validation. This is the second verification point, ensuring a syncing
-   node validates every transaction it did not admit itself.
-3. Scanner verification uses the verifying key declared by the contract's
-   `metadata()` ABI ([type-system.md §8.2](../type-system.md)).
-
-Both verification points SHALL use the same verifying keys and SHALL produce
-the same acceptance decision for the same transaction. This is the
-Authenticated-Pool invariant ([mempool.md §1](../mempool.md)).
+2. The wallet scanner **does not re-verify ZK proofs**. `bin/dww/src/scan.rs` contains no
+   verifier call; `verify_zkp` appears only in a `#[cfg(test)]` module
+   (`prover_impl.rs:704,813`). The scanner decrypts notes and discovers capabilities, and
+   it relies on the node's acceptance for proof validity.
+3. A second verification point is therefore not present in the wallet today. Two-point
+   verification would need the same verifying keys and the same acceptance decision on
+   both sides (the Authenticated-Pool invariant, [mempool.md §1](../mempool.md)); the
+   scanner-side half is a design target, not an implemented check.
 
 ## Limitations
 

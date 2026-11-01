@@ -36,12 +36,13 @@ All fee parameters start at genesis and evolve through the PID controller
 every 20 blocks (`WINDOW_SIZE`). No node has private fee parameters.
 
 This means:
-- A node joining the network at height 1000 reads `fee_window_flags` from
-  block 1000's header and derives the correct CFs — no "catch-up" logic needed
-- A wallet that goes offline for 3 windows re-syncs to the current flags on
-  its next block — the flags in the header ARE the current state
-- A miner that restarts reads the `FeeWindowState` from its persisted sled
-  database — the state was saved at the last window boundary
+- A node joining at height 1000 re-derives the exact CFs from its own copy of the
+  completed window's applied FeeV3 counts. The header's `fee_window_flags` carry the
+  **direction**, not the factors (`FI-FLAG-1`); reading only the flags is not enough.
+- A wallet that goes offline for 3 windows derives the current CFs from the chain data it
+  syncs, not from a cached flag value.
+- A miner that restarts reads the persisted per-boundary snapshot from its sled database;
+  a node that reorgs restores the snapshot the canonical chain implies.
 
 A node that cannot sync to the current window's parameters cannot participate.
 There is no "offline mode" for fee computation — `FeeWindowFlags::default()`
@@ -89,13 +90,14 @@ This requires:
 - **Dynamic escalation.** Risk factors update at window boundaries based on
   the tracker's `evaluate_window()` output.
 
-**Current state (2026-08):** The `RiskFactor` type is specified in
-`type-system.md` §2.3.1. `compute_total_fee()` (the risk-aware formula) is
-implemented and tested in `fee_window.rs` but has zero production call sites.
-`ContractRiskTracker` exists only in the Python reference model
-(`contrib/model/fee_window_model.py`). The miner uses hardcoded
-`compute_fee(&[1000], 1, ...)` for all thresholds. This is tracked as
-red team findings H8, H9, H10, M2.
+**Current state (2026-11-01):** `ContractRiskTracker` exists in Rust
+(`src/linear/src/contract_risk.rs`); `chain_state.rs:1476-1520` records deviations on
+apply and evaluates them at the boundary, and mempool admission reads the factor in
+`rederived_minimum_fee` (`crates/dwow-mempool/src/lib.rs:855-860`).
+`compute_fee_v3(gas, cf, tier, risk)` multiplies the `RiskFactor`; there is no
+`compute_total_fee()` production call site because that name does not exist. The old
+"2026-08" text described the Python model as the only home for the tracker; the Rust
+tracker is now the admission input.
 
 ## 5. Loud Failures — Diagnostic Surface
 

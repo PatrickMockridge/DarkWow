@@ -1,4 +1,7 @@
-# Merge Mining FFI — Monero ↔ DarkWow Foreign Function Interface
+# Merge Mining Bridge — Monero ↔ DarkWow (JSON-RPC)
+
+*The title and this page once described a C foreign-function interface. No `dwow_mm_*`
+C API exists in this tree; the bridge is the JSON-RPC server documented here.*
 
 > **Normative language (SHALL/MUST/SHOULD) per RFC 2119.**
 
@@ -50,11 +53,12 @@ unique numeric codes (-32324..-32343) for each parameter validation failure.
 Submission outcomes use distinct status strings ("accepted" / "rejected" /
 "stale") per P2Pool's expected response format (§6.2).
 
-### 1.4 Opaque Handles
+### 1.4 No C FFI — the bridge is JSON-RPC
 
-All Rust types cross the FFI boundary as opaque pointers. Callers MUST pair
-every constructor with its corresponding destructor. The boundary SHALL follow
-the seatuya pattern: `Box::new()` → `Box::into_raw()` → `Box::from_raw()`.
+There is **no `dwow_mm_*` C API and no opaque-handle boundary** in this tree. Merge
+mining is a JSON-RPC server (`bin/dwowd/src/rpc/mm_rpc.rs:94-96`), and the templates,
+submissions and errors are JSON values. The FFI design that this section used to
+describe was never implemented; the RPC methods in §9 are the real interface.
 
 ### 1.5 Determinism
 
@@ -84,7 +88,7 @@ deterministic. The merkle proof verification SHALL be a pure function.
 |-------------|-----------------|------------|
 | `BlockHeader` | Template + submitted PoW data | Height continuity, previous hash, merkle root |
 | `Transaction` (coinbase) | `contract_calls: [PoWRewardV1]` | Coinbase MUST be first tx |
-| `CoinbaseTransaction` | ZK proof + public inputs (9 elements) | Nullifier non-zero, proof non-empty |
+| `CoinbaseTransaction` | Plaintext PoWRewardV1 call | No ZK proof and no public inputs (`transaction.rs:241-244`); nullifier non-zero |
 | `Block` | Header + transactions + uncle merkle | `pow_source == Monero(MoneroPowData)` |
 | `UncleBlock` | Competing blocks at same height | Depth ≤ MAX_UNCLE_DEPTH |
 
@@ -265,14 +269,22 @@ in `accept_block()`). The Monero PoW is implicitly verified by:
 3. The Monero consensus — the Monero block's own PoW (RandomX over the Monero
    block header) is verified by the Monero network.
 
-These three proofs together SHALL provide equivalent security to native
-RandomX verification: a valid merge-mined block proves that a Monero miner
-expended RandomX work at the Monero network difficulty.
+These three checks do **not** provide equivalent security to native RandomX
+verification. `src/linear/src/validation.rs:97-110` records what they establish: the
+receipts prove coinbase-inclusion in *some serialized* block, not that the Monero block
+is real or on the Monero chain. The block's own Monero PoW is never checked here.
+
+**Admission is fail-closed.** A merge-mined block with no `monerod_url` configured is
+refused unless the operator sets `accept_unverified_merge_blocks = true`
+(`block_acceptor.rs:298-312`; default false). The admission policy, when configured,
+asks monerod to confirm the block hash at `monero_min_confirmations` depth; it is
+node-local and never consensus.
 
 ### 5.3 Block Acceptance
 
 After reconstruction, the block SHALL enter the standard acceptance path
-(`accept_block()`), which performs:
+(`accept_block()`), which first applies the Monero admission policy above (refuse when
+no `monerod_url` is configured and the unverified opt-out is not set), then performs:
 - Phase 0: Structural validation (coinbase at transactions[0])
 - Proof of token balance (mass balance equation)
 - Stage 2 PoW: Target matches consensus (declared target == expected)
@@ -311,11 +323,11 @@ Two response patterns SHALL be used:
    For submission outcomes and post-validation failures. This SHALL match
    P2Pool's expected response format.
 
-### 6.3 Last Error Retrieval
+### 6.3 Error Retrieval
 
-The merge mining handle SHALL store the last error as a human-readable string,
-retrievable via `dwow_mm_last_error(handle, buf, len)`. The error SHALL be
-cleared after retrieval.
+There is no persistent "last error" handle. A JSON-RPC failure returns the standard
+JSON-RPC error object (code and message) in the response; nothing is stored for later
+retrieval.
 
 ## 7. Security Model
 
@@ -374,33 +386,16 @@ MerkleProof (branch+path)  ──────►  JSON array   ─────�
 
 ## 9. API Reference
 
-### 9.1 Lifecycle
+The interface is JSON-RPC (`bin/dwowd/src/rpc/mm_rpc.rs:94-96`); there is no C API.
 
-| Function | Signature | Purpose |
-|----------|-----------|---------|
-| `dwow_mm_chain_id` | `int32_t(handle, out_buf, buf_len) → bytes` | Get chain ID (blake3 of genesis) |
-| `dwow_mm_version` | `const char*()` | Library version string |
+| Method | Purpose |
+|--------|---------|
+| `merge_mining_get_chain_id` | Chain id (blake3 of genesis) |
+| `merge_mining_get_aux_block` | Request a template for the given aux hash; the response carries `aux_hash` (job id) and the template |
+| `merge_mining_submit_solution` | Submit a solved solution; returns `{"status": "accepted"|"rejected"|"stale"}` |
 
-### 9.2 Template
-
-| Function | Signature | Purpose |
-|----------|-----------|---------|
-| `dwow_mm_get_aux_block` | `int32_t(handle, aux_hash_hex, out_buf, buf_len) → template JSON` | Request mining template |
-| `dwow_mm_aux_hash` | `int32_t(handle, out_buf_32) → 32` | Get aux_hash/job_id (32 bytes) |
-
-### 9.3 Submission
-
-| Function | Signature | Purpose |
-|----------|-----------|---------|
-| `dwow_mm_submit_solution` | `int32_t(handle, job_id_hex, blob_hex, merkle_proof_json, path, seed_hash_hex, out_status_buf, buf_len) → status len` | Submit solution |
-| `dwow_mm_last_error` | `int32_t(handle, out_buf, buf_len) → error len` | Get last error message |
-
-### 9.4 Recovery
-
-| Function | Signature | Purpose |
-|----------|-----------|---------|
-| `dwow_mm_job_count` | `int32_t(handle) → N` | Count of pending jobs |
-| `dwow_mm_submitted_count` | `int32_t(handle) → N` | Count of submitted jobs |
+Template caching, job-table eviction and the submitted-job set are internal to the server;
+there are no `job_count`/`submitted_count`/`last_error` calls.
 
 ## 10. Verification
 

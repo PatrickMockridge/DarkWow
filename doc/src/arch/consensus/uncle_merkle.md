@@ -689,11 +689,10 @@ fn build_uncle_merkle(uncles: &[UncleBlock]) -> Result<([u8; 32], Vec<UncleProof
         .collect();
     // ... build merkle root ...
 
-    // 3. Create proofs with pow_hash bound
-    let proofs = uncle_proofs.iter().enumerate().map(|(i, u)| {
+    // 3. Create proofs. UncleProof carries only the Merkle path and position;
+    //    the verifier recomputes PoW from the uncle header.
+    let proofs = uncle_proofs.iter().enumerate().map(|(i, _u)| {
         UncleProof {
-            header: u.header.clone(),
-            pow_hash: pow_hashes[i],
             merkle_path: get_merkle_proof(leaves, i),
             position: i as u32,
         }
@@ -732,7 +731,7 @@ whether the transactions are canonical or uncle.
 ## Security Considerations
 
 1. **Uncle depth limit**: Uncle depth SHALL NOT exceed `MAX_UNCLE_DEPTH` (6), preventing infinite uncle chains.
-2. **RandomX PoW binding**: Each `UncleProof.pow_hash` MUST match the re-computed hash over `to_mining_blob()` using `header.randomx_key` — prevents fake proofs without actual RandomX work.
+2. **RandomX PoW binding**: `verify_uncle_proof` recomputes the PoW from the uncle's `BlockHeader` using its `randomx_key` and requires it to meet the target — `UncleProof` carries no `pow_hash`, so there is nothing for a prover to substitute (`block.rs:297-302,495-536`).
 3. **Difficulty check**: Each uncle's PoW MUST meet the target **in force at the uncle's
    own height** — `block_target_at(uncle.header.height)`, *not* the referencing block's
    target. The target is recomputed every block from a sliding timestamp window, so the

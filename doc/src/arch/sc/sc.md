@@ -210,7 +210,7 @@ both automatically verified by the VM.
 
 However for verification to work, the ZK proofs also need corresponding
 public values, and the signatures need the public keys. We do this
-by exporting these values. (TODO: link the code where this happens)
+by exporting these values (`src/linear/src/zk_verifier.rs`).
 
 These methods export the required values needed for the ZK proofs
 and signature verification from the actual call data itself.
@@ -227,7 +227,7 @@ signatures are a separate top level field in the transaction.
 
 When building composable contracts, ensure each circuit has a unique namespace
 string. For example, instead of generic names like `Mint` or `Burn`, use
-contract-specific namespacing like `MoneyV2_Mint` or `DaoEscrow_Mint`.
+contract-specific namespacing like `NativeToken_Mint` or `DaoEscrow_Mint`.
 
 This prevents the EcGetX/EcGetY opcode errors that occur when the VM attempts
 to look up verification keys with colliding namespaces.

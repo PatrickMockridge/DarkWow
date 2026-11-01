@@ -31,7 +31,7 @@ The formal verification is organized in three layers:
 | Layer | Scope | Files | Status |
 |-------|-------|-------|--------|
 | **Layer 1** | **32** zkVM opcodes (**31** excluding the internal `Noop`) × **10** gadget files | `ECOps.lean`, `HashOps.lean`, `Arithmetic.lean`, `BaseDiv.lean`, `Comparison.lean`, `Gadgets.lean` | **MIXED — per opcode; no blanket verdict.** Three of the four names this row used to list as assumptions are **theorems** now (`fixed_base_mul_uses_constant`, `variable_base_mul_is_prover_chosen`, `base_div_mul_cancel`); the fourth, `poseidon_collision_resistance`, is still an assumption. See the per-opcode table below |
-| **Layer 2** | the contract circuits — **167** under `src/contract/*/proof/`, derived by `scripts/check-doc-canonical-counts.sh`; the instance-derivation gate walks **179**, adding `proofs/core/` 10 and `bin/darkirc/proof/` 2 | `Circuits/Token.lean`, `Circuits/Bridge.lean`, `Circuits/Exchange.lean`, `Circuits/All.lean` | **GATE, not Lean.** Those four files contain no declarations at all. The rule is `script/circuit_instance_derivation.py`, and it **passes**: 179 circuits, 905 `constrain_instance`, **0 unclassified**. The one Lean declaration that ever claimed otherwise (`burn_v1_no_free_instances`, statement `x = x ∧ y ∧ True`) is deleted |
+| **Layer 2** | the contract circuits — **165** under `src/contract/*/proof/`, derived by `scripts/check-doc-canonical-counts.sh`; the instance-derivation gate walks **177**, adding `proofs/core/` 10 and `bin/darkirc/proof/` 2 | `Circuits/Token.lean`, `Circuits/Bridge.lean`, `Circuits/Exchange.lean`, `Circuits/All.lean` | **GATE, not Lean.** Those four files contain no declarations at all. The rule is `script/circuit_instance_derivation.py`, and it **passes**: 177 circuits, 900 `constrain_instance`, **0 unclassified**. The one Lean declaration that ever claimed otherwise (`burn_v1_no_free_instances`, statement `x = x ∧ y ∧ True`) is deleted |
 | **Layer 3** | Cross-cutting theorems | `CrossCutting.lean`, `Pedersen.lean` | **MIXED — enumerated per claim below.** Value conservation is proved; the Pedersen additive homomorphism is **PROVED** in `Pedersen.lean`; the four named properties beneath it are **NOT MODELLED** |
 
 ## Layer 1: Complete Opcode Reference
@@ -53,9 +53,9 @@ The formal verification is organized in three layers:
 
 | Opcode | Code | Verification |
 |--------|------|-------------|
-| `poseidon_hash` | 0x10 | Deterministic ✓ (P128Pow5T3, rate=3, capacity=2, 1..24 inputs) |
+| `poseidon_hash` | 0x10 | Deterministic ✓ (P128Pow5T3: width 3, rate 2, capacity 1; 1..24 inputs) |
 | `merkle_root` | 0x20 | Inclusion soundness ✓ (Orchard Sinsemilla, depth=32) |
-| `sparse_merkle_root` | 0x21 | Membership soundness ✓ (Poseidon SMT, depth=256) |
+| `sparse_merkle_root` | 0x21 | Membership soundness ✓ (Poseidon SMT, depth=255 — `SMT_FP_DEPTH`) |
 | `set_membership` | 0x59 | SOUND ✓ (`expected_root` is `constrain_instance`'d) |
 
 ### Field Arithmetic
@@ -143,36 +143,7 @@ the circuit failed to constrain the base point choice, enabling unlimited mintin
 ZEC for ~4 years. The vulnerability class is: **any `constrain_instance` without an in-circuit
 derivation constraint is a potential exploit.**
 
-Every circuit of the set below was audited for this vulnerability class — and the audit is now a gate, which walks **178** as of 2026-09-24 against the 120 this line carried:
-
-| Contract Group | Circuits | Free Instances | Status |
-|---------------|----------|----------------|--------|
-| PromissoryNote | 5 | 0 (C1 fixed) | ✓ |
-| NativeToken | 3 | 0 (C2, C4 fixed) | ✓ |
-| BearerBond | 4 | 0 (H3 fixed) | ✓ |
-| Stablecoin | 9 | 0 (M1 fixed) | ✓ |
-| Bridge | 6 | 0 (H4 residual risk) | ✓ |
-| Dex | 6 | 0 | ✓ |
-| OtcSwap | 4 | 0 | ✓ |
-| DarkBet | 4 | 0 | ✓ |
-| Attestation | 10 | 0 | ✓ |
-| Identity | 8 | 0 | ✓ |
-| LaborMarket | 9 | **1** | ✗ `create_job`'s `attestation_id`, unclassified by the gate as of 2026-09-24. This row said 0 |
-| Escrow | 4 | 0 | ✓ |
-| DAO Escrow | 6 | 0 | ✓ |
-| Auction | 6 | 0 | ✓ |
-| GameRoom | 5 | 0 | ✓ |
-| Casino (4 contracts) | 8 | 0 | ✓ |
-| Lottery | 2 | 0 | ✓ |
-| BettingStake | 5 | 0 | ✓ |
-| PoolStake | 4 | 0 | ✓ |
-| InsuranceMarket | 2 | **2** | ✗ **the two live ones** — `required_capability_id` in both `with_capability` circuits, unclassified by the gate as of 2026-09-24 and named in `OBL-Z16`. This row said 0 |
-| DrainProtection | 1 | 0 | ✓ |
-| Subscription | 3 | 0 | ✓ |
-| RelayerEndowment | 3 | 0 | ✓ |
-| Oracle | 5 | **1** | ✗ `attest_value`'s `threshold`, unclassified by the gate as of 2026-09-24 — and it is the one `OBL-Z16` records as *blocked* rather than merely open. This row said 0 |
-| Tender | 5 | 0 | ✓ |
-| Core (proof/) | 10 | 0 | ✓ |
+Every circuit is audited for this class by `scripts/check-circuit-instance-derivation.sh`, which walks **177** sources (165 contract circuits plus `proofs/core/` and `bin/darkirc/proof/`) and reports **900 `constrain_instance`, 0 unclassified**. Run the gate rather than copying a table: the hand-maintained table that stood here listed 26 groups, summed to 139, and claimed 165/177 — its per-group figures had drifted (Bridge 6→2, Identity 8→2, GameRoom 5→12, DrainProtection 1→9, DarkBet 4→10, InsuranceMarket 2→4). The gate's own output is the census.
 
 **Result**: 1 Orchard-class vulnerability found (C1 — PN IssueV1 `mint_public` unconstrained, FIXED).
 
@@ -186,12 +157,12 @@ and these are `OBL-Z16`'s *two live* ones), `labor_market/proof/create_job`'s `a
 `oracle/proof/attest_value`'s `threshold`. Three of the table's rows say "0" for exactly those
 groups — see their notes below — so this is not a case of a stale count alone.
 
-**Resolved and re-measured 2026-10-18.** The gate now reports **179 circuits, 905 `constrain_instance`, 0 unclassified**, and **exits 0**: the four sites above are classified. The table's three "unclassified as of 2026-09-24" rows are therefore closed, and the per-group "Free Instances" column below is no longer a list of open findings.
+**Resolved and re-measured 2026-10-18.** The gate now reports **177 circuits, 900 `constrain_instance`, 0 unclassified**, and **exits 0**: the four sites above are classified. The table's three "unclassified as of 2026-09-24" rows are therefore closed, and the per-group "Free Instances" column below is no longer a list of open findings.
 
 Two things about the numbers, because both matter to a reader who wants to use them. They **move
 daily**: two hours before this measurement the same gate said 181 circuits and 11 unclassified, and a
 later pass took it to 5 and then to 4, so quote the command rather than this paragraph. And the
-"120 circuits" here is the count the audit was written against; the gate walks 179 today, which
+"120 circuits" here is the count the audit was written against; the gate walks 177 today, which
 includes `bin/darkirc`'s two and the other trees its walk covers — the table's own "Core (proof/)"
 row shows the audit was never only about contract circuits.
 
@@ -214,7 +185,7 @@ row shows the audit was never only about contract circuits.
 | Signature binding (H2 fix) | — | **NOT MODELLED.** Was a `: Prop` stub; deleted (ELEV-28) |
 | Merkle inclusion soundness | — | **NOT MODELLED.** Was a `: Prop` stub, and `merkle_inclusion_soundness` was its own hypothesis; both deleted (ELEV-28) |
 | Zero-cond soundness | — | **NOT MODELLED.** `zero_cond_prevents_smuggling` was `h → h`, with `zero_cond` absent from the statement; deleted (HIGH-7) |
-| Orchard-class detection rule | `script/circuit_instance_derivation.py` (gate: `scripts/check-circuit-instance-derivation.sh`) | **mechanized over the 179 `.zk` sources** — every `constrain_instance` classified as derived, bound, redundant, or declared with a host-side mechanism. `ECOps.lean`'s `detect_orchard_class_vulnerability` is a `def` over a *modelled* gadget and proves nothing about a real circuit (ELEV-30); it is no longer the only expression of the rule |
+| Orchard-class detection rule | `script/circuit_instance_derivation.py` (gate: `scripts/check-circuit-instance-derivation.sh`) | **mechanized over the 177 `.zk` sources** — every `constrain_instance` classified as derived, bound, redundant, or declared with a host-side mechanism. `ECOps.lean`'s `detect_orchard_class_vulnerability` is a `def` over a *modelled* gadget and proves nothing about a real circuit (ELEV-30); it is no longer the only expression of the rule |
 
 A `: Prop`-valued axiom is worth reading twice: it *names* a claim without stating one, so no
 proof can consume it and no counterexample can refute it. The rows above that read "VERIFIED ✓"
@@ -387,7 +358,9 @@ def search_lte_bugs := IO Unit := do
   -- Result: bugs = 0
 ```
 
-**Result**: Formally verified via exhaustive Lean 4 testing. No counterexamples found.
+**This loop is not the evidence.** It lives in `Main.lean`, which no `lean_lib` includes and
+which does not compile at all; the proof is `Gadgets.less_than_or_equal_sound`
+(`proofs/lean/src/DarkFi/Gadgets.lean:119`).
 
 ---
 
@@ -726,7 +699,7 @@ proofs/lean/
 | Medium | Implement PedersenCommit | Confidential txs |
 | Low | SignatureVerify | Bridges need ECDSA |
 
-Note: `LessThanOrEqual` (0x55) verification is complete via Lean 4 exhaustive testing. `BaseDiv` (0x58) is implemented. `IsNotEqual` (0x62) is the first fully constrained pure Boolean operator in the zkVM.
+Note: `LessThanOrEqual` (0x55) is proved by `Gadgets.less_than_or_equal_sound`. `BaseDiv` (0x58) is implemented. `IsNotEqual` (0x62) is the first fully constrained pure Boolean operator in the zkVM.
 
 ---
 

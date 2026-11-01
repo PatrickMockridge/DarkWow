@@ -46,8 +46,11 @@ architecture described in §§0-9 below. This section documents what works today
 - **Generic prover (§6.4.1):** Manifest-driven proof construction for any contract
   with a stored manifest. SDK-side witness-binding (`prover.rs`,
   `encode_params_by_schema`), wallet-side `ProverImpl` (`prover_impl.rs`),
-  `zkas_binaries` store with genesis circuit embed. Capability selection by
-  asset_id via `resolve_transfer_contract`. Non-native transfers route through
+  `zkas_binaries` store with genesis circuit embed. Capability selection filters by
+  asset_id, then requires the matches to share one `ContractId` and one capability
+  identity (`select_transfer_capability`, `dispatch.rs:186-247`; `OBL-C130`).
+  `resolve_transfer_contract` only maps a selected record to a manifest function.
+  Non-native transfers route through
   `invoke_contract` → manifest → prover — ONE path, zero per-contract code.
 - **P2P feature gate:** net-wallet (dww) and net-node + rpc (dwowd)
   active; send-side fan-out gossip implemented

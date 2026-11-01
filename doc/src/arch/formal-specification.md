@@ -86,7 +86,7 @@ All nine genesis contracts — see [Genesis Contracts](genesis.md).
 ### DAO & Governance (3)
 
 - [DAO Escrow](../contract/dao_escrow.md) — OCap-governed endowment
-- [Drain Protection](../contract/drain_protection.md) — fund locking with exit mechanism
+- [Drain Protection](../contract/drain_protection.md) — governance wrapper; the member exit refuses with `CustodyModelUnavailable`
 - [Betting Stake](../contract/betting_stake.md) — staking with risk updates
 
 ### Identity & Reputation (3)

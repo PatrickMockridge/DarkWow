@@ -119,9 +119,11 @@ node by the **node-local admission policy** (`verify_monero_powdata`, called fro
 branch of `bin/dwowd/src/block_acceptor.rs`): monerod must know that hash, and report it at least
 `monero_min_confirmations` deep. The policy is node-local and never consensus — the answer depends on
 another chain, so it cannot be a pure function of local data — and it **fails closed on every failure
-to confirm**, transport errors included. With `monerod_url` unset — the default — nothing is consulted,
-the block is admitted as before, and the node logs a warning naming that residual gap rather than
-implying it away.
+to confirm**, transport errors included. With `monerod_url` unset — the default — the node **refuses**
+a merge-mined block unless the operator explicitly sets `accept_unverified_merge_blocks = true`
+(`block_acceptor.rs:298-312`; the setting defaults false and no shipped network config sets it). An
+opted-out node admits the block and logs a warning naming the residual gap rather than implying it
+away.
 
 Nor is the Monero block's *own* proof-of-work verified: the merge-mining path accepts the three receipts
 and trusts that p2pool only submits blocks its colocated monerod has already validated. The code says so

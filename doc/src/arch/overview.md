@@ -77,7 +77,8 @@ Contracts communicate via **spend hooks**. A contract can call another by specif
 
 Example usage:
 - **DEX ExecuteSwapV1**: Uses `otc_swap_v1` child call for bilateral token swap
-- **Stablecoin MintStableV1**: Uses `transfer_v1` child call to move minted stablecoins to user
+- **Stablecoin MintStableV1**: design only — the custody arms refuse with `CustodyModelUnavailable`
+  ([stablecoin](../contract/stablecoin.md) §Status)
 - **DarkbetExchange**: Uses `transfer_v1` child calls for position minting/burning
 
 ## ZK Proofs

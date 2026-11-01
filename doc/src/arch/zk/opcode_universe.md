@@ -74,7 +74,7 @@ The holder of the capability can only exercise permissions within the specified 
 |--------|-----------|--------|
 | `PoseidonHash` | `BaseArray → Base` | ✅ Production |
 | `MerkleRoot` | `(Uint32, MerklePath, Base) → Base` | ⚠️ Fixed depth 32 only |
-| `SparseMerkleRoot` | `(Base, SparseMerklePath, Base) → Base` | ✅ Depth 3 only |
+| `SparseMerkleRoot` | `(Base, SparseMerklePath, Base) → Base` | ✅ Depth 255 (`SMT_FP_DEPTH`); `SPARSE_MERKLE_DEPTH = 3` is a different constant |
 
 **The Merkle Depth Problem**: `MerkleRoot` uses:
 ```rust
@@ -129,7 +129,7 @@ This is sound but ** bloats circuits** — a 2-opcode check becomes 3-4x more ex
 |--------|---------|-----------|--------|
 | `LessThanStrict` | No | ✅ | ✅ Production |
 | `LessThanLoose` | No | ✅ | ✅ Production |
-| `IsEqualBase` | Yes | ❌ | ⚠️ Bug (delta_invert unconstrained when a==b) |
+| `IsEqualBase` | Yes | ✅ | ✅ Fixed — purity constraint `s_is_eq * out * (delta_invert - one) = 0` (`is_equal.rs:84-89`, commit `0f69cd89`) |
 | `LessThanOrEqual` | Yes | ✅ | ✅ **Verified Safe** — every production use pairs with `range_check(64, a)`, and the audit is a *gate* rather than a reading: `scripts/check-circuit-instance-derivation.sh` reports **0 comparison operands with no range check beneath them, in 0 circuits, with no declared exception** — the one it declared was for the `lead` circuit, retired when it was deleted, and `script/circuit_comparison_exceptions.txt` is empty. (This line carried the stale "1 declared exception" until 2026-10-12; the same claim was corrected in `opcodes.md` and the copy here was missed — the same sweep-miss the review found elsewhere.) **Corrected 2026-09-24:** this row said "all 37 production uses pair with `range_check(64, a)` (2026-07-16 audit)", and today there are **20 call sites across 6 proof directories** — `stablecoin` (7), `dex` (3), `purse`, `oracle`, `identity`, `bearer_bond` (1 each). The count had drifted *and* the family list below was wrong in both directions. Delta-invert bug present without range check (see §5.3). |
 | `IsNotEqual` | Yes | ✅ | ✅ **Verified Sound** (Lean 4) |
 | `BaseLtStrict` | Yes | ✅ | ✅ Verified |
@@ -146,7 +146,8 @@ delta_invert = field_inverse(delta)
 # Note: This doesn't enable false proofs but is mathematically inelegant
 ```
 
-**LessThanOrEqual** is verified sound via Lean 4 exhaustive testing - no bug exists.
+**LessThanOrEqual** is proved by `Gadgets.less_than_or_equal_sound`; the exhaustive loops in
+`Main.lean` are not compiled by any `lean_lib` and are not the evidence.
 ```
 
 ### 2.5 Constraint Operations (Complete)
@@ -431,9 +432,9 @@ delta_invert = field_inverse(delta);
 |--------|-----------------|---------------|-----------|
 | `less_than_strict` | None | No | ✅ |
 | `less_than_loose` | None | No | ✅ |
-| `is_equal_base` | None | Yes | ❌ |
+| `is_equal_base` | None | Yes | ✅ (purity constraint, fixed `0f69cd89`) |
 | `less_than_or_equal` | None | Yes | ❌ |
-| `is_equal_base` | `range_check(253, a)` | Yes | ⚠️ |
+| `is_equal_base` | `range_check(253, a)` | Yes | ✅ |
 | `less_than_or_equal` | `range_check(253, a)` | Yes | ⚠️ |
 
 **Key insight**: Restricting inputs to $[0, 2^{253})$ eliminates the wraparound region, but the **delta-invert bug** remains.
@@ -486,7 +487,7 @@ return t;
 |--------|-----------|------------|--------|
 | `sha256` | Bitcoin bridge | Very High | Not implemented |
 | `pedersen_commit` | Confidential DeFi | Medium | Not implemented |
-| `set_membership` | Allowlists, revocations | Medium | Not implemented |
+| `set_membership` | Allowlists, revocations | Medium | ✅ Implemented (0x59) |
 | `power` | Vesting, bonding curves | Medium | Not implemented |
 
 ### Tier 3: Nice to Have (Efficiency Gains)
@@ -505,12 +506,13 @@ return t;
 | `fft` | Polynomial operations | High | Not implemented |
 | `sort_verify` | Order book circuits | High | Not implemented |
 
-`LessThanOrEqual` and `IsNotEqual` are **verified sound** ✅, `BaseDiv` is **implemented** ✅. `IsEqualBase` has a known bug.
+`LessThanOrEqual` and `IsNotEqual` are **verified sound** ✅, `BaseDiv` is **implemented** ✅, and
+`IsEqualBase`'s purity bug is **fixed** ✅.
 
 **Formal Verification Results** (see [Opcodes and Formal Verification](opcodes.md)):
 - `LessThanOrEqual` (0x55): ✅ **Verified Sound** via Lean 4
 - `IsNotEqual` (0x62): ✅ **Verified Sound** via Lean 4
-- `IsEqualBase` (0x54): ❌ **Bug Confirmed** - delta_invert unconstrained when `a == b`
+- `IsEqualBase` (0x54): ✅ **FIXED** — purity constraint `s_is_eq * out * (delta_invert - one) = 0` (`is_equal.rs:84-89`, commit `0f69cd89`)
 - `NotBase` (0x56): ✅ **Verified Sound**
 - `BaseLtStrict` (0x57): ✅ **Verified Sound**
 

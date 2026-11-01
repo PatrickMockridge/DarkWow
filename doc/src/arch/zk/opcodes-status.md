@@ -19,7 +19,7 @@ Build with `cd proofs/lean && lake build DarkFi` (a bare `lake build` compiles n
 
 | Opcode | Code | Status | Notes |
 |--------|------|--------|-------|
-| `ec_add` | 0x01 | ✅ SOUND | Incomplete addition — distinct x-coordinates required |
+| `ec_add` | 0x01 | ✅ SOUND | **Complete** addition — `EccChip::add` constrains distinct-x, doubling and identity cases (`halo2_gadgets/src/ecc/chip/add.rs:79-173`) |
 | `ec_mul` | 0x02 | ✅ SOUND | Fixed-base, base is compile-time CONSTANT |
 | `ec_mul_base` | 0x03 | ✅ SOUND | Fixed-base, Base scalar, CONSTANT base |
 | `ec_mul_short` | 0x04 | ✅ SOUND | Fixed-base, 64-bit scalar, CONSTANT base |
@@ -32,9 +32,9 @@ Build with `cd proofs/lean && lake build DarkFi` (a bare `lake build` compiles n
 
 | Opcode | Code | Status | Notes |
 |--------|------|--------|-------|
-| `poseidon_hash` | 0x10 | ✅ Deterministic | P128Pow5T3, rate=3, capacity=2, 1..24 inputs |
+| `poseidon_hash` | 0x10 | ✅ Deterministic | P128Pow5T3: width 3, rate 2, capacity 1; 1..24 inputs |
 | `merkle_root` | 0x20 | ✅ SOUND | Orchard Sinsemilla, depth=32, inclusion soundness |
-| `sparse_merkle_root` | 0x21 | ✅ SOUND | Poseidon SMT, depth=256, membership soundness |
+| `sparse_merkle_root` | 0x21 | ✅ SOUND | Poseidon SMT, depth=255 (`SMT_FP_DEPTH`), membership soundness |
 | `set_membership` | 0x59 | ✅ SOUND | root is `constrain_instance`'d internally |
 
 ### Field Arithmetic
@@ -130,7 +130,7 @@ All 165 contract circuits — 177 by the gate's own walk — were audited for th
 | C4 | TransferV1 no value conservation | CRITICAL | NT TransferV1 | FIXED — Pedersen sum equality check |
 | H2 | Independent commitment/signature secrets | HIGH | Both BurnV1 (NT) / RevokeV1 (PN) | FIXED — `sig_secret = poseidon_hash(spend_secret, nullifier)` |
 | H3 | BearerBond no issuer check | HIGH | BB IssueStakeV1 | FIXED — `issuer_contract` comparison |
-| IsEqualBase | delta_invert unconstrained | LOW | zkVM 0x54 | CONFIRMED — no exploit, use IsNotEqual instead |
+| IsEqualBase | delta_invert unconstrained | LOW | zkVM 0x54 | **FIXED** — purity constraint `s_is_eq * out * (delta_invert - one) = 0` (`is_equal.rs:84-89`), commit `0f69cd89` |
 
 ## References
 

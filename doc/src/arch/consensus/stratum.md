@@ -227,8 +227,8 @@ pub fn derive_key_from_height(height: BlockHeight) -> [u8; 32] {
 ```
 
 This prevents pre-computation attacks — the key changes every block
-(height is hashed via Blake3), requiring a new RandomX VM initialization
-(~2 seconds for 4 GB dataset).
+(height is hashed via Blake3), requiring a new RandomX initialization. Every path
+builds a **256 MB cache** in light mode and never the ~2 GB dataset (`OBL-C266`).
 
 ## xmrig Compatibility Notes
 

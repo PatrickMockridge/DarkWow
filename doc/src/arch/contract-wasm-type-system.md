@@ -1408,16 +1408,22 @@ separation). The migration status is:
 constants. V2 circuits prepend domain constants: `poseidon_hash(DOMAIN_TX_BINDING, inputs...)`
 for tx_binding, `poseidon_hash(DOMAIN_NULLIFIER, ...)` for nullifiers, etc.
 
-**Domain constants (7 total):**
+**Domain constants (10 total):**
 | Constant | witness_base(N) | Purpose |
 |----------|----------------|---------|
 | DOMAIN_NULLIFIER | 1 | Nullifier derivation |
 | DOMAIN_TOKEN_COMMIT | 2 | Token commitment |
 | DOMAIN_TX_BINDING | 3 | Transaction binding hash |
 | DOMAIN_COMMITMENT | 4 | Commitment |
-| (reserved) | 5 | — |
+| DOMAIN_MERKLE_LEAF | 5 | Merkle leaf hashing |
 | DOMAIN_USER_DATA_ENC | 6 | User data encryption |
 | DOMAIN_SIGNATURE_SECRET | 7 | Ephemeral signature secret |
+| DOMAIN_KEY_DERIVE | 8 | Key derivation |
+| DOMAIN_CAPABILITY_ID | 9 | Capability identifier |
+| DOMAIN_ATTRIBUTE | 10 | Named attribute inside a credential commitment |
+
+The table read "7 total" with `5` reserved until 2026-11-01; `src/sdk/src/crypto/constants.rs:55-69`
+defines ten constants.
 
 **Migration status by contract:**
 | Contract | Status | Notes |

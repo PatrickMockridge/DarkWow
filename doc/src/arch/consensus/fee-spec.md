@@ -74,12 +74,14 @@ Wallet                    Mempool                  Miner                    Chai
 4. **Chain** verifies Fee_V3 mass balance (no inflation) and FeeCollectV1
    (claim + reset) during `accept_block`.
 
-**Risk is no longer a fee multiplier.** Risk moves to the *user*: the wallet computes
-a basic trust metric for a contract — from contract age, whether the tx path has been
-used before, attestation, and wallet-side checks of the WASM — to inform the user's
-decision. The `ContractRiskTracker` and the manifest's self-declared `BlockCharge`
-remain as miner-side governance/observability (updated by the risk multiplier when
-the transaction runs), not as admission gates.
+**Risk is a fee multiplier.** `compute_fee_v3(gas, cf, tier, risk)` multiplies the
+`RiskFactor` into the fee (`fee_window.rs:322-335`), and mempool admission reads the
+`ContractRiskTracker`'s factor in `rederived_minimum_fee`
+(`crates/dwow-mempool/src/lib.rs:855-860`). Separately, the wallet computes its own
+trust metric — contract age, prior use of the tx path, attestation, wallet-side WASM
+checks — to inform the user; that metric is advisory and is not the admission
+multiplier. The manifest's self-declared `BlockCharge` feeds the tracker through the
+risk multiplier when the transaction runs.
 
 ### §0.1 Process Engineering Analogy
 
@@ -1052,7 +1054,7 @@ where:
     w              = current window index, starting at 0
     N              = window size in blocks (N = 20)
     CF             = congestion factor for the base gas price (rate ≥ 1)
-    CF'            = recomputed from mempool queue depth at window boundary
+    CF'            = derived from the completed window's applied FeeV3 counts
     WindowTick     = signal emitted when height ≡ 0 (mod N), height > 0
     Mempool!(l,m,h)= mempool receives (price_high, price_medium, price_low)
     Wallet!(l,m,h) = wallet discovers (price_high, price_medium, price_low)
@@ -1215,19 +1217,20 @@ the transaction (gas) fee of §12.4.1.
 
 #### 12.4.4 Congestion Factor
 
-The congestion factor maps mempool queue depth to a dimensionless multiplier
-using logarithmic scaling. Separate factors are computed for the high-priority
-tier and the medium/low tiers:
+The congestion factor maps the **completed window's applied FeeV3 demand** to a
+dimensionless multiplier using logarithmic scaling. Separate factors are computed for
+the high-priority tier and the medium/low tiers:
 
 ```
-CF_premium  = SCALE + floor(α_premium  × SCALE × log₂(P_premium  + 1))
-CF_standard = SCALE + floor(α_standard × SCALE × log₂(P_standard + 1))
+CF_premium  = SCALE + floor(α_premium  × SCALE × log₂(V_premium  + 1))
+CF_standard = SCALE + floor(α_standard × SCALE × log₂(V_standard + 1))
 
 where:
     SCALE        = 1_000_000          (fixed-point scale)
-    P_premium    = pending count in mempool high queue
-    P_standard   = pending count in mempool medium + low queues (fee_index
-                   holds non-FeeV3 entries and is NOT counted)
+    V_premium    = FeeV3 transactions with FeeTier::HIGH in the completed window
+    V_standard   = FeeV3 transactions with FeeTier::MEDIUM or LOW in that window
+    window       = completed_window_heights(boundary), the WINDOW_SIZE blocks
+                   before the boundary (`fee_window.rs:987-1017`)
     α_premium    = high-priority congestion sensitivity coefficient
     α_standard   = medium/low congestion sensitivity coefficient
     log₂(.)      = integer binary logarithm, ilog2(.)  (floored; never f64::log2)
@@ -1235,18 +1238,24 @@ where:
     CF_premium > CF_standard         (structural invariant, always)
 ```
 
+**The local mempool is not an input.** `window_counts()` counts the applied FeeV3
+calls in the completed window, `derive_window(WindowCounts)` computes both axes, and
+the result is snapshotted per boundary and restored on disconnect
+(`fee_window.rs:533-570`; OBL-C267). A syncing node therefore derives the same CF as a
+mining node from the same chain data; no mempool observation, gossip or median is
+required.
+
 *Corrected 2026-10-12 (`F-336`): the two formulas read `α × floor(SCALE ×
-log₂(P + 1))`, placing the floor inside the α multiplication. The implementation
+log₂(N + 1))`, placing the floor inside the α multiplication. The implementation
 floors once, over the whole product — `compute_cf()` (`src/linear/src/fee_window.rs:464`)
-evaluates `(α × SCALE × ilog2(P + 1)) as u32`, matched by the reference model's
-`int(α × SCALE × int(math.log2(P + 1)))` (`contrib/model/fee_window_model.py:567`).
+evaluates `(α × SCALE × ilog2(N + 1)) as u32`, matched by the reference model.
 The old form also read `log₂` as the real log; both implementations take the integer
 log first.*
 
-**Why logarithmic:** Doubling the queue depth adds at most `α × SCALE` to the
-congestion factor. This prevents both premature saturation (linear) and
-insufficient responsiveness (constant). The log₂ function maps queue depths
-from 1 to 10,000 into congestion factors from 1.0 to ~1.0 + 13α.
+**Why logarithmic:** Doubling the window's FeeV3 demand adds at most `α × SCALE` to the
+congestion factor. This prevents both premature saturation (linear) and insufficient
+responsiveness (constant). The log₂ function maps counts from 1 to 10,000 into
+congestion factors from 1.0 to ~1.0 + 13α.
 
 **Coefficient defaults:**
 
@@ -1256,14 +1265,14 @@ from 1 to 10,000 into congestion factors from 1.0 to ~1.0 + 13α.
 ```
 
 These defaults produce reasonable congestion pricing at mainnet scale while
-remaining testable in devnet with smaller mempool sizes.
+remaining testable in devnet with smaller windows.
 
-**Congestion factor consensus:** At each window boundary, every mining node
-computes CF from its local mempool state deterministically (I1, I8). All
-nodes synced to the same chain tip observe the same mempool state and compute
-identical CF values — no coordination, gossip, or median consensus is
-required. The `fee_window_flags` in the block header provide the canonical
-signal for all downstream consumers.
+**Congestion factor consensus:** At each window boundary, every applying node computes
+CF from the completed window's applied FeeV3 counts deterministically (I1, I8). Nodes
+that apply the same window derive identical CF values — no coordination, gossip, or
+median consensus is required, and a syncing node needs no mempool observation. The
+`fee_window_flags` in the block header carry the direction (FI-FLAG-1); the exact CFs
+are chain-derived and snapshotted per boundary.
 
 #### 12.4.5 Block Charge — Declarative Capacity Promise
 
@@ -1379,7 +1388,8 @@ without replaying the full adjustment logic for both CF dimensions.
 
 **I1 — Window Determinism.** For any two nodes with identical chain state
 at height H, `get_current_thresholds(H)` SHALL return identical values.
-The adjustment is a pure function: `(CF_premium, CF_standard) = f(mempool_state_at_boundary)`.
+The adjustment is a pure function:
+`(CF_premium, CF_standard) = f(window_counts(completed_window_heights(boundary)))`.
 
 **I2 — Backward Compatibility.** Blocks with `fee_window_flags == 0` SHALL
 be treated as having zero congestion: CF = SCALE (both premium and
@@ -1404,20 +1414,20 @@ transaction with a lower total opcode difficulty, for identical WASM
 size and congestion regime. The per-opcode difficulty table (§12.4.2)
 is the sole determinant of circuit execution cost ordering.
 
-**I6 — CF Convergence.** As mempool queue depth → 0, CF → 1 for both
-tiers. As queue depth grows, CF grows logarithmically — doubling the
-queue adds at most α to the factor. This prevents both premature
-saturation (linear growth) and insufficient responsiveness (constant).
+**I6 — CF Convergence.** As the completed window's FeeV3 demand → 0, CF → 1 for both
+tiers. As the demand grows, CF grows logarithmically — doubling the count adds at most
+α to the factor. This prevents both premature saturation (linear growth) and
+insufficient responsiveness (constant).
 
 **I7 — Smooth Adjustment.** No single-window CF change SHALL exceed
 ±10% of the current value. This prevents fee shock and allows the
 market to adapt gradually.
 
-**I8 — Deterministic CF.** The window's congestion factor is computed
-locally from the miner's mempool queue depth at the window boundary.
-All nodes synced to the same chain tip observe the same mempool state
-and therefore compute identical CF values — no coordination or gossip
-is required. I1 (pure function) guarantees determinism.
+**I8 — Deterministic CF.** The window's congestion factor is derived from the
+applied FeeV3 transactions of the completed window, by every node that applies those
+blocks. A mempool is node-local and is not an input (FI-WINDOW-7), so nodes need no
+coordination or gossip to compute identical CF values. I1 (pure function) guarantees
+determinism.
 
 ### 12.8 Mempool Integration
 
@@ -1504,7 +1514,7 @@ After the final block of window N at height H:
   During [T_0, T_activate):  GRACE PERIOD
     - Mempool continues admitting under window N tier prices
     - Wallets re-derive fees against window N+1 tier prices
-    - Miners compute CF from local mempool state (deterministic, I1, I8)
+    - Miners derive CF from the completed window's applied FeeV3 counts (deterministic, I1, I8)
     - New transactions may submit with window-N or window-N+1 tier prices
 
   At T_activate:  PRICE ACTIVATION
@@ -1547,17 +1557,18 @@ The wallet SHALL NOT submit a transaction priced with a stale window.
 
 ### 12.10 Miner Integration
 
-The miner computes CF deterministically from local mempool state at each
-window boundary and encodes the result in the block header.
+The miner derives CF deterministically from the completed window's applied FeeV3
+counts at each boundary and encodes the result in the block header.
 
 ```
 prepare_block(height, mempool, chain_state):
     header = build_header(height, ...)
 
     if is_window_boundary(height):
-        // Deterministic from local mempool state (I1, I8)
-        circuit_cf = fee_window.adjust_circuit(premium_pending, standard_pending)
-        wasm_cf    = fee_window.adjust_wasm(premium_pending, standard_pending)
+        // Deterministic from chain data (I1, I8): the completed window's
+        // applied FeeV3 counts, not the miner's mempool (FI-WINDOW-7).
+        counts = window_counts(completed_window_heights(height))
+        (circuit_cf, wasm_cf) = fee_window.derive_window(counts)
         header.fee_window_flags = fee_window.encode_flags()
 
         // §12.5: tier price = fee-circuit reference gas × CF × tier multiplier
@@ -1779,11 +1790,17 @@ the risk distribution.
 | Genesis Contract | Role in Risk Architecture |
 |---|---|
 | `native_token` | Fee payment — plaintext FeeV3 + retained Fee_V3 mass-balance proof |
-| `manifest` | Self-declared cost profiles — deployer stakes reputation on accuracy |
+| `promissory_note` | Value transfers and the commitment ledger |
+| `purse` / `box` | Custody and capability delegation for composed contracts |
 | `identity` + `attestation` | Vouching — third parties verify contract safety, lower risk factor |
-| `endowment` + `escrow` | Economic underwriting — slashable stake backs cost declarations |
+| `multisig` | Governance-group approvals for DAO/endowment actions |
+| `oracle` | External data for risk and price decisions |
 | `deployooor` | Plaintext deployment/locking — no manifest, no cost declaration |
 | Fee window system (§12) | Miner feedback loop — observed vs declared costs → risk factor adjustment |
+
+`manifest` is a per-contract on-chain document, not a genesis contract; `endowment` and
+`escrow` are not genesis contracts (`src/linear/src/execution.rs:987-997` lists the nine
+genesis ids).
 
 This is the defining differentiator: **decentralized self-governance through
 o-cap primitives, not token voting.** The fee model is the case study that
@@ -2028,9 +2045,10 @@ mechanism (`WINDOW_SIZE`, `MAX_K`). Scope: all crates. Level: CI grep gate.
 ### 14.2 Fee Window + Congestion Factors
 
 **FI-WINDOW-1: Window boundary adjustment.** At every height ≡ 0 (mod WINDOW_SIZE),
-congestion factors SHALL be recomputed from current mempool queue depths, capped at
-±MAX_ADJUSTMENT of previous values, and encoded into `fee_window_flags` on the next
-block header. Scope: miner_task + FeeWindowState + BlockHeader. Level: L2.
+congestion factors SHALL be derived from the **applied FeeV3 transactions of the
+completed window**, capped at ±MAX_ADJUSTMENT of previous values, and their direction
+encoded into `fee_window_flags` on the next block header. A node-local mempool SHALL
+NOT be an input. Scope: miner_task + FeeWindowState + BlockHeader. Level: L2.
 
 **FI-WINDOW-2: Deterministic CF computation.** `compute_cf(premium_pending,
 standard_pending, alpha_premium, alpha_standard)` SHALL produce identical results

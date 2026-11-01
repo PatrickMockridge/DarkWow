@@ -93,7 +93,12 @@ This creates API proliferation as new contracts are added. The generalized `cont
 | `WithdrawV1` | `0x03` | Owner withdrawal |
 | `EndowmentWithdrawV1` | `0x04` | Endowment withdrawal (insurance) |
 | `TreasurySpendV1` | `0x05` | Treasury spending |
-| `EnableDrainProtectionV1` | `0x06` | Enable DrainProtection |
+| `ProposeClaimV1` | `0x07` | Propose a claim (requires a group approval child) |
+| `VoteClaimV1` | `0x08` | Group vote; writes `Approved`/`Rejected` |
+| `ExecuteClaimV1` | `0x09` | Execute an approved claim |
+| `CancelClaimV1` | `0x0d` | Cancel a pending claim (group approval) |
+
+`EnableDrainProtectionV1 (0x06)` was retired and is not in the enum (`dao_escrow/src/lib.rs:62,92-101`).
 
 ### PromissoryNote (`promissory_note`)
 

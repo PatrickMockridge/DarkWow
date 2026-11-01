@@ -55,7 +55,8 @@ This section provides a technical deep-dive into how the comparison opcodes work
 
 ### The Fundamental Problem: Field Elements Are Not Integers
 
-DarkWow's zkVM operates in the Pallas field — the scalar field of bn254, with prime order:
+DarkWow's zkVM operates in the **Pallas base field** (`pasta_curves::pallas::Base`), not the
+scalar field of bn254, with prime order:
 
 ```
 p = 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001
@@ -105,7 +106,11 @@ less_than_range_check(d + 2^253);  # Shifted so equality fails the check
 
 `LessThanOrEqual(a, b)` returns `1` if `a ≤ b`, `0` otherwise. It combines range checks on `a - b` and `b - a` with a gate constraint that produces a `Base` output usable in subsequent computation.
 
-`IsEqualBase` uses a delta-invert approach with a known soundness issue (`delta_invert` unconstrained when `a == b`). For the full formal verification of these comparison gates — including the delta-invert attack, gate soundness analysis, Lean4 machine-checkable proofs, and the `IsNotEqual` pure Boolean gate — see [Opcodes and Formal Verification](opcodes.md).
+`IsEqualBase` uses a delta-invert approach. Its former soundness issue (`delta_invert`
+unconstrained when `a == b`) is **fixed** by the purity constraint
+`s_is_eq * out * (delta_invert - one) = 0` (`is_equal.rs:84-89`, commit `0f69cd89`). For the full
+formal verification of these comparison gates — gate soundness analysis, Lean 4 proofs, and the
+`IsNotEqual` pure Boolean gate — see [Opcodes and Formal Verification](opcodes.md).
 
 
 ## Case Study: Reasoning About a Missing Opcode
@@ -231,7 +236,7 @@ When reasoning about a missing opcode, follow this checklist:
 - `LessThanStrict`, `LessThanLoose` — constrain but don't return
 - `LessThanOrEqual` (0x55) — return-value comparison, Lean 4 verified
 - `IsNotEqual` (0x62) — pure Boolean inequality gate, Lean 4 verified
-- `IsEqualBase` (0x54) — return-value equality (known bug, see opcodes.md)
+- `IsEqualBase` (0x54) — return-value equality (purity constraint fixed; see opcodes.md)
 - `NotBase` (0x56) — logical negation
 - `BaseLtStrict` (0x57) — return-value strict less-than
 - `BoolCheck` — enforce 0 or 1
@@ -258,7 +263,7 @@ needed to deliver functionality already discussed publicly.
 | Opcode | Status | Notes |
 |--------|--------|-------|
 | `LessThanOrEqual` (0x55) | ✅ Verified Sound | A proof, not a search: `Gadgets.less_than_or_equal_sound`, with the chip-level integer reading in `BaseDivGadget.less_than_or_equal_integer_reading` |
-| `IsEqualBase` (0x54) | ❌ Bug | delta_invert unconstrained when `a == b` |
+| `IsEqualBase` (0x54) | ✅ Fixed | purity constraint `s_is_eq * out * (delta_invert - one) = 0` (`is_equal.rs:84-89`) |
 | `IsNotEqual` (0x62) | ✅ **Fully Pure** | All witnesses constrained in all cases; purity theorem |
 | `NotBase` (0x56) | ✅ Verified Sound | `Comparison.not_base_correct` — **added 2026-09-24**; it rests on `boolcheck_sound`, which is what makes "input range-checked to `{0,1}`" a proof obligation rather than a remark |
 | `BaseLtStrict` (0x57) | ✅ Verified Sound | `Comparison.base_lt_strict_sound` — **added 2026-09-24; this row said "Lean 4 exhaustive testing" and there was no theorem** |
@@ -287,7 +292,8 @@ Implementation uses binary exponentiation (~254 field multiplications).
 
 #### Remaining Work
 
-- **Fix IsEqualBase** — Add `is_zero` gadget to constrain delta_invert
+- ~~**Fix IsEqualBase** — Add `is_zero` gadget to constrain delta_invert~~ **Done** — the purity
+  constraint is in `is_equal.rs:84-89` (commit `0f69cd89`).
 - **Implement BaseModExp** — For RSA verification, hash-based commitments
 
 ### `LessThanOrEqual(a, b)` → Base
@@ -421,11 +427,10 @@ RSA verification, hash-based commitments, and certain cryptographic protocols.
 
 **Signature**: `(Base a, Base b) → Base` (returns 0 or 1)
 
-**Purpose**: Returns 1 if `a != b`, 0 if `a == b`. Unlike `IsEqualBase` (0x54)
-which has a known `delta_invert` bug when `a == b`, `IsNotEqual` is a fully
-constrained symmetric Boolean gate — both branches (equal and not-equal) are
-fully constrained, leaving no unconstrained witness variables for a malicious
-prover to exploit.
+**Purpose**: Returns 1 if `a != b`, 0 if `a == b`. `IsNotEqual` is a fully constrained
+symmetric Boolean gate — both branches (equal and not-equal) are fully constrained,
+leaving no unconstrained witness variables for a malicious prover to exploit. (The
+`IsEqualBase` delta-invert issue this paragraph used to contrast with is now fixed.)
 
 **Formal Verification**: ✅ **Fully Pure** — **`Gadgets.is_not_equal_fully_pure`**, with its two
 companion cases `is_not_equal_pure_when_equal` and `is_not_equal_delta_invert_unique_when_unequal`
@@ -448,12 +453,11 @@ outside_range = is_not_equal(in_range, 0);
 take_branch_b = is_not_equal(condition, 1);  # negate the condition
 ```
 
-**Why `IsNotEqual` instead of `IsEqualBase`**: `IsEqualBase` (0x54) has a
-`delta_invert` vulnerability — when `a == b`, the witness `delta_invert` is
-completely unconstrained, letting the prover set it arbitrarily. By contrast,
-`IsNotEqual` treats both `a == b` and `a != b` symmetrically, with every witness
-variable fully constrained in both cases. The fix pattern proven in `IsNotEqual`
-(`out * (delta_invert - 1) = 0`) can be backported to `IsEqualBase` when needed.
+**Why `IsNotEqual` instead of `IsEqualBase`**: `IsEqualBase` (0x54) *previously* had a
+`delta_invert` vulnerability — when `a == b`, the witness was unconstrained. The purity
+constraint proven in `IsNotEqual` (`out * (delta_invert - 1) = 0`) was **backported**;
+`is_equal.rs:84-89` now carries it. `IsNotEqual` remains the simpler symmetric gate, but
+`IsEqualBase` is no longer a bug to route around.
 
 ---
 ### `BaseLtStrict(a, b)` → Base (returns value)

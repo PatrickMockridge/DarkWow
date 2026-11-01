@@ -230,11 +230,12 @@ endowment's economic weight behind it.
 
 **Location:** `src/contract/dao_escrow/`
 **Functions:** InitializeV1 (0x00), UpdateV1 (0x01), PayPremiumV1 (0x02), WithdrawV1 (0x03),
-EndowmentWithdrawV1 (0x04), TreasurySpendV1 (0x05), EnableDrainProtectionV1 (0x06),
-ProposeClaimV1 (0x07), VoteClaimV1 (0x08), ExecuteClaimV1 (0x09),
-RegisterCapabilityRequirementV1 (0x0a), VerifyMemberCapabilityV1 (0x0b), ResolveDisputeV1 (0x0c),
-CancelClaimV1 (0x0d), SetGovernanceConfigV1 (0x0e), SetGovernanceActiveV1 (0x0f),
-DeactivateCapabilityRequirementV1 (0x10)
+EndowmentWithdrawV1 (0x04), TreasurySpendV1 (0x05), ProposeClaimV1 (0x07), VoteClaimV1 (0x08),
+ExecuteClaimV1 (0x09), CancelClaimV1 (0x0d).
+
+`EnableDrainProtectionV1 (0x06)`, the capability-requirement endpoints (0x0a–0x0c) and the
+governance-config endpoints (0x0e–0x10) were retired; the enum defines only the ten functions above
+(`dao_escrow/src/lib.rs:92-101`).
 
 ### Composition Path (Deferred)
 
