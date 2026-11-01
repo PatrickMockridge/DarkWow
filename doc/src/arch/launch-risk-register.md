@@ -4,8 +4,11 @@ This was a second ledger over [`verification-hazop.md`](verification-hazop.md). 
 obligation status (it read the other file's statuses live, which kept it honest) but it was still a
 second document to maintain, and its gate policed drift between two documents rather than the code.
 
-It is retired. Every live defect it ranked is a row in the tracker, and the four decisions of record
-(`LR-D*`) are in [`decisions.md`](decisions.md). `scripts/check-launch-register.sh` is deleted;
+It is retired. Every live defect it ranked is a row in the tracker. Three of its four decisions of
+record have counterparts in [`decisions.md`](decisions.md): `LR-D1` → `OBL-C80`, `LR-D2` →
+`OBL-C19`, and `LR-D4` → `OBL-C21` (whose statement is itself contradicted by the bridge code).
+`LR-D3` (launch-materials assurance claims) has **no counterpart** and needs one; that gap belongs
+to the decisions record, not to this retired page. `scripts/check-launch-register.sh` is deleted;
 `scripts/check-defect-register.sh` is the tracker's only gate.
 
 ## Release checklist

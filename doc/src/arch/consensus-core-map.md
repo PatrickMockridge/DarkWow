@@ -13,10 +13,17 @@ Measured 2026-09-24: every file below was opened, and Rust is cited by **functio
 
 ## Why this is a map, and not a list of theorems
 
-The Lean layer's largest remaining gap is not a proof. It is a **subject**. The consensus state core —
-the nullifier replay gate, the commitment set, the block-level mass-balance rule, the validity
-predicates — is specified in Python under `contrib/model/`, enforced in Rust under `src/linear/`, and has
-no Lean model at all. What exists is fragments, each deliberate and each stopping short:
+The Lean layer's largest remaining gap **was** not a proof. It was a **subject**. The consensus state
+core — the nullifier replay gate, the commitment set, the block-level mass-balance rule, the validity
+predicates — is specified in Python under `contrib/model/`, enforced in Rust under `src/linear/`, and
+had no Lean model at all when this map was written. What existed then was fragments, each deliberate
+and each stopping short:
+
+**The gap is now filled.** `proofs/lean/src/DarkFi/Consensus/` holds the ten modules listed below
+(`MassBalance`, `NullifierLifecycle`, `CommitmentSet`, `BlockTimestamp`, `UncleRules`, `BlockHeader`,
+`FeeCollect`, `CoinbaseStructure`, `CoinbaseSplit`, `SupplyReconciliation`), and the status line above
+records six of six mechanisms filled. The fragments below are the starting point, not the current
+state.
 
 * `Combinatorial/NullifierStorage.lean` mechanizes the *storage* half of one mechanism — a key→value
   store whose `markSpent` is faithful — and stops there.

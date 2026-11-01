@@ -69,8 +69,10 @@ retrospective scan of all IssueV1 nullifiers.
 **Supply is computed off-chain.** Outstanding circulation for a token type is
 calculated by scanning nullifier and commitment events from blockchain history:
 $\text{Outstanding} = \sum \text{IssueV1 outputs} - \sum \text{RedeemV1 inputs}$.
-There is no on-chain `total_supply` counter for PN token types (unlike
-[NativeToken](../contract/native_token.md) which tracks `TOTAL_SUPPLY`).
+There is a per-asset commitment **count** on chain
+(`PROMISSORY_NOTE_CONTRACT_TOTAL_SUPPLY`, written by `apply_issue`/`apply_register_type`), but no
+on-chain *value* supply counter — unlike [NativeToken](../contract/native_token.md), which tracks
+`TOTAL_SUPPLY`. The count is a number of commitments, not their summed value.
 
 **Redemption is optional.** [RedeemV1](../contract/promissory_note.md#redeemv1--0x01-)
 exists and is fully implemented — circuit, entrypoint, client builder, wallet
@@ -89,7 +91,13 @@ issuer's coverage and profit declarations:
 
 $$ \text{Stake Price} = f(\text{coverage freshness}, \text{profit history}, \text{issuer reputation}, \text{market liquidity}) $$
 
-The key on-chain signal is [ProveCoverageV1](../contract/bearer_bond.md#coverage):
+> **Status (2026-10-25): the coverage and interest arms are refused.** `IssueStakeV1`,
+> `RequestInterestV1` and `ProveCoverageV1` return `AuthorityModelUnavailable` before any host call
+> or state read (`src/contract/bearer_bond/src/entrypoint/mod.rs:585-628`; OBL-C248/C275/C276).
+> `VerifyCoverageV1` can only read a stored report, and no new report can be written. The coverage
+> signal described in this section is therefore a **design record**, not a live input to pricing.
+
+The key on-chain signal in the design is [ProveCoverageV1](../contract/bearer_bond.md#coverage):
 the issuer submits `reserve_amount` and `total_outstanding`, and a ZK proof
 verifies that $\text{coverage\\_ratio\\_bps} = \frac{\text{reserve\\_amount}}{\text{total\\_outstanding}} \times 10000$
 computes correctly. The entrypoint enforces `reserve_amount >= total_outstanding`
@@ -448,9 +456,10 @@ without requiring trust in a central regulator:
 
 What an individual holder can do today, with existing infrastructure:
 
-1. **Verify coverage freshness before buying.** Check the block height of the
-   latest ProveCoverageV1 for the series. If it's older than you're comfortable
-   with, treat the coverage ratio as unknown.
+1. **Read any stored coverage report, and treat it as historical.** `ProveCoverageV1` is
+   refused (the issuer-authority model is absent), so a fresh report cannot be filed;
+   `VerifyCoverageV1` only reads. A stored report is not a live signal, and its block height
+   tells you how old the claim is.
 2. **Check RedeemV1 usage for the token.** If a token type has zero RedeemV1
    calls in its entire history, the full bearer-instrument lifecycle has never
    been exercised for that token. The "promise" is untested.
@@ -484,8 +493,8 @@ regardless of issuer behavior:
 | Well-formed commitments | BlindOutput_V1 ZK proof verifies commitment is correctly constructed |
 | Only mint_secret holder can mint | ZK proof compares `mint_public` against stored `token_auth_parent` |
 | Redemption receipt is real | Redeem_V1 circuit constrains output commitment to `value = 0` via boolean gate |
-| Coverage ratio arithmetic | `base_div` ZK proof verifies $\text{ratio} = \frac{\text{reserve}}{\text{outstanding}} \times 10000$ |
-| No duplicate coverage reports | One report per `(series_asset_id, report_block)` enforced by entrypoint |
+| Coverage ratio arithmetic | Design only: `base_div` proves the ratio for a report, but `ProveCoverageV1` now refuses (`AuthorityModelUnavailable`), so only reports stored before the refusal can be read |
+| No duplicate coverage reports | Design only: the one-report-per-`(series_asset_id, report_block)` rule cannot be exercised while `ProveCoverageV1` refuses |
 
 ### What the Protocol Does NOT Guarantee (Trust-Assumed Properties)
 

@@ -183,7 +183,7 @@ entrypoint, not for `claim.zk`.
 
 ---
 
-#### Issue 11: Membership Expiry is Witness, Not Verified (MODERATE) — FIXED
+#### Issue 11: Membership Expiry is Witness, Not Verified (MODERATE) — NOT FIXED
 
 **Location**: [dao_escrow/pay_premium.zk](../../../src/contract/dao_escrow/proof/pay_premium.zk)
 
@@ -203,7 +203,10 @@ in a comment saying `max_membership_blocks`/`max_expiry` are "INTERNAL to circui
 `pay_premium.zk`'s own check is `current_block < expiry` against the witness. A cap chosen by the
 prover is not a cap. `F-163`.
 
-**Impact** (resolved): Members cannot self-issue excessively long memberships. Maximum is ~1 year.
+**Impact (open)**: A prover can self-issue an arbitrarily long membership; the only bound is the
+prover's own `expiry` witness. `pay_premium.zk:40-42` is `range_check` on both operands plus
+`less_than_strict(current_block, expiry)` — no cap. This is not a tracker row; it needs either a
+register row with a control or a decision record.
 
 ---
 
@@ -466,11 +469,11 @@ For the full formal verification (gate constraints, delta-invert analysis, Lean4
 | 5 | Escrow | No state verification on claim | MAJOR | ⚠️ Entrypoint written, state check in contract |
 | 6 | Escrow | Seller public key in plaintext | MODERATE | ✅ FIXED (H(seller_pub) in commitment, circuit verifies hash) |
 | 7 | DAO-Escrow | No endowment drain protection | MAJOR | ✅ FIXED: drain_protection with 8 best practices |
-| 8 | DAO-Escrow | Membership expiry as witness, no max cap | MODERATE | ✅ FIXED (max 1-year cap added) |
+| 8 | DAO-Escrow | Membership expiry as witness, no max cap | MODERATE | ❌ NOT FIXED (no cap in `pay_premium.zk`) |
 | 9 | Bridge | Weak range check (only < 2^64) | MODERATE | ✅ FIXED (min amount floor: **100**, `BRIDGE_CONTRACT_MIN_WITHDRAWAL`) |
-| 10 | DEX | Public keys hardcoded to zero | CRITICAL | ⚠️ ARCHITECTURAL LIMITATION (documented) |
-| 11 | DEX | lock_proof never verified | CRITICAL | ⚠️ PARTIALLY FIXED (basic validation added) |
-| 12 | DEX | ZK proof verification stubbed | CRITICAL | ⚠️ ARCHITECTURAL LIMITATION (documented) |
+| 10 | DEX | Public keys hardcoded to zero | CRITICAL | ⚠️ CORRECTED — proposer derived; only the acceptor key is zeroed by design (Issue 16) |
+| 11 | DEX | lock_proof never verified | CRITICAL | — path removed; `lock_proof` no longer exists (Issue 17) |
+| 12 | DEX | ZK proof verification stubbed | CRITICAL | ✅ NOT REPRODUCED — all eight circuits registered with proofs (Issue 18) |
 | 13 | Multiple | Missing public key constraint binding | MAJOR | ✅ FULLY FIXED (25+ circuits fixed, pre-commit hook added, zkas builtin proposed) |
 
 **Correction (2026-09-24) to row 13 only, itself corrected 2026-10-12 (`F-174`).** "FULLY FIXED" is a
@@ -590,7 +593,7 @@ as non-exploitable. See [Opcodes and Formal Verification](zk/opcodes.md) and
 
 - [safety.md](../dev/contracts/safety.md) — the twelve contract root causes, each with the findings that taught it and the rule it yields
 - [opcodes.md](zk/opcodes.md) — the Lean 4 proof architecture per layer, and the status of the 31 zkVM opcodes it covers; Layer 1's status is **PARTIAL**, and which properties are assumptions is listed there and in `Axioms.lean`
-- [opcodes-status.md](zk/opcodes-status.md) — the verification status for the circuits the Orchard-class gate walks; **178 as of 2026-09-24**, not the 120 this line carried
+- [opcodes-status.md](zk/opcodes-status.md) — the verification status for the circuits the Orchard-class gate walks; **177 at 2026-11-01**, re-derived by `scripts/check-doc-canonical-counts.sh` (not the 120 this line carried)
 - [Full audit report](../../../contrib/model/security_audit_2026-06-05.md) — Detailed findings with code traces
 
 **Correction (2026-09-24) to the two `opcodes` descriptions.** "All 32 opcode verification results" mixed two counts and overstated one of them. `src/zkas/opcode.rs` declares **32** opcode variants; `doc/src/arch/zk/opcodes.md` covers **31**, and the one it omits is `Noop` (0x00) — correctly, since a no-op has no verification subject. The number was therefore the *declaration* count where the verification surface is 31, and "all … verification results" is the part that was never true: `OBL-Z20` and `OBL-Z21` record two opcodes (0x57, 0x56) that four trees listed as verified with no theorem anywhere, and Layer 1's own row states that several of its properties are *assumptions* in `Axioms.lean` rather than theorems. Both links now describe what their targets say.
