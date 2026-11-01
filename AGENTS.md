@@ -125,6 +125,13 @@ These are mechanical, not advisory. They are here because agents have broken eac
   row to `contrib/ci/gate-groups.tsv` (group, lanes, source, budget). The CI entrypoint is
   `contrib/ci/run-ci-lane.sh`; `contrib/ci/check-gate-coverage.py` fails a fast lane on an
   unclassified gate. Local verification still uses the umbrella directly.
+- **Every change lands through a pull request.** Direct pushes to `linear-master` are forbidden,
+  administrators included; branch protection enforces it. The fast lane — the only test surface that
+  runs while the tracker is undecided — triggers on `pull_request`, and the merge lane on `push`
+  exits 78 at the tracker preflight, so a direct push lands with nothing having run. Branch from
+  `linear-master`, open a same-repo PR, wait for the required `fast` check to be green, then
+  rebase-merge (linear history; no merge commit). A green `fast` is not a verification verdict.
+  To make a PR without switching this shared tree's branch, work in a linked worktree.
 - **Never `git add -A`, `git stash`, `checkout` or `reset` in the shared tree.** Several sessions share it; commit
   by explicit pathspec (`git commit -F - -- <paths>`). Re-run `git status --porcelain` before every edit, and
   commit early — another session staging whole files can otherwise carry your edit away.
