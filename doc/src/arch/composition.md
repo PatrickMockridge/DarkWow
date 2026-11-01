@@ -243,8 +243,10 @@ multisig approval, attestation.
 
 The composition **kernel** is built and unit-tested against the Lean mirror
 (`Primitive`, `Barb`, `wallet_construct`, `TypedCapability::covers` in
-`src/sdk/src/capability.rs`). But it has **zero callers in `bin/dww`** — it is
-spec/proof-only. The live wallet uses a shallower, pre-composition path:
+`src/sdk/src/capability.rs`) and is **wired into the wallet**: `wallet_construct` is
+called from `bin/dww/src/scan.rs:419`, `src/sdk/src/manifest.rs:1000` and
+`bin/dww/src/ffi.rs:1254`. The earlier text said it had "zero callers" — that was the
+pre-composition state. The wallet path still has shallower branches:
 
 - **Path 1 — native token (bespoke, working, the one §13-sanctioned special
   case):** `scan.rs:187-289` discovers coinbase/transfer/spend/burn outputs and
@@ -261,7 +263,8 @@ spec/proof-only. The live wallet uses a shallower, pre-composition path:
 
 ### 4.3 The gaps between typed primitives and a working composition layer
 
-1. **No call site** — `wallet_construct` is never invoked in `bin/dww`.
+1. ~~**No call site** — `wallet_construct` is never invoked in `bin/dww`.~~ **Resolved** —
+   it is invoked at `scan.rs:419`, `manifest.rs:1000` and `ffi.rs:1254`.
 2. **The type bridge is missing** — `resolve_capability` fills
    `ResolvedCapability.primitives: Vec<String>` from
    `action.requires.capabilities` (`manifest.rs:188-191`), i.e. **capability

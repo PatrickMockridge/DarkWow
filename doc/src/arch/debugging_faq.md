@@ -451,7 +451,8 @@ DarkWow provides a generalized `contract.invoke` RPC endpoint for invoking any s
 **Current Status:**
 - `contract.invoke` endpoint is implemented in `bin/dwowd/src/rpc/contract.rs`
 - `ContractHandler` trait and `ContractRegistry` in `bin/dwowd/src/contract_registry.rs`
-- DAO-Escrow handler with function selectors (0x00-0x06)
+- DAO-Escrow handler with the selectors the contract defines (0x00–0x05, 0x07–0x09, 0x0d;
+  `0x06` and the 0x0a–0x0c / 0x0e–0x10 arms were retired)
 - Full ZK proof generation and transaction broadcasting is TODO
 
 ### Contract Handler Pattern
