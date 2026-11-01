@@ -32,6 +32,9 @@ permissions:
 concurrency:
   group: darkwow-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+# Heavy jobs are serialized by `ci_heavy_lock` (flock /tmp/darkwow-heavy.lock in
+# contrib/ci/lib/heavy.sh), not by a job-level concurrency group: GitHub keeps at most one pending
+# job per group and cancels the rest, which made sibling nightly jobs cancel each other.
 
 env:
   RAYON_NUM_THREADS: "10"
@@ -188,9 +191,6 @@ jobs:
       (github.event_name == 'workflow_dispatch' && inputs.lane == 'merge')
     runs-on: [self-hosted, linux, x64, darkwow]
     timeout-minutes: 150
-    concurrency:
-      group: darkwow-heavy
-      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
         with: { ref: linear-master, fetch-depth: 0, persist-credentials: false }
@@ -210,9 +210,6 @@ jobs:
       (github.event_name == 'workflow_dispatch' && inputs.lane == 'nightly')
     runs-on: [self-hosted, linux, x64, darkwow]
     timeout-minutes: 150
-    concurrency:
-      group: darkwow-heavy
-      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
         with: { ref: linear-master, fetch-depth: 0, persist-credentials: false }
@@ -232,9 +229,6 @@ jobs:
       (github.event_name == 'workflow_dispatch' && inputs.lane == 'nightly')
     runs-on: [self-hosted, linux, x64, darkwow]
     timeout-minutes: 180
-    concurrency:
-      group: darkwow-heavy
-      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
         with: { ref: linear-master, fetch-depth: 0, persist-credentials: false }
@@ -257,9 +251,6 @@ jobs:
       (github.event_name == 'workflow_dispatch' && inputs.lane == 'nightly')
     runs-on: [self-hosted, linux, x64, darkwow]
     timeout-minutes: 60
-    concurrency:
-      group: darkwow-heavy
-      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
         with: { ref: linear-master, fetch-depth: 0, persist-credentials: false }
@@ -279,9 +270,6 @@ jobs:
       (github.event_name == 'workflow_dispatch' && inputs.lane == 'nightly')
     runs-on: [self-hosted, linux, x64, darkwow]
     timeout-minutes: 240
-    concurrency:
-      group: darkwow-heavy
-      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
         with: { ref: linear-master, fetch-depth: 0, persist-credentials: false }
