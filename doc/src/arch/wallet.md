@@ -583,7 +583,8 @@ fields:
   held objects to mark them consumed.
 - `merkle_root` — the Merkle root that anchored the consumed object, to verify it
   existed at block time.
-- `leaf_position` — the position of the new leaf, to locate the new object in
+- the new leaf's position — **recovered structurally**, not read from a note field: the
+  scanner gets it from the Merkle insert (`OBL-C181`), to locate the new object in
   subsequent blocks.
 - `commitment` — the new Merkle leaf itself ([manifest.md](manifest.md)); the wallet
   records the capability with its real `value`, `asset_id`, and `commitment`.

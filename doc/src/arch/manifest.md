@@ -362,8 +362,10 @@ drawn from the Parameter Types table above. The declared field set is the
 
 - **L1** (transferable o-cap, proves Merkle inclusion) SHALL include the leaf
   field `{ name = "commitment", type = "pallas_base" }` plus the
-  trajectory-identifying fields `nullifier`, `merkle_root`, and `leaf_position`
-  ([contract-wasm-type-system.md §C.8.2](contract-wasm-type-system.md)). An L1
+  trajectory-identifying fields `nullifier` and `merkle_root`
+  ([contract-wasm-type-system.md §C.8.2](contract-wasm-type-system.md)). A leaf's
+  **position is structural** — it is returned by the Merkle insert, not carried as a
+  note field (`OBL-C181`); the box/purse schemas omit it deliberately. An L1
   note that carries hidden-balance or hidden-value commitments SHALL also
   declare the corresponding blinds (`pallas_scalar` or `pallas_base`) so the
   write path can bind them as `note:<field>` ([wallet.md §6.4.1](wallet.md)).
@@ -656,12 +658,14 @@ itself depends on. Contracts deployed by a key the user controls are `[OWN]`.
 Contracts with on-chain attestations from trusted issuers are `[ATTESTED by X]`.
 Everything else is `[UNVERIFIED]`.
 
-**Layer 2 — WASM Verification (mechanical)**: The wallet parses the deployed WASM
-binary, extracts exported function names and ZK circuit data sections, and compares
-them against the manifest. A mismatch — a claimed function not in the WASM, or a
-circuit in the WASM not in the manifest — is flagged. This catches manifest lies
-but not sophisticated deception where the WASM exports the claimed function but
-it doesn't do what the name implies.
+**Layer 2 — WASM Verification (mechanical)**: The wallet checks the required fixed
+exports (`__initialize`, `__entrypoint`, `__update`, `__metadata`, optional
+`__spend_hook`), every manifest circuit's embedded zkas binary namespace (and witness and
+opcode counts when declared), and that no embedded binary names a namespace the manifest
+does not declare. Contract **functions are selector arms inside `__entrypoint`**, not
+exports; "every function is an export" was never checkable (`bin/dww/src/manifest_verify.rs:31-37`).
+This catches manifest lies but not sophisticated deception where the WASM does the wrong
+thing under a claimed name.
 
 **Layer 3 — Attestation (social, on-chain)**: Identity and Attestation are genesis
 contracts precisely so that trusted issuers can vouch for contracts on-chain. An

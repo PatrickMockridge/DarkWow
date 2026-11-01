@@ -1496,10 +1496,13 @@ passed as parameters without deserialization to a named type.
 
 ### A.9.2 Mechanically Verifiable (Manifest-WASM Cross-Check)
 
-**I5 — Function export match.** Every function declared in the manifest's
-`[[functions]]` SHALL correspond to a branch in the contract's `process_instruction`
-dispatch. Verification: parse the WASM binary, extract exports, compare against
-manifest function names. This is Layer 2 WASM verification
+**I5 — Dispatch coverage, and circuit verification from the binary.** Every function
+declared in the manifest's `[[functions]]` SHALL correspond to a branch in the contract's
+`process_instruction` dispatch. The fixed symbols are `__initialize`, `__entrypoint`,
+`__update`, `__metadata` and the optional `__spend_hook`; functions are selector arms
+inside `__entrypoint`, not exports. `manifest_verify.rs` checks the required exports, each
+declared circuit's embedded zkas namespace (and witness/opcode counts when declared), and
+that no embedded binary names an undeclared namespace
 ([manifest.md](manifest.md) Trust Model).
 
 **I6 — State tree declaration.** Every sled tree name constant used in the

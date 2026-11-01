@@ -70,10 +70,10 @@ the binary?
 - Whether the WASM logic is correct, whether the circuits are sound, whether the capability
   model is implemented (Layer 3 concern).
 - Whether a manifest's `namespace` values agree with the compiled circuits is *checked against
-  the binary*, but the repository's own manifests are not all correct: `native_token`,
-  `promissory_note` and `identity` declare a contract-wide namespace while their zkas binaries
-  carry the circuit name (`Fee_V3`, `Transfer_V2`, `IssueCredentialV2`). The check reports them
-  as mismatches until those manifests are corrected with the genesis re-roll (`OBL-C249`).
+  the binary*. The repository's manifests were corrected: `native_token`, `promissory_note` and
+  `identity` now name the shipped circuit namespaces, and the check matches circuits by
+  namespace and (when declared) witness/opcode counts. The earlier text here said they declared
+  a contract-wide namespace and were reported as mismatches (`OBL-C249`); that is stale.
 
 This is a script-kiddie filter. It catches the most basic deception — someone
 editing a manifest TOML to claim functions and circuits that don't exist in
