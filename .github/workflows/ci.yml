@@ -134,9 +134,10 @@ jobs:
        (github.event_name == 'workflow_dispatch' && (inputs.lane == 'auto' || inputs.lane == 'fast')))
       && needs.select.outputs.lean == 'true'
     runs-on: [self-hosted, linux, x64, darkwow]
-    # The first Lean build on a fresh runner elaborates Mathlib from cold; the persistent cache
-    # under DARKWOW_LEAN_CACHE makes every later build incremental.
-    timeout-minutes: 60
+    # The first Lean build on a fresh runner elaborates Mathlib from cold and exceeds an hour; the
+    # persistent cache under DARKWOW_LEAN_CACHE makes every later build incremental. Once the cache
+    # is warm this job is minutes — lower the ceiling when the measured cost is recorded.
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 1, persist-credentials: false }
