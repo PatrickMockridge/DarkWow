@@ -92,7 +92,7 @@ tx_binding = poseidon_hash(3, tx_commitment, tx_nonce)                          
 
 | Capability | Discriminant | Primitives | Note schema |
 |------------|--------------|------------|-------------|
-| `box_capability` | `0` | `SecretKey`, `Commitment`, `Nullifier`, `MerkleNode`, `ContractId`, `FuncId` | `{ commitment: pallas_base, state_nonce: pallas_base }` |
+| `box_capability` | `0` | `SecretKey`, `Commitment`, `Nullifier`, `MerkleNode`, `ContractId`, `FuncId` | `{ commitment, state_nonce, box_id, user_data, nullifier, merkle_root }` |
 
 | Action | Requires | Consumes | Produces | Barbs |
 |--------|----------|----------|----------|-------|

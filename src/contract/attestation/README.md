@@ -16,8 +16,8 @@ predicate evaluation is enforced in exec.
 | Code | Function | Proof circuit | Description |
 |------|----------|---------------|-------------|
 | `0x00` | `create_attestation` | `CreateAttestationV2` | Create an on-chain attestation |
-| `0x01` | `revoke_attestation` | — (non-ZK) | Revoke an attestation (attestor) |
-| `0x02` | `expire_attestation` | — (non-ZK) | Expire an attestation |
+| `0x01` | `revoke_attestation` | `RevokeAttestationV2` | Revoke an attestation (attestor) |
+| `0x02` | `expire_attestation` | `ExpireAttestationV2` | Expire an attestation |
 | `0x03` | `create_claim` | `CreateClaimV2` | Create a claim (Pending) against an attestation |
 | `0x04` | `verify_claim` | `VerifyClaimV2` | Verify a claim (→ Verified/Rejected) |
 | `0x05` | `consume_claim` | `ConsumeClaimV2` | Consume a verified claim (→ Consumed, nullifier) |
@@ -28,6 +28,7 @@ predicate evaluation is enforced in exec.
 | `0x0a` | `update_delegation` | `UpdateDelegationV2` | Update a delegation record |
 | `0x0b` | `attest_slash` | `AttestSlashV2` | Slash an attestation (hardening) |
 | `0x0c` | `commit_fee_schedule` | `CommitFeeScheduleV2` | Commit a fee schedule (hardening) |
+| `0x0d` | `check_attestation` | `CheckAttestationV2` | Membership check; required as a child by `labor_market::create_job` |
 
 ## Domain Constants
 

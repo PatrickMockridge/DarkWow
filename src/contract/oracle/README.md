@@ -19,7 +19,7 @@ contract) holds the resulting claims.
 | `0x02` | `attest_value` | `AttestValueV2` | Authorize an attestation over the current value |
 | `0x03` | `push_value_commitment` | `PushValueCommitmentV2` | Push a Pedersen commitment (private value) |
 | `0x04` | `aggregate` | `AggregateV2` | Weighted average of up to 4 values |
-| `0x05` | `set_oracle_active` | — (non-ZK) | Enable/disable a feed (operator-authenticated) |
+| `0x05` | `set_oracle_active` | `SetOracleActiveV2` | Enable/disable a feed (operator-authenticated) |
 
 ## Domain Constants
 
@@ -56,7 +56,8 @@ oracle_id     = poseidon_hash([pub_x, pub_y])               # set_oracle_active 
 `push_value_commitment` keeps the value off-chain as a Pedersen commitment (no
 Merkle membership proof — the oracle has no data tree, so membership would prove
 nothing); `attest_value` delegates the actual attestation to the attestation
-contract. `set_oracle_active` is non-ZK, authorized by `oracle_pub` equality.
+contract. `set_oracle_active` carries a `SetOracleActiveV2` proof (it had no circuit before
+`OBL-Z10`) and is authorized by `oracle_pub` equality.
 
 ## State Trees
 

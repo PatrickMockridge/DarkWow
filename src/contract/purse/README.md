@@ -92,7 +92,7 @@ tx_binding      = poseidon_hash(3, tx_commitment, tx_nonce)              # DOMAI
 
 | Capability | Discriminant | Primitives | Note schema |
 |------------|--------------|------------|-------------|
-| `purse_capability` | `0` | `SecretKey`, `Commitment`, `Nullifier`, `MerkleNode`, `ContractId`, `FuncId`, `AssetId` | `{ asset_id: pallas_base, balance: u64, commitment: pallas_base }` |
+| `purse_capability` | `0` | `SecretKey`, `Commitment`, `Nullifier`, `MerkleNode`, `ContractId`, `FuncId`, `AssetId` | `{ asset_id, value, balance_blind, commitment, purse_id, state_nonce, nullifier, merkle_root }` |
 
 | Action | Requires | Consumes | Produces | Barbs |
 |--------|----------|----------|----------|-------|

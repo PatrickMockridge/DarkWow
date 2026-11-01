@@ -18,7 +18,7 @@ over recorded credentials.
 | `0x01` | `issue_credential` | `IssueCredentialV2` | Issuer issues a credential to a holder |
 | `0x02` | `revoke_credential` | — (Schnorr sig) | Issuer revokes a credential |
 | `0x04` | `register_capability` | — | Register a capability type |
-| `0x05` | `issue_capability` | — (Box::Put child) | Issue a capability to a holder |
+| `0x05` | `issue_capability` | — (holder signature) | Issue a capability to a holder; possession is proven at verification by the holder's signature, not by a Box child |
 | `0x06` | `verify_capability` | `VerifyCapabilityV2` | Verify a capability proof against a credential |
 | `0x07` | `revoke_capability` | — | Revoke a holder's capability |
 | `0x08` | `register_issuer` | — | Register a trusted issuer |

@@ -111,7 +111,7 @@ pub struct RelayerEndowmentAccount {
 
 This contract composes with:
 
-- **money contract**: For token transfers (deploy/withdraw)
+- **promissory_note**: For token transfers (deploy/withdraw), via a `transfer_v1` (0x04) child
 - **dao_escrow**: Similar endowment fund management patterns
 - **pool_stake**: For coverage backing of guaranteed withdrawals
 
@@ -132,7 +132,7 @@ This contract composes with:
 │                            │                                    │
 │                            ▼                                    │
 │              ┌─────────────────────────┐                       │
-│              │     money contract       │                       │
+│              │   promissory_note        │                       │
 │              │  (Token transfers, stake)│                       │
 │              └─────────────────────────┘                       │
 │                                                                 │

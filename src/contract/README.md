@@ -29,116 +29,19 @@ migration. See [promissory_note/README.md](promissory_note/README.md).
 
 ---
 
-## ZKas Circuit Analysis
+## ZKas circuit reference
 
-### Opcode Classification
+The per-circuit and per-opcode analysis that used to fill this section was a hand-maintained
+snapshot and had drifted: it named `dao/exec.zk`, `create_claim.zk` and an `assert_lte_u64.zk`
+safemath gadget that do not exist, and it declared bridge `deposit.zk` both "fake" and "fixed".
+The current references are:
 
-**Proven Opcodes (Production Safe)**
+- [Opcodes and Formal Verification](../../doc/src/arch/zk/opcodes.md) — opcode table and proof status
+- [Opcode Universe](../../doc/src/arch/zk/opcode_universe.md)
+- [zkVM Primitive Layer](../../doc/src/arch/zk/zkvm_primitives.md)
+- `scripts/check-circuit-instance-derivation.sh` — the Orchard-class gate (177 sources, 0 unclassified)
 
-| Opcode | Purpose |
-|--------|---------|
-| `poseidon_hash` | Commitment hashing, nullifiers, public keys |
-| `ec_mul_base` | Public key derivation from secrets |
-| `ec_get_x`, `ec_get_y` | Extract EC point coordinates |
-| `ec_add`, `ec_mul`, `ec_mul_short` | Pedersen commitments |
-| `merkle_root`, `sparse_merkle_root` | Merkle membership proofs |
-| `less_than_strict` | Constrain-only comparisons (no return value) |
-| `base_add`, `base_mul`, `base_sub` | Field arithmetic |
-| `range_check`, `bool_check` | Value validation |
-| `constrain_equal_base` | Equality constraints |
-
-**Experimental Opcodes (Grey-Market - Not Production Ready)**
-
-| Opcode | Issue |
-|--------|-------|
-| `LessThanOrEqual` (0x55) | Gate-level implementation under investigation; opcode spec verified sound in Lean 4 |
-| `IsEqualBase` (0x54) | Delta-invert issue when `a == b` |
-| `NotBase` (0x56) | Unused, experimental |
-| `BaseLtStrict` (0x57) | Unused, experimental |
-
----
-
-### Soundness Issues
-
-**1. LessThanOrEqual Gate Soundness (CRITICAL)**
-
-The constraint `out * (b - a) + (1 - out) * (a - b - 1)` can be satisfied with malicious assignments when `out = 0` and `a > b`. The range check limits but doesn't fully close the attack vector.
-
-**2. IsEqualBase Delta-Invert (CRITICAL)**
-
-When `a == b`, the constraint `delta * delta_invert == 1` becomes `0 * anything == 1`, which is unsatisfiable. A selector gate disables this, but the prover can assign arbitrary `delta_invert` when inputs are equal.
-
-### Ideal vs Workaround: LessThanOrEqual vs Safemath
-
-| Aspect | `LessThanOrEqual` (IDEAL) | Safemath (WORKAROUND) |
-|--------|---------------------------|----------------------|
-| Returns Boolean | ✅ Yes | ❌ No (constrain-only) |
-| Composability | ✅ Full | ❌ Limited to assertions |
-| Circuit bloat | ✅ None (single VM impl) | ❌ Each circuit copies gadget |
-| Soundness | ⚠️ Unverified (gate soundness) | ✅ Production-ready |
-| Use when | Need Boolean for downstream logic | Only need to assert `a <= b` |
-
-**Why this matters**: Safemath (`assert_lte_u64.zk`) is a **workaround** that works for stablecoin/identity because they only need to assert constraints (not return Booleans). If you need the comparison result as a value for further constraints, LessThanOrEqual is required.
-
----
-
-### Cross-Multiplication Pattern (Alternative to BaseDiv)
-
-Ratio checks can use cross-multiplication instead of division:
-
-```zk
-# Prove: approval_ratio <= yes_vote / all_vote
-# Without division - use cross-multiplication:
-lhs = base_mul(all_vote_value, approval_ratio_quot);
-rhs = base_mul(yes_vote_value, approval_ratio_base);
-rhs_1 = base_add(rhs, 1);  # +1 converts strict < to <=
-less_than_strict(lhs, rhs_1);
-```
-
-**Note**: `BaseDiv` is now implemented (opcode 0x58). This cross-multiplication pattern is still useful for simple ratio assertions where BaseDiv would be expensive.
-
----
-
-### Merkle Verification Patterns
-
-| Circuit | Pattern | Status |
-|---------|---------|--------|
-| `burn.zk` | `merkle_root(leaf_pos, path, coin_incl)` with `zero_cond` | ✅ Real |
-| `propose-main.zk` | `merkle_root(dao_leaf_pos, dao_path, dao_bulla)` | ✅ Real |
-| `propose-input.zk` | `sparse_merkle_root` for nullifiers | ✅ Real |
-| `deposit.zk` | `poseidon_hash(deposit_leaf, merkle_path_0, merkle_path_1)` | ❌ **Fake** |
-
----
-
-### Circuit Safety Summary
-
-| Contract | Circuit | Experimental? | Issues |
-|----------|---------|---------------|--------|
-| dao | `exec.zk` | No | ✅ Safe |
-| dao | `propose-main.zk` | No | ✅ Safe |
-| money (v1) | `burn.zk` | No | ✅ Safe — historical, contract removed |
-| escrow | `refund.zk` | No | ✅ Safe |
-| dao_escrow | `init.zk` | No | ✅ Safe |
-| dao_escrow | `pay_premium.zk` | No | ✅ Safe |
-| identity | `create_claim.zk` | No | ✅ Uses safemath (Level 0 zk_only) |
-| stablecoin | `open_position.zk` | No | ✅ Uses safemath `assert_lte_u64.zk` |
-| stablecoin | `liquidate.zk` | No | ✅ Uses safemath `assert_lte_u64.zk` |
-| bridge | `deposit.zk` | No | ✅ Fixed — real `merkle_root` |
-
----
-
-### Key Takeaways
-
-1. **`BaseDiv` is implemented** - Opcode 0x58 using binary exponentiation
-2. **`LessThanOrEqual` opcode spec is verified sound** - Formally verified via Lean 4 at the specification level; gate-level implementation under active investigation
-3. **`less_than_strict` is safe** - It's constrain-only (no return value manipulation)
-4. **Cross-multiplication is still useful** - For simple ratio assertions without BaseDiv overhead
-5. **stablecoin and identity use safemath** - Assertion gadgets (`assert_lte_u64.zk`) as workaround for LessThanOrEqual
-6. **Bridge Merkle is fixed** - `deposit.zk` now uses real `merkle_root` opcode
-
-**See also**:
-- [Opcodes Reference](../../doc/src/arch/zk/opcodes.md) — Concise reference for contract authors
-- [zkVM Primitive Layer](../../doc/src/arch/zk/zkvm_primitives.md) — Deep dive into opcode implementation
+Do not restore a per-contract circuit table here; the gate's output is the census.
 
 ## Token Design Philosophy
 
@@ -170,12 +73,13 @@ PromissoryNote is the cornerstone of DarkWow's DeFi ecosystem:
 
 4. **Token authorization via backing proof**: MintV1 proves knowledge of the backing secret directly against the stored token_auth_parent commitment in a single step.
 
-5. **Function IDs**:
-   - `0x00` - TokenMintV1: Create a new token type
-   - `0x01` - MintV1: Mint tokens of existing token type
-   - `0x02` - BurnV1: Burn tokens
-   - `0x03` - TransferV1: Private token transfer
-   - `0x04` - OtcSwapV1: Atomic OTC token swap
+5. **Function IDs** (`src/contract/promissory_note/manifest.toml`):
+   - `0x00` - `register_type`: Register a token type
+   - `0x01` - `redeem`: Burn a note and produce a zero-value receipt
+   - `0x02` - `issue`: Issue notes against a registered type
+   - `0x03` - `revoke`: Consume a note via its nullifier
+   - `0x04` - `transfer`: Private token transfer
+   - `0x05` - `otc_swap`: Atomic OTC token swap
 
 This separation ensures ZK circuits remain minimal while complex business logic lives in audited smart contracts.
 
@@ -200,15 +104,16 @@ For full contract execution testing with real ZK proofs. Uses `ContractHarness` 
 
 ```bash
 # Requires release mode or increased stack size due to halo2's computational intensity
-cargo test --package dwowd --release test_dex_heavyweight
-cargo test --package dwowd --release test_promissory_note_heavyweight
+cargo test --package dwowd --release test_heavyweight_dex
+cargo test --package dwowd --release test_heavyweight_promissory_note
 
-# Alternative: increase stack size
-export RUST_MIN_STACK=16777216
-cargo test --package dwowd test_dex_heavyweight
+# Alternative: increase stack size (the repository default is 64 MiB)
+export RUST_MIN_STACK=67108864
+cargo test --package dwowd test_heavyweight_dex
 ```
 
-**Why the stack limit?** halo2's polynomial arithmetic uses deep recursion. Building multiple proving keys (4 circuits for DEX, 4 for PromissoryNote) exceeds the default ~8MB stack.
+**Why the stack limit?** halo2's polynomial arithmetic uses deep recursion, and building
+several proving keys (DEX has 8 circuits, PromissoryNote 5) exceeds the default stack.
 
 See [Contract Deployment Pipeline](../../doc/src/arch/dwowd_contract_pipeline.md) for full details.
 
@@ -225,7 +130,8 @@ pub trait ContractHarness {
 }
 ```
 
-Implemented by: `DexHarness`, `PromissoryNoteHarness`, `DarkbetExchangeHarness`, `DaoEscrowHarness`, `StablecoinHarness`, `NativeTokenHarness`
+Implemented by `BoxHarness` and `PurseHarness` (`test-harness/src/harness/{box,purse}.rs`).
+The per-contract `*Harness` structs exist but do not implement this trait.
 
 ## Heavyweight Test Status
 
@@ -249,8 +155,8 @@ output, not a table here — a hand-maintained pass list goes stale the moment a
 
 All 32 contracts are official; there is no separate "unofficial" set. The canonical list with
 maturity labels and crate names is [doc/src/contracts.md](../../doc/src/contracts.md). Nine are
-genesis (listed under "What is here"); every contract directory has a `README.md` beside its
-`manifest.toml`.
+genesis (listed under "What is here"). Thirty-one directories carry a `manifest.toml`
+(`deployooor` does not); every contract directory has a `README.md`.
 
 Architecture and implementation pages live under `doc/src/contract/` and are indexed by
 [SUMMARY.md](../../doc/src/SUMMARY.md). The hand-written link list that used to live here pointed at

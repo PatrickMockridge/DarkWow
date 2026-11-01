@@ -15,7 +15,7 @@ legos**. See [the composition spec](../../../doc/src/contract/bridge.md) for how
 | Opcode | Function | Purpose |
 |--------|----------|---------|
 | `0x00` | `InitializeV1` | Init trees; store PN contract id |
-| `0x01` | `DepositV1` | Verify external deposit → issue wrapped PN (child `PN::IssueV1`) |
+| `0x01` | `DepositV1` | Verify external deposit → issue wrapped PN (child `PN::IssueV1`); **refused in the default build** |
 | `0x02` | `WithdrawV1` | Redeem wrapped PN (child `PN::RedeemV1`) → record external-release signal |
 
 ## How it works
@@ -63,7 +63,10 @@ cargo test      # integration tests
 
 ## Feature gates
 
-- `bridge-verify` — external-chain cryptographic verification (default off; structural checks only).
+- `bridge-verify` — external-chain cryptographic verification. **Default off, and the deposit
+  arm fails closed:** `verify_chain_proof` returns "verification not compiled", so `DepositV1`
+  refuses and issues no wrapped PN. The feature does not compile a working verifier either
+  (`src/lib.rs` is a `compile_error!`; `OBL-C21`). It is not "structural checks only".
 - `deterministic-zk` — deterministic proof generation for tests.
 
 ## Security model

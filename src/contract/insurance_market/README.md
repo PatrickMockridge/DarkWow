@@ -45,7 +45,9 @@ Instead of revealing identity documents, employment history, or other personal d
 | UnderwriteWithCapabilityV1 | 0x09 | Underwrite with capability proof |
 | PurchaseCoverageWithCapabilityV1 | 0x0a | Buy with capability proof |
 | PurchaseCoverageWithDAGV1 | 0x0b | Buy with DAG competency proof |
-| ResolveClaimWithCapabilityV1 | 0x0c | Resolve with capability proof |
+
+`ResolveClaimWithCapabilityV1` (0x0c) was **removed**; the enum jumps 0x0b → 0x0d
+(`src/lib.rs:65`).
 
 ## Usage Examples
 
@@ -253,10 +255,10 @@ src/contract/insurance_market/
 
 ```bash
 # Build WASM
-cargo build --target wasm32-unknown-unknown --release -p darkfi_insurance_market_contract
+cargo build --target wasm32-unknown-unknown --release -p dwow_insurance_market_contract
 
 # Run tests
-cargo test -p darkfi_insurance_market_contract
+cargo test -p dwow_insurance_market_contract
 ```
 
 ## See Also
