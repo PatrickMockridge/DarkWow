@@ -67,7 +67,8 @@ A 32 GB-class host with a systemd user session (for `systemd-run --user --scope`
 Docker, the wasm32 target, full git history, and 20 GB free. Cargo's `target/` and registry live
 under the runner's `~/.cache/darkwow/`; the checkout's `target/` is a symlink to that tree, because
 the contract Makefiles copy artifacts from the workspace default path rather than from
-`CARGO_TARGET_DIR`. Lean's `.lake` is cached by toolchain + manifest. No cargo, Lean or
+`CARGO_TARGET_DIR`. Lean's `.lake` is a symlink into `$DARKWOW_LEAN_CACHE/<toolchain hash>`, so a
+cold first elaboration is paid once and later builds are incremental. No cargo, Lean or
 Docker command is wrapped in a second cgroup for Lean — `scripts/lean-build.sh` owns its own ceiling.
 
 ## Failure semantics

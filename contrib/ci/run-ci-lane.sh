@@ -103,6 +103,26 @@ align_target_dir() {
 }
 align_target_dir || exit 78
 
+# Lean's build tree is the one artefact that is both large and expensive to rebuild from cold (a
+# first Mathlib elaboration). The runner keeps it beside the cargo cache, keyed by the toolchain
+# pin, and the checkout's `proofs/lean/.lake` points at it: lake then builds incrementally across
+# runs. `actions/cache` would upload and download the whole tree on every job, and its key would
+# have to omit `proofs/lean/**` to stay incremental.
+align_lean_cache() {
+    [ "${CI:-}" = "true" ] || return 0
+    [ -n "${DARKWOW_LEAN_CACHE:-}" ] || return 0
+    local key dir link=proofs/lean/.lake
+    key="$(sha256sum proofs/lean/lean-toolchain 2>/dev/null | cut -d' ' -f1)"
+    dir="$DARKWOW_LEAN_CACHE/${key:-default}"
+    mkdir -p "$dir" || return 1
+    if [ -e "$link" ] && [ ! -L "$link" ]; then
+        echo "proofs/lean/.lake is a real directory in CI; refusing to replace it" >&2
+        return 1
+    fi
+    ln -sfn "$dir" "$link"
+}
+align_lean_cache || exit 78
+
 if [ "$CI_ALL" = "1" ] && [ -z "$CI_GROUPS_ARG" ]; then
     CI_GROUPS_ARG="docs,contracts,shared-sdk,genesis,consensus,wallet,lean,models,ci,docker"
 fi
