@@ -20,7 +20,7 @@ models, Lean, Docker and shared-sdk get their own fast jobs rather than being re
 `fast-static` (shared-sdk's pre-build guard compiles every contract, which is `fast-compile`'s job).
 The jobs that run umbrella gates on a fresh checkout build what those gates assume: `fast-static`
 builds zkas and the `proofs/core` circuits for the `validate_zk_bins.sh` control, and
-`fast-compile` builds the contract circuits for the pre-build guard.
+`fast-compile` builds the contract circuits and the nine genesis WASMs the pre-build guard embeds.
 
 ## The `make test` split
 

@@ -221,6 +221,17 @@ build_proofs_core() {
 
 build_contract_zk() { ( cd "$REPO_ROOT" && ./scripts/build-contract-zk.sh ); }
 
+# The pre-build guard compiles dwowd, whose lib embeds the nine genesis contract WASMs with
+# include_bytes!. Build just those nine: the other twenty-three contracts do not need their WASM
+# for their own `cargo check`.
+build_genesis_wasm() {
+    local contract status=0
+    for contract in deployooor native_token promissory_note identity oracle attestation purse box multisig; do
+        make -C "$REPO_ROOT/src/contract/$contract" all || status=1
+    done
+    return "$status"
+}
+
 fast_static() {
     local groups; groups="$(_fast_static_groups)"
     gate "fast-only: zkas compiler builds" prepare_zkas
@@ -272,6 +283,7 @@ fast_compile() {
     # include_bytes! circuits, so build the compiler and the circuits first.
     gate "fast-only: zkas compiler builds" prepare_zkas
     gate "fast-only: contract ZK circuits build" build_contract_zk
+    gate "fast-only: genesis contract wasm builds" build_genesis_wasm
     run_umbrella fast shared-sdk --tier 1
     ci_summary
 }

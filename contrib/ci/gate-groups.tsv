@@ -142,4 +142,5 @@ fast-only: path selector self-test	ci	fast	fast-only	10
 fast-only: gate coverage ratchet	ci	fast,merge	fast-only	10
 fast-only: zkas compiler builds	shared-sdk	fast	fast-only	120
 fast-only: contract ZK circuits build	shared-sdk	fast	fast-only	600
+fast-only: genesis contract wasm builds	shared-sdk	fast	fast-only	900
 fast-only: proofs/core circuits build	contracts	fast,merge	fast-only	60

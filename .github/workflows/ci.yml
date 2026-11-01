@@ -82,8 +82,10 @@ jobs:
     runs-on: [self-hosted, linux, x64, darkwow]
     timeout-minutes: 15
     steps:
+      # The register and ledger gates resolve a row's evidence commit; a shallow clone makes that
+      # history unreachable and the gate refuses.
       - uses: actions/checkout@v4
-        with: { fetch-depth: 1, persist-credentials: false }
+        with: { fetch-depth: 0, persist-credentials: false }
       - shell: bash
         run: contrib/ci/run-ci-lane.sh fast-static --groups "${{ needs.select.outputs.groups }}"
       - uses: actions/upload-artifact@v4
