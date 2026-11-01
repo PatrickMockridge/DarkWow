@@ -215,4 +215,4 @@ The linear design assumes block producers have already executed WASM to extract 
 - [ZK Verification](../zk/zk_verification.md) - Pure stateless proof verification
 - [Linear Blockchain](./linear_blockchain.md) - Linear chain architecture overview
 - [Wallet Architecture](../wallet.md) - Scanner trust model
-- [Sync Module](../sync.md) - Block synchronization with verification
+- [Sync Protocol](../sync-protocol.md) - Block synchronization with verification

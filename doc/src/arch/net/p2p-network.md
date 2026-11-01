@@ -304,7 +304,7 @@ For a 1,000-node network, fan-out reduces messages from ~1,000,000 to
 ~10,000 per block — a 100× reduction.
 
 See also: [Observer](../observer.md) (relay behavior),
-[Sync Module](../sync.md) (block propagation flow).
+[Sync Protocol](../sync-protocol.md) (block propagation flow).
 
 ## Swarming
 

@@ -50,7 +50,7 @@ Navigation index for smart contracts, consensus, and protocol documentation.
 - [consensus](./consensus/consensus.md) - Uncle Merkle consensus with RandomX PoW (replaces upstream overlay/diff)
 - [sync](./sync.md) - Block synchronization — **SUPERSEDED**, pre-migration `src/validator/sync/` API retained for reference; the authoritative spec is [sync-protocol.md](./sync-protocol.md)
 - [entropy](../contract/entropy.md) - Randomness generation
-- [tau](../contract/tau.md) - Staking and token distribution
+- [tau](../contract/tau.md) - Off-chain anonymous task daemon (`taud`); not a contract
 - [slashing](./slashing.md) - Validator punishment
 - [ocap](./ocap.md) - Object-capability security
 - [linear_zkvm](./consensus/linear_zkvm.md) - ZKVM on linear blockchain (stateless verification + WASM adapters)
@@ -90,55 +90,9 @@ Historical documents in [./legacy/](./legacy/event_graph.md):
 
 ## Directory Structure
 
-```
-doc/src/arch/
-├── README.md                    # This file - navigation index
-├── wallet.md                     # Wallet architecture, capability-based position resolution
-│                                   #   (covers scanning, commitment discovery, contract tracking)
-├── overview.md                    # Current architecture overview
-├── identity.md                  # ZK credential system
-├── monero.md                    # Monero integration
-├── ocap.md                      # Object-capability security
-├── slashing.md                  # Validator slashing
-├── anonymous_assets.md          # Privacy token model
-├── contract_invoke_api.md       # Inter-contract calling convention
-├── consensus/                   # Consensus documents
-│   ├── consensus.md
-│   ├── chain_architecture.md
-│   ├── uncle_merkle.md
-│   ├── linear_blockchain.md
-│   ├── linear_zkvm.md
-│   ├── fee-spec.md
-│   ├── transfer-spec.md
-│   ├── stratum.md
-│   ├── safety.md
-│   ├── merge-mining-ffi.md
-│   ├── node-startup-spec.md
-│   └── scaling.md
-├── zk/                          # ZK & circuit documents
-│   ├── spend_hook.md
-│   ├── field_arithmetic.md
-│   ├── zkvm_primitives.md
-│   ├── zk_verification.md
-│   ├── opcodes.md
-│   ├── opcodes-status.md
-│   ├── opcode_universe.md
-│   └── merkle_depth.md
-├── legacy/                      # Historical documents
-│   ├── event_graph.md           # *(active — P2P messaging layer)*
-│   └── event_graph_network_protocol.md  # *(active — P2P messaging layer)*
-├── net/                         # P2P network docs
-│   └── p2p-network.md
-└── sc/                          # Smart contract docs
-    ├── sc.md
-    └── tx-lifetime.md
-
-doc/src/contract/                # Smart contract design docs
-├── native_token.md
-├── promissory_note.md
-├── dao_escrow.md
-├── dex.md
-├── stablecoin.md
-├── bridge.md
-└── ... (33 contract files total)
-```
+Do not maintain a second copy of the tree here. The canonical chapter list is
+[`SUMMARY.md`](../SUMMARY.md); the architecture subtree is `arch/` with the `consensus/`, `zk/`,
+`net/`, `sc/`, `legacy/` and `audit/` groups, and the contract design pages live in
+`../contract/` and are catalogued in [`contracts.md`](../contracts.md).
+A hand-copied tree drifts: the previous version here gave 33 as the count of contract pages while
+the directory held 42, and it omitted most of the current `arch/` pages.

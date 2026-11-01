@@ -114,6 +114,6 @@ src/zk/mod.rs
 
 ## Related
 
-- [Sync Module](../sync.md) - How verification is used in block sync
+- [Sync Protocol](../sync-protocol.md) - How verification is used in block sync
 - [ZKAS](../../zkas/zkas.md) - ZK circuit format
 - [ZKVM](../../zkas/zkvm.md) - Virtual machine for ZK execution

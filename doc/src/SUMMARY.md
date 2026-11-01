@@ -276,10 +276,9 @@
 - [Notation](spec/notation.md)
 - [Concepts](spec/concepts.md)
 - [Cryptographic Schemes](spec/crypto-schemes.md)
-- [Contracts]()
-  - [Deployooor](spec/contract/deploy/deploy.md)
-    - [Concepts](spec/contract/deploy/concepts.md)
-    - [Scheme](spec/contract/deploy/scheme.md)
+- [Deployooor Contract](spec/contract/deploy/deploy.md)
+  - [Concepts](spec/contract/deploy/concepts.md)
+  - [Scheme](spec/contract/deploy/scheme.md)
 
 ## DEP (shelved — upstream legacy documents, not maintained)
 - [DEP 0001: Version Message Info (accepted)](dep/0001.md)

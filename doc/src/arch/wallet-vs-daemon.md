@@ -344,5 +344,5 @@ is about *what you run when*, not about *how much you verify*.
 - [Wallet Architecture](wallet.md) — wallet internals and capability model
 - [Consensus](consensus/consensus.md) — Uncle Merkle consensus design
 - [What's Different from Upstream](../about/differences_from_upstream.md) — fork comparison
-- [P2P Network Connectivity](sync.md#p2p-protocol) — wallet P2P sync details
+- [P2P Network Connectivity](sync-protocol.md) — wallet P2P sync details
 - [O-Cap & Composable Privacy](ocap.md) — capability security model
