@@ -2,6 +2,9 @@
 
 A composable contract that enables pooled coverage for relayer withdrawals. Stakers deposit capital into a shared pool to provide guaranteed withdrawal coverage, earning a share of bridge fees in return.
 
+> **Canonical specification:** [contract/pool_stake.md](../contract/pool_stake.md). This page is the
+> relayer-operator view; where the two disagree, the contract page and the code are authoritative.
+
 ## Purpose
 
 Relayers need coverage capacity to execute guaranteed withdrawals. The Pool Stake contract enables:

@@ -1,6 +1,10 @@
 # Relayer Endowment Contract
 
-> **Note:** The endowment contract is implemented and deployed on the DarkWow testnet. It underwent internal security hardening (May 2026) with proportional slashing, fee caps, and force settlement now live. See [Security Audit](../contract/audit.md).
+> **Canonical specification:** [contract/relayer_endowment.md](../contract/relayer_endowment.md).
+> This page is the relayer-operator view. Status: the contract exists and its deployed path moves
+> capital with a `promissory_note::transfer_v1` child; the Purse-based composition (`DeployCapital` →
+> `Purse::DepositV1`, `SettleFees` → `Purse::WithdrawV1`) is **not implemented as described**. See
+> [Security Audit](../contract/audit.md).
 
 A composable contract that enables external capital providers ("backers") to deploy capital to relayers in exchange for a share of the relayer's bridge fees.
 
