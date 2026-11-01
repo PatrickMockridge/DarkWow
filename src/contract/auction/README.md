@@ -284,4 +284,4 @@ For auction, what-you-prove (bid amount, winner status) already works with ZK pr
 ## References
 
 - [DarkWow Escrow Contract](../escrow/)
-- [DarkWow zkVM](../zkas/)
+- [DarkWow zkVM](../../../src/zkas/)

@@ -107,7 +107,7 @@ constrain_equal_base(dao_member_pub_x, subscriber_pub_x);
 
 ### Code Location
 
-- **DAO-Escrow Integration**: [proof/subscribe_v1.zk](proof/subscribe_v1.zk) (Phase 5)
+- **DAO-Escrow Integration**: [proof/subscribe.zk](proof/subscribe.zk) (Phase 5)
 - **Membership Types**: [src/model/mod.rs](src/model/mod.rs)
 
 ## State Machine
@@ -292,7 +292,7 @@ less_than_strict(required_tier - 1, permissions_claimed);
 
 ## Cancellation Verification: PROVISIONAL FIX
 
-**⚠️ THIS IS A PROVISIONAL FIX FOR ISSUE #3** - Makes capabilities single-use. See [security-analysis.md](../../doc/src/arch/security-analysis.md) Issue #3 for full analysis.
+**⚠️ THIS IS A PROVISIONAL FIX FOR ISSUE #3** - Makes capabilities single-use. See [security-analysis.md](../../../doc/src/arch/security-analysis.md) Issue #3 for full analysis.
 
 ### PROVISIONAL FIX: Single-Use via Merkle Proof
 
@@ -346,6 +346,6 @@ Would require a different architecture:
 
 ## See Also
 
-- [Subscription Architecture Doc](../../../doc/src/arch/subscription.md)
+- [Subscription Architecture Doc](../../../doc/src/contract/subscription.md)
 - [DAO Escrow Contract](../../../doc/src/contract/dao_escrow.md)
-- [Composability Pattern](../../../doc/src/arch/composability.md)
+- [Composability Pattern](../../../doc/src/contract/composability.md)

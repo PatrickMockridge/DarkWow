@@ -193,4 +193,4 @@ let withdraw_params = WithdrawDeploymentParamsV1 {
 - [Pool Stake Contract](../pool_stake/) - Pooled coverage for withdrawals
 - [DAO-Escrow Contract](../dao_escrow/) - Endowment fund management patterns
 - [Bridge Contract](../bridge/) - Guaranteed withdrawal execution
-- [Money Contract](../money/) - Token transfers and staking primitives
+- [Promissory Note Contract](../promissory_note/README.md) - Token transfers and staking primitives

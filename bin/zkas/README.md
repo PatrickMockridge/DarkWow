@@ -79,7 +79,7 @@ constrain_instance(witness_y);
 
 **Without binding**: A malicious prover can claim any public key without knowing the secret.
 
-**See Also**: [Public Key Constraint Hook](../arch/pubkey-constraint-hook.md)
+**See Also**: [Public Key Constraint Hook](../../doc/src/arch/pubkey-constraint-hook.md)
 
 # ZK Language Syntax Specification
 

@@ -197,7 +197,7 @@ bash contrib/docker/testnet-node/test_entrypoint.sh
 
 ## Docs
 
-- [Full DarkWow Documentation](../../doc/src/dev/)
-- [Testing Infrastructure](../../doc/src/dev/testing/overview.md)
-- [Level 4: Containerized Devnet](../../doc/src/dev/testing/level-4-devnet.md)
+- [Full DarkWow Documentation](../../../doc/src/dev/)
+- [Testing Infrastructure](../../../doc/src/dev/testing/overview.md)
+- [Level 4: Containerized Devnet](../../../doc/src/dev/testing/level-4-devnet.md)
 - [darkwow-testnet Pipeline](../darkwow-testnet/README.md)

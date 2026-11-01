@@ -116,5 +116,5 @@ homomorphism, so a holder cannot create or destroy balance.
 - [Contract WASM Type System](../../../doc/src/arch/contract-wasm-type-system.md) — Part A
 - [Type System](../../../doc/src/arch/type-system.md)
 - [Privacy Model](../../../doc/src/arch/privacy.md) — L1 consume+create
-- [Box](box.md) — single-capability container
+- [Box](../../../doc/src/contract/box.md) — single-capability container
 - Source: `src/contract/purse/`

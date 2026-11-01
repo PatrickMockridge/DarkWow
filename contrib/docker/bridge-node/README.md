@@ -129,8 +129,8 @@ DARKFID_URL=tcp://192.168.1.100:31345 \
 ### Per-Chain Configuration
 
 Each chain has specific env vars for node URLs, keys, and confirmations.
-See the [universal_relayer config](../../../bin/universal_relayer/universal_relayer_config.toml)
-for the full template. Set chain-specific vars at runtime:
+The universal relayer is **not** in this workspace (its binaries are excluded as stubs); see that
+project's own repository for the config template. Set chain-specific vars at runtime:
 
 ```bash
 # Ethereum

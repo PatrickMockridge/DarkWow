@@ -259,4 +259,4 @@ cargo test -p darkfi_tender_contract
 - [Identity Contract](../identity/README.md) - O-Cap authorization primitive
 - [Labor Market Contract](../labor_market/README.md) - Job execution after tender award
 - [Insurance Market Contract](../insurance_market/README.md) - Underwriting and coverage
-- [O-Cap Architecture](../../doc/src/arch/ocap.md) - The O-Cap paradigm
+- [O-Cap Architecture](../../../doc/src/arch/ocap.md) - The O-Cap paradigm

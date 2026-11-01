@@ -179,10 +179,10 @@ The SDK provides:
 - **Raw builders**: `build_deposit_tx()`, `build_place_bet_tx()`, etc. for custom flows
 - **Helpers**: `generate_nonce()`, `derive_room_id()`
 
-See [`src/sdk/src/game_room/`](src/sdk/src/game_room/) for full SDK API.
+See [`src/sdk/src/game_room/`](../../../src/sdk/src/game_room/) for full SDK API.
 
 ## See Also
 
-- [Game Room Contract Specification](../../doc/src/arch/game_room.md)
-- [Provable Randomness](../../doc/src/arch/provable_randomness.md) - Entropy analysis
-- [DarkIRC](../../doc/src/misc/darkirc/specification.md) - Private channel messaging
+- [Game Room Contract Specification](../../../doc/src/contract/game_room.md)
+- [Provable Randomness](../../../doc/src/contract/provable_randomness.md) - Entropy analysis
+- [DarkIRC](../../../doc/src/misc/darkirc/specification.md) - Private channel messaging

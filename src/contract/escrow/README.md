@@ -174,7 +174,7 @@ ZK circuits operate in a finite field — the Pallas field defined by prime `p =
 
 **The key insight**: Not every comparison needs to return a value. If you only need to verify `a < b` holds (not compute a result from it), the constrain-only opcodes are sufficient and sound.
 
-**See**: [Field Arithmetic Constraints](../../../doc/src/arch/field_arithmetic.md) for the full treatment.
+**See**: [Field Arithmetic Constraints](../../../doc/src/arch/zk/field_arithmetic.md) for the full treatment.
 
 ## Opcode Discovery and Validation
 
@@ -204,7 +204,7 @@ The escrow contract is notable because it required **no new opcodes at all**. Th
 **Why it's sufficient here**:
 The refund circuit only needs to verify `current_block > timeout`. It doesn't need to compute or return how much time remains. The `LessThanStrict` opcode constrains the relation without producing an output — exactly what we need.
 
-**See also**: [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for the full mathematical reasoning behind comparison opcodes.
+**See also**: [zkVM Primitive Layer](../../../doc/src/arch/zk/zkvm_primitives.md) for the full mathematical reasoning behind comparison opcodes.
 
 ## Opcode Safety
 
@@ -402,7 +402,7 @@ Pedersen commitment `C = value * G + blind * H` ensures:
 
 Unlike other contracts, escrow has **no opcode blockers**. All required functionality (`poseidon_hash`, `ec_mul_base`, `less_than_strict`) already exists in the zkVM.
 
-**See**: [Escrow Contract MVP Analysis](../../../doc/src/arch/escrow.md) for the full technical analysis.
+**See**: [Escrow Contract MVP Analysis](../../../doc/src/contract/escrow.md) for the full technical analysis.
 
 ## Heavyweight Test
 

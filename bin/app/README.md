@@ -1,6 +1,6 @@
 # Unix (Linux/Mac)
 
-Install [rustup](rustup.rs), then run:
+Install [rustup](https://rustup.rs), then run:
 
 ```
 make
@@ -8,7 +8,7 @@ make
 
 # Windows
 
-Install [rustup](rustup.rs) and follow the instructions.
+Install [rustup](https://rustup.rs) and follow the instructions.
 
 If you get the error "VCRUNTIME140.dll was not found", then
 install [Microsoft Visual C++ Redistributable][msvc++].
