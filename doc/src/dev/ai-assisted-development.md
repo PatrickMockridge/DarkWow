@@ -188,47 +188,17 @@ model is incomplete — extend the model first, then fix the Rust.
 
 ## AI Agent Guardrails
 
-These guardrails exist because each was violated at least once, causing
-wasted pipeline time. An AI agent working on DarkWow MUST follow them:
+The binding rules are [`AGENTS.md`](../../../AGENTS.md) at the repository root, with the incidents
+that earned them in [`hazop-rules.md`](hazop-rules.md). This page does not keep a second list:
+the twelve-item list that stood here had drifted — it required `cargo check` after every file,
+which conflicts with the repository rule to build once a plan is code-complete, and it made
+"ask before running the pipeline" an agent convention where the enforced gate is
+`scripts/check-tracker-settled.sh`.
 
-1. **Model first, Rust second.** Never write Rust until the Python model
-   passes all scenarios.
-
-2. **No invented mechanisms.** Every consensus rule must trace to a
-   production reference: Bitcoin Core, Polkadot (uncle-merkle), or
-   Ethereum. If you can't cite the source, don't write the code.
-
-3. **Use only the Edit tool for Rust.** Never sed or regex on Rust code.
-   Edit tool gives precise, auditable, line-exact changes.
-
-4. **Compile after every file.** Fix one file, `cargo check`, verify clean.
-   Never batch-fix across files without intermediate compilation.
-
-5. **The pipeline is step 7 of 7.** "Code compiles" does not mean "run the
-   pipeline." Verify everything locally first.
-
-6. **Never poll a running pipeline.** Start it in the background and wait
-   for harness notification. Polling wastes context.
-
-7. **Failures belong in the plan.** Every process failure, shortcut, and
-   incorrect assumption must be written verbatim in the plan file.
-
-8. **Ask before running the pipeline.** Walk through every memory rule.
-   If uncertain, ask the user.
-
-9. **Full verification, not partial.** A fix that works for 2 blocks and
-   fails at 4 is not a fix. Verify continuous production.
-
-10. **The spec is fixed.** Two mining nodes. Both mine. Both converge. If
-    the code doesn't do this, the code is wrong — never change the spec.
-
-11. **AccountManager is the key authority.** All key operations flow
-    through AccountManager. No shell-level key manipulation. Use
-    `import_base58`/`export_base58` for key sharing.
-
-12. **Everything is a capability.** Coinbase, bearer bonds, stablecoins —
-    all discovered through the generic AEAD scanner. No per-contract
-    special cases in the wallet.
+Two project rules worth repeating while reading this page: **AccountManager is the single
+key/account authority** (no shell-level key manipulation), and **the wallet is a generic
+capability engine** — no per-contract special cases; capabilities are discovered by the generic
+scanner.
 
 ## AI Tool Guidance
 
