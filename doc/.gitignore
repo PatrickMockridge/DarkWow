@@ -1,8 +1,5 @@
 /venv
 book/*
-src/clients/cashierd_jsonrpc.md
-src/clients/darkfid_jsonrpc.md
-src/clients/faucetd_jsonrpc.md
 src/dev/seminars.md
 src/spec/crypto/index.md
 src/spec/pos/index.md

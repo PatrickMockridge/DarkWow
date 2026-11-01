@@ -38,8 +38,10 @@ cargo install mdbook
 For the plugin mdbook backends run:
 
 ```
-cargo install --git "https://github.com/lzanini/mdbook-katex"
 cargo install --git "https://github.com/badboy/mdbook-toc"
 cargo install --git "https://github.com/badboy/mdbook-mermaid" mdbook-mermaid
 cargo install --git "https://github.com/rustforweb/mdbook-plugins" mdbook-tabs
 ```
+
+`mdbook-katex` is **not** required: its preprocessor is commented out in `book.toml`
+(`[preprocessor.katex]`), and `latex-macros.txt` is retained only for a future re-enable.

@@ -9,22 +9,19 @@ JSONRPC = \
 	$(DWOWD_JSONRPC)
 
 all: $(JSONRPC)
-	./generate_seminar_ics.py --table > src/dev/seminars.md
 	mdbook build
 	cp -f theme/logo* book/
-	./generate_seminar_ics.py --ics
 	$(MAKE) -C ../ rustdoc
 	cp -r ../target/$(RUST_TARGET)/doc/* book/dev/
 	./remove_chapter_nav_js.py
 
-$(DARKFID_JSONRPC):
-	@echo "# darkfid JSON-RPC API" > $@
-	@echo "## Methods" >> $@
-	@echo "<!-- toc -->" >> $@
-	for i in blockchain tx stratum xmr misc management; do \
-		echo "## $$i methods" >> $@ ;\
-		./build_jsonrpc.py ../bin/darkfid/src/rpc/$$i.rs >> $@ ;\
-	done
+# The book only: no cargo/rustdoc, and no generated seminar page. The seminar
+# generator (generate_seminar_ics.py) was retired in July 2023 and wrote an
+# unlisted src/dev/seminars.md; the dead darkfid JSON-RPC rule built from
+# ../bin/darkfid, which no longer exists. Use `book` for documentation work.
+book:
+	mdbook build
+	cp -f theme/logo* book/
 
 clean:
 	rm -rf book
@@ -32,4 +29,4 @@ clean:
 github: all
 	./ghp_push.py
 
-.PHONY: $(JSONRPC) all clean github
+.PHONY: $(JSONRPC) all book clean github
