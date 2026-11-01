@@ -56,6 +56,18 @@ use super::{Block, LinearError, PowSource, Result, UncleBlock};
 #[cfg(feature = "pow")]
 use super::verify_uncle_proof;
 
+/// `OBL-C279` forensic: hash the same block with a freshly constructed masked VM for the block's
+/// own key. The validator's cached VM is the object under suspicion; a fresh construction in the
+/// same process is the cheapest second opinion that does not share its scratchpad. `None` when the
+/// VM cannot be built or hashes — diagnostics must not replace the rejection with a different error.
+#[cfg(feature = "pow")]
+fn fresh_vm_rehash(block: &Block) -> Option<Blake3Hash> {
+    let flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
+    let cache = randomx::RandomXCache::new(flags, &block.header.randomx_key).ok()?;
+    let vm = randomx::RandomXVM::new(flags, Some(cache), None).ok()?;
+    block.hash_with_vm(&vm).ok()
+}
+
 /// Stage-1 PoW validation, shared by the canonical acceptance path
 /// (`check_block_header`) and the competing/uncle-extension path
 /// (`CChainState::validate_competing_block`).
@@ -113,7 +125,38 @@ pub fn check_pow_stage(block: &Block, block_hash: &Blake3Hash) -> Result<()> {
         let b = block_hash.as_bytes();
         let hash_u32 = u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
         if !block.header.target.hash_is_valid(hash_u32) {
-            return Err(LinearError::InvalidPoW(block_hash.to_string()));
+            // OBL-C279: the one observed rejection was a validator hash that disagreed with the
+            // mining hash for the same block, and the error carried only the hash string. Name the
+            // inputs the miner's log can be compared against: the key the validator hashed with,
+            // the declared target and nonce, and the preimage's digest (so a changed blob is
+            // distinguishable from an unchanged blob hashed differently).
+            let mut detail = format!(
+                "{block_hash} height {} target {} nonce {} key {} blob {}",
+                block.header.height.get(),
+                block.header.target.get(),
+                block.header.nonce,
+                hex::encode(block.header.randomx_key),
+                blake3::hash(&block.header.to_mining_blob()),
+            );
+            // A fresh VM in this process is a second opinion on the cached one. It is opt-in:
+            // rejection is peer-triggered, and a 256 MB construction per rejection would be a
+            // denial-of-service lever. In the harness, `DWOW_POW_FORENSIC=1` makes the next
+            // occurrence say whether the cached VM is the difference.
+            #[cfg(feature = "pow")]
+            {
+                if std::env::var_os("DWOW_POW_FORENSIC").is_some() {
+                    match fresh_vm_rehash(block) {
+                        Some(fresh) if fresh == *block_hash => {
+                            detail.push_str(&format!(" fresh-vm {fresh} agrees-with-rejection"))
+                        }
+                        Some(fresh) => {
+                            detail.push_str(&format!(" fresh-vm {fresh} disagrees-with-rejection"))
+                        }
+                        None => detail.push_str(" fresh-vm unavailable"),
+                    }
+                }
+            }
+            return Err(LinearError::InvalidPoW(detail));
         }
     }
 
