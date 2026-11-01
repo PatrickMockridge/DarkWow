@@ -19,9 +19,9 @@ or outgoing respectively. They have multiple transport types; see
 `src/net/transport/` for the full list.
 
 Connections are then wrapped in a `Channel` abstraction which allows
-protocols to be attached. See `src/net/protocol/` and run `fd protocol`
-for custom application specific network protocols. Also see the follow
-tutorial:
+protocols to be attached. Custom application protocols live under `src/net/protocol/`
+(there is no `fd` binary in this tree; `fud` is the file-sharing daemon). Also see the
+following tutorial:
 
 * [Understanding Protocols](../../learn/dchat/creating-dchatd/protocols.md)
 
@@ -61,8 +61,8 @@ last time the peer was interacted with.
 
 The lists are ordered chronologically according to `last_seen`, with the
 most recently seen peers at the top of the list. The whitelist max size
-is 1000. The greylist max size is 5000. If the number of peers in these
-lists reach this maximum, then the peers with the oldest `last_seen`
+is 5000, the greylist 2000 and the darklist 1000 (`src/net/hosts.rs:79-81`). If the
+number of peers in these lists reaches this maximum, then the peers with the oldest `last_seen`
 fields are removed from the list.
 
 Each time a node receives info about a set of peers, the info is

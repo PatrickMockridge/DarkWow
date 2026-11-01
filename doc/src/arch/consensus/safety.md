@@ -15,8 +15,9 @@ the DarkWow stack. It has no isolated components:
 
 - The **wallet** computes fees from `fee_window_flags` in the block header
 - The **mempool** admits transactions by plain comparison against tier prices
-- The **miner** adjusts tier prices at window boundaries based on mempool
-  queue depths, and builds FeeCollectV1 from the plaintext fee pot
+- The **miner** derives tier prices at window boundaries from the completed window's
+  applied FeeV3 counts (chain data, not its mempool), and builds FeeCollectV1 from the
+  plaintext fee pot
 - The **contract** (native_token) verifies the claimed `total_fees` matches
   the plaintext pot `fees_db[height]` and zeroes it
 
@@ -58,8 +59,8 @@ The dual-channel design (public `fee_window_flags` + private
 direction (hold/+10%/-10%) for both circuit execution CF and WASM storage CF.
 All nodes can read these. They are advisory signalling, not consensus-validated
 (G5: `accept_block` does not reject invalid flags). They are excluded from the
-block hash to prevent circular dependency (flags depend on mempool state, block
-hash depends on header).
+block hash to prevent circular dependency (flags depend on the completed window's chain
+data, block hash depends on header).
 
 **Fee amounts — plaintext `fee` in FeeParamsV3.** The exact fee rides in the
 clear in the call data (`[0x08][FeeParamsV3]`); the block's fee total is
@@ -132,7 +133,7 @@ The fee system requires testing at every level of the taxonomy
 | Level | What It Tests | Fee-Specific Concerns |
 |-------|--------------|----------------------|
 | **Python Model** | Executable specification — 69 tests in `fee_window_model.py` | Full lifecycle scenarios, feedback loop, edge cases |
-| **L1 (Unit)** | Pure functions: `compute_fee()`, `CongestionFactor`, `WindowSignalling`, `encrypt_fee_for_miner()` | Deterministic integer arithmetic, no floats |
+| **L1 (Unit)** | Pure functions: `compute_fee_v3()`, `CongestionFactor`, `WindowSignalling` | Deterministic: the log is the integer `ilog2`; the α coefficients are `f64` but determinism survives by what they touch (FI-WINDOW-2) |
 | **L1.5 (Bridge)** | Production path: real ZK proofs + AEAD + accept_block + wallet scan | Full fee lifecycle: wallet→mempool→miner→FeeCollectV1 |
 | **L2 (Heavyweight)** | Multi-block chain: window boundaries, cross-window CF propagation, multi-contract fee differential | 20+ blocks to trigger window boundary, real ZK coinbases |
 | **L3 (Docker)** | End-to-end: wallet container → mining nodes → block production → wallet scan | Real RandomX, real P2P, 120s block times |
@@ -164,7 +165,8 @@ items:
 3. Unify fee estimate paths — single chain-derived value (C2)
 4. Replace `try_lock().unwrap_or(0)` congestion measurement (H4)
 5. Add diagnostic surface to `extract_fee()` (H1, H3)
-6. Wire `compute_total_fee()` and `resolve_cost_profile()` (H8, H9)
+6. Wire the risk multiplier — `compute_fee_v3(gas, cf, tier, risk)` is implemented and
+   admission reads `ContractRiskTracker`; `resolve_cost_profile()` exists and is tested (H8, H9)
 7. Implement `extract_tx_wasm_kb()` for DeployV1 (H5)
 8. Port `ContractRiskTracker` from Python (M2)
 
@@ -220,12 +222,13 @@ outside this fix's scope (the VM is off-limits).
 
 ### 8.5 Remediation
 
-- `push_value_commitment.zk` rewritten to use `sparse_merkle_root` + explicit
-  `constrain_equal_base(computed_root, data_root)` (the green `bridge` pattern)
-  instead of `set_membership`, reducing public inputs 6 → 5 and removing the
-  undocumented extra instance.
-- Client `to_vec()` (`client/push_value_commitment.rs`) + `get_metadata`
-  (`entrypoint.rs`) aligned to 5 values.
+- `push_value_commitment.zk` **no longer carries a membership proof**. The "data tree" was
+  never contract state, so the `set_membership`/`sparse_merkle_root` path was removed
+  entirely (§8.7). The circuit now proves commitment-correctness
+  (`commitment == poseidon_hash(4, value, nonce)`) and staker authorization.
+- Client `to_vec()` (`client/push_value_commitment.rs`) and `get_metadata`
+  (`entrypoint.rs`) publish the circuit's instances; there is no 6→5 reduction to record —
+  the previous version of this bullet described a fix that was superseded by the removal.
 
 ### 8.6 Verification result (verbatim)
 
@@ -362,9 +365,9 @@ WARN (implemented but untested/under-level), FAIL (not implemented / wrong).
 | FeeV3 (0x08) | PASS | merkle root + sk_H + add_fee fixed |
 | FeeCollectV1 (0x06) | PASS | exercised structurally by with_fee_collect |
 | MintV1 (0x01) | PASS | rejection placeholder (walled off) |
-| BurnV1 (0x02) | **FAIL** | merkle tree reproduction (see §11.4) |
-| TransferV1 (0x03) | **FAIL** | merkle tree reproduction |
-| SpendV1 (0x04) | **FAIL** | merkle tree reproduction |
+| BurnV1 (0x02) | PASS | remediation landed; `test_heavyweight_native_token` passes (§11.5) |
+| TransferV1 (0x03) | PASS | remediation landed; the FAIL below was the dated baseline |
+| SpendV1 (0x04) | PASS | remediation landed; the FAIL below was the dated baseline |
 
 ### 11.3 HAZOP Guide-Word Table (consensus-critical paths)
 

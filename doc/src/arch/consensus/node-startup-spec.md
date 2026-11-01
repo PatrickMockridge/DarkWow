@@ -66,8 +66,10 @@ must never mine while behind or on a divergent fork.
   verified against the compile-time `genesis_hash.txt` (`include_str!("../genesis_hash.txt")`). The hash
   depends on exactly three inputs — the genesis miner key, the magic bytes and the compiled contract WASM.
   `miner=[0u8;32]` is why the coinbase-to-`header.miner` binding enforced for ordinary blocks is EXEMPT at
-  genesis (see `block_acceptor.rs`, alongside the size-cap and witness exemptions): genesis carries no
-  miner identity, its authenticity is the pin. The pin is now POPULATED, so a mismatch is a hard error.
+  genesis (see `block_acceptor.rs`, alongside the witness exemption; there is no block-size cap — it was
+  removed): genesis carries no miner identity, its authenticity is the pin. The pin is POPULATED, and it
+  is enforced by the later `check_genesis_pin` path (`bin/dwowd/src/lib.rs:762,956,973`), not inside
+  `init_genesis`.
 - **The genesis identity is a single repository-wide value**: the devnet node0 key
   (`contrib/docker/darkwow-testnet/keys.toml`) with the `DRKW` magic. A second node MUST NOT
   independently create genesis; peers reject a divergent genesis via the pinned hash, and a genesis built

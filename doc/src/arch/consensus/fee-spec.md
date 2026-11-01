@@ -19,11 +19,11 @@ fee = gas × CF × tier × risk        tier ∈ { low:1×, medium:2×, high:4× 
 
 (`CF` and `risk` per §12.4.1; `gas` itself is the base denomination in wow.)
 
-- **gas** — units of work done in the block. Measured as the WASM-metered gas
-  (`BLOCK_GAS_LIMIT` / per-call `GAS_LIMIT`) plus the circuit row count
-  (`Σ rows(opcode)`, §12.4.2) and WASM deployment size (`wasm_kB`). Gas is
-  fully metered: a transaction may consume all of its gas before the state
-  transition completes, and the fee is charged on actual work.
+- **gas** — the circuit row count (`Σ rows(opcode)`, §12.4.2); callers pass it to
+  `compute_fee_v3(gas, cf, tier, risk)`. WASM deployment size is a **separate**
+  `compute_storage_fee(wasm_kB)` (§12.4.3), and the WASM-metered points
+  (`BLOCK_GAS_LIMIT` / per-call `GAS_LIMIT`) are the execution resource limiter,
+  not a fee input.
 - **tier** — one of three uniform priority multipliers (1×/2×/4×). The user picks
   a tier rather than an arbitrary fee amount. This removes **fat-finger risk** (an
   accidental absurd fee) and **deanonymisation via idiosyncratic fee behaviour**
@@ -196,8 +196,8 @@ charge, whether its stated functionality is attested, and its slashable endowmen
 alongside the actual execution cost during WASM execution. If a contract
 systematically under-declares (declared 1000, observed 2000) or ships an unattested,
 questionable circuit, the fouling detector escalates its roughness coefficient —
-`compute_total_fee()` now multiplies the declared circuit cost by the elevated risk
-factor, and the contract's users pay higher fees. If the contract fixes its
+`compute_fee_v3(gas, cf, tier, risk)` multiplies the declared circuit cost by the
+elevated risk factor, and the contract's users pay higher fees. If the contract fixes its
 declarations, obtains attestation, and sustains accuracy, the detector de-escalates
 the coefficient back toward baseline.
 
@@ -907,7 +907,8 @@ highest tier whose price its fee meets (or rejecting it below the low tier).
 There is no ZK threshold proof and no Pedersen commitment. `declare_charge`
 returns the `BlockCharge` domain type (type-system.md §2.3.1) so gas arithmetic
 cannot mix with fee or supply accounting; `extract_tier` returns the declared
-`FeeTier` (currently unused by `Mempool::add()`, which tiers on fee alone).
+`FeeTier`, and `Mempool::add()` passes it into `rederived_minimum_fee`
+(`crates/dwow-mempool/src/lib.rs:554-555`).
 
 **Miner re-derivation.** Miners SHALL independently re-derive the expected fee
 from the manifest cost profile (`gas × tier_price`) before including a transaction
@@ -1001,7 +1002,7 @@ its processes may exhibit. Fee operations exhibit these barbs:
 | `ALPHA_STANDARD` | fee_signalling | `0.01` | Log₂ coefficient for standard CF |
 | `MAX_ADJUSTMENT` | fee_signalling | `0.10` | Maximum ±10% CF change per window (I7) |
 | `FEE_WINDOW_SIZE` | fee_signalling | `20` | Blocks per fee window |
-| `FEE_WINDOW_TRANSITION_DELAY` | fee_signalling | `30` | Seconds after boundary block before new thresholds activate (§12.8.4) |
+| ~~`FEE_WINDOW_TRANSITION_DELAY`~~ | fee_signalling | — | **Not implemented.** No such constant or delay exists; `update_tier_prices` is called at the boundary with no grace period |
 | `MAX_K` | fee_signalling | `16` | Maximum allowed k value (`src/zkas/constants.rs`) |
 
 ## 11. Error Taxonomy
@@ -1179,7 +1180,7 @@ annotations (bit width, array length), derived from the gadget source
 | RangeCheck(bits) | `⌈bits/10⌉ + (bits%10 ? 2 : 0)` | running-sum window W=10 (`sinsemilla::K`) |
 | LessThanStrict, LessThanLoose, LessThanOrEqual, BaseLtStrict | 57 | 1 compare gate + 2 × RangeCheck(253) |
 | PoseidonHash(N) | `⌈N/2⌉ × 36` | P128Pow5T3: R_F=8 + R_P/2=28, RATE=2 |
-| EcAdd | 6 | incomplete addition (10 advice cols) |
+| EcAdd | 6 | complete addition (10 advice cols; `halo2_gadgets` `create_gate("complete addition")`) |
 | EcMul, EcMulVarBase | 510 | 255-bit double-and-add (2 rows/bit) |
 | EcMulBase, EcMulShort | 85 | fixed-base windowed |
 | EcGetX, EcGetY | 0 | coordinate extraction, no new gate |
@@ -1308,9 +1309,9 @@ Constants defined by this specification:
 
 | Constant | Value | Description |
 |----------|-------|-------------|
-| `CHARGE_PER_CALL` | `400_000_000` | Declared charge per contract call |
+| Per-call charge | `BlockCharge::new(GAS_LIMIT)` | Derived by the miner; there is no `CHARGE_PER_CALL` constant (`bin/dwowd/src/lib.rs:132-145`) |
 
-This value is calibrated so that a block at `BLOCK_GAS_LIMIT` can
+The per-call charge is derived rather than named so that a block at `BLOCK_GAS_LIMIT` can
 accommodate approximately 250 average contract calls, matching the
 `MinerConfig.max_txs = 250` default. It is the deployer's responsibility
 to declare a higher charge in `[[cost_profiles]]` for circuits that
@@ -1367,19 +1368,10 @@ the CF change from the current window to the next:
 0b0011..0b1111 = reserved for future granularity
 ```
 
-Dual encode/decode:
-
-```
-encode_flags_dual(circuit_cf, wasm_cf, prev_circuit, prev_wasm) -> u16:
-    circuit_byte = encode_flags(circuit_cf, prev_circuit)
-    wasm_byte    = encode_flags(wasm_cf, prev_wasm)
-    return (circuit_byte & 0xFF) | ((wasm_byte & 0xFF) << 8)
-
-decode_flags_dual(flags: u16) -> (circuit_cm, wasm_cm):
-    circuit_cm = (flags & 0xF0) >> 4
-    wasm_cm    = (flags >> 12) & 0x0F
-    return (circuit_cm.clamp(0, 2), wasm_cm.clamp(0, 2))
-```
+The flags are a typed newtype, `FeeWindowFlags(u16)` (`fee_window.rs:138`), not a bare
+header field: `pack(circuit_byte, wasm_byte) -> u16` builds them, and `circuit_byte()`,
+`wasm_byte()` and `derive_cfs()` read them. The newtype owns the bit shifts; do not
+hand-roll them in prose.
 
 A wallet reading the flags can compute the next window's thresholds
 without replaying the full adjustment logic for both CF dimensions.
@@ -1695,11 +1687,11 @@ In DarkWow's gas-based model, risk is shared:
 | No manifest (unknown) | 2.0× |
 
 The risk factor is a multiplier on the circuit component of the fee.
-These tiers are the current specification — contracts are classified by
-their manifest and attestation status at admission time. The automated
-feedback loop (observation → reputation → dynamic adjustment) is
-specified in §12.12.5 as future work; the static tier table above is
-the operational baseline.
+These tiers are a **design table, not the admission rule**. `attestation_risk_factor`
+is wallet-side observability only (`fee_window.rs:338-352` says so), and admission uses
+the dynamic `ContractRiskTracker` factor in `rederived_minimum_fee`
+(`crates/dwow-mempool/src/lib.rs:855-860`). The static tiers above are not consulted by
+the mempool; the automated observation → reputation → adjustment loop is the live path.
 
 The endowment is the contract's on-chain stake — it can be slashed if
 costs consistently exceed declared tolerance. This aligns incentives:
@@ -1903,7 +1895,7 @@ sources are:
 
 1. Block header `fee_window_flags` → `derive_cfs()` → `compute_fee_v3()`
 2. Contract manifest `[[cost_profiles]]` → `resolve_cost_profile()` →
-   `compute_total_fee()`
+   `compute_fee_v3()`
 3. Chain state sled trees (fee accumulator, contract risk state)
 4. Values deterministically derived from (1), (2), or (3)
 

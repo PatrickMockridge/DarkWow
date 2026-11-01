@@ -455,15 +455,18 @@ single party — the check is reproducible from public block data.
 The linear blockchain's consensus model is **ideal for testing**:
 
 1. **Deterministic**: Same input → same output every time. No race conditions.
-2. **No rollback**: State changes are final. No speculative commits that could vanish.
+2. **Explicit reorgs**: a heavier chain triggers `disconnect_block`; deterministic state
+   transitions mean the same blocks always produce the same result, so a reorg is a
+   recorded transition rather than an ambiguous speculative commit.
 3. **Stateless verification**: Only block headers + merkle proofs needed. No WASM execution.
-4. **Plain storage**: Uses sled directly, not sled-overlay. Simpler, faster, predictable.
+4. **Overlay-backed writes**: canonical calls share one `SledTreeOverlay`
+   (`execution.rs:241-245`) and commit atomically; there is no per-call private overlay.
 5. **Isolated**: Can run 5-node localnet harness with full consensus without the full validator stack.
 
 Example test harness behavior:
 ```rust
-// Run Level 1 lightweight tests (deterministic, no network)
-cargo test -p dwowd test_linear
+// Run the Level 1 pipeline tests (deterministic, no network)
+cargo test -p dwowd test_pipeline
 
 // Run Level 3 multi-node Docker testnet
 ./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native

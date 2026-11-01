@@ -28,14 +28,9 @@ Block hashes are computed by passing the serialized header through RandomX:
 
 ```rust
 impl Block {
-    pub fn hash(&self, vm: &RandomXVM) -> blake3::Hash {
-        let mut header_bytes = Vec::new();
-        self.header.encode(&mut header_bytes).unwrap();
-        let rx_hash = vm.calculate_hash(&header_bytes).expect("RandomX hash failed");
-        // Use first 32 bytes as blake3-compatible hash
-        let mut hash_bytes = [0u8; 32];
-        hash_bytes.copy_from_slice(&rx_hash[..32]);
-        blake3::Hash::from_bytes(hash_bytes)
+    pub fn hash_with_vm(&self, vm: &RandomXVM) -> Result<blake3::Hash> {
+        // Hashes the header's mining blob through RandomX; returns a Result,
+        // not a panicking Hash (`block.rs:233-245`).
     }
 }
 ```
@@ -124,7 +119,7 @@ path and position against `merkle_root`. `UncleProof` holds only `merkle_path` a
 The canonical block's `uncle_merkle_root` is built from uncle proofs:
 
 ```rust
-pub fn build_uncle_merkle(uncles: &[UncleBlock], _vm: &RandomXVM) -> ([u8; 32], Vec<UncleProof>) {
+pub fn build_uncle_merkle(uncles: &[UncleBlock]) -> (blake3::Hash, Vec<UncleProof>) {
     // 1. Compute pow_hash for each uncle using their randomx_key
     // 2. Build merkle tree using blake3 for structure (not PoW)
     // 3. Return root and proofs with position information
@@ -240,10 +235,11 @@ genesis initialization). Contracts MUST handle an empty `ix` byte slice in
 contract's own constants. When `ix` is non-empty, decode and use the
 provided parameters as normal (the production Deployooor path).
 
-25 of 28 contracts already follow this convention (the figure is this section's and has not been
-re-derived — the tree holds **32** contracts with a `proof/` directory out of 34, so both numbers
-have moved; `scripts/check-doc-canonical-counts.sh` derives them — `F-357`). The contract author
-should verify any new `init_contract` against the survey below.
+Do not quote a hand count here. `scripts/check-doc-canonical-counts.sh` derives the
+population: **32 contracts, 31 with a `proof/` directory, 34 directories** (the extra two are
+the `entropy` library and `test-harness`). The earlier "25 of 28" was stale and internally
+inconsistent (`F-357`). The contract author should verify any new `init_contract` against the
+survey below.
 
 ### Host Functions
 
@@ -258,7 +254,9 @@ WASM contracts can access these host functions:
 
 ### Gas Metering
 
-The WASM runtime uses `Metering` middleware with `GAS_LIMIT = 400_000_000` points.
+The WASM runtime uses `Metering` with `GAS_LIMIT = 400_000_000` points **and** a second
+`BulkMemoryMetering` middleware that charges bulk-memory operators by length (`len >> 2`);
+ops are no longer flat-priced (`vm_runtime.rs:118-131`, `bulk_metering.rs`; `OBL-C277`).
 
 ## Confirmation Model
 

@@ -1,6 +1,6 @@
 # Uncle Merkle Consensus
 
-Uncle Merkle consensus is a Pareto efficient mechanism: the canonical chain is **obligated** to offer competing uncle chains a one-time option to form a side chain and share the PoW reward. The uncle chain has a short time window (minutes) to accept or reject. Miners aren't punished for producing blocks that don't become canonical.
+Uncle Merkle consensus is a Pareto efficient mechanism: the canonical chain is **obligated** to offer competing uncle chains a one-time option to form a side chain and share the PoW reward. The uncle chain has a short window — bounded by `MAX_UNCLE_DEPTH` and the referencing block, not by a wall-clock timer — to accept or reject. Miners aren't punished for producing blocks that don't become canonical.
 
 ## Motivation
 
