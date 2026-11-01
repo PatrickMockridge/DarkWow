@@ -3,7 +3,7 @@
 
 The pipeline's Pareto claim is not a slogan: each lane records measured seconds per gate
 (`reports/ci/gate-times-<lane>.tsv`, and a 6-column global row in
-`/var/cache/darkwow/metrics/gate-times.tsv`). This report reads those rows and prints per-label
+the runner's `~/.cache/darkwow/metrics/gate-times.tsv`). This report reads those rows and prints per-label
 percentiles, per-lane totals, the slowest gates, gates with no data in 14 days, duplicate
 (commit,label) pairs across lanes, and budget breaches.
 
@@ -21,7 +21,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "contrib" / "ci" / "gate-groups.tsv"
-METRICS = pathlib.Path(os.environ.get("CI_METRICS_FILE", "/var/cache/darkwow/metrics/gate-times.tsv"))
+METRICS = pathlib.Path(os.environ.get("CI_METRICS_FILE", os.path.expanduser("~/.cache/darkwow/metrics/gate-times.tsv")))
 BUDGETS = {"fast": 300, "merge": 3600, "nightly": 7200}
 
 

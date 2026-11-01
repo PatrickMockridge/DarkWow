@@ -61,7 +61,7 @@ is unclassified or a fast-only command has no row. A check the umbrella does not
 
 A 32 GB-class host with a systemd user session (for `systemd-run --user --scope`), lingering enabled,
 Docker, the wasm32 target, full git history, and 20 GB free. Cargo's `target/` and registry live
-under `/var/cache/darkwow/`; Lean's `.lake` is cached by toolchain + manifest. No cargo, Lean or
+under the runner's `~/.cache/darkwow/`; Lean's `.lake` is cached by toolchain + manifest. No cargo, Lean or
 Docker command is wrapped in a second cgroup for Lean — `scripts/lean-build.sh` owns its own ceiling.
 
 ## Failure semantics

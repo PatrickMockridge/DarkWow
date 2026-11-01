@@ -6,15 +6,14 @@
 # records the same measured cost the umbrella records (`reports/gate-times.tsv`). A label runs at
 # most once per lane even when several selected groups name it.
 #
-# Sourced by `contrib/ci/run-ci-lane.sh` and the group scripts under `contrib/ci/gates/`. It must
-# not be executed directly.
+# Sourced by `contrib/ci/run-ci-lane.sh`. It must not be executed directly.
 
 CI_REPO_ROOT="${CI_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
 CI_LANE="${CI_LANE:-local}"
 CI_DRY_RUN="${CI_DRY_RUN:-0}"
 CI_COMMIT="${CI_COMMIT:-$(git -C "$CI_REPO_ROOT" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)}"
 CI_TIMING_FILE="$CI_REPO_ROOT/reports/ci/gate-times-$CI_LANE.tsv"
-CI_METRICS_FILE="${CI_METRICS_FILE:-/var/cache/darkwow/metrics/gate-times.tsv}"
+CI_METRICS_FILE="${CI_METRICS_FILE:-${DARKWOW_CI_CACHE:-$HOME/.cache/darkwow}/metrics/gate-times.tsv}"
 
 GATE_PASSED=0
 GATE_FAILED=0

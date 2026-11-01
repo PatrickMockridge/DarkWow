@@ -36,8 +36,8 @@ env:
   RAYON_NUM_THREADS: "10"
   RUST_MIN_STACK: "67108864"
   CARGO_TERM_COLOR: never
-  CARGO_HOME: /var/cache/darkwow/cargo
-  CARGO_TARGET_DIR: /var/cache/darkwow/target
+  CARGO_HOME: ${{ runner.workspace }}/../cache/cargo
+  CARGO_TARGET_DIR: ${{ runner.workspace }}/../cache/target
 
 jobs:
   select:
@@ -89,9 +89,7 @@ jobs:
         if: always()
         with:
           name: fast-static-${{ github.run_id }}
-          path: |
-            reports/ci/
-            ${{ runner.temp }}/ci/
+          path: reports/ci/
           if-no-files-found: warn
           retention-days: 14
 
@@ -203,10 +201,7 @@ jobs:
         if: always()
         with:
           name: merge-${{ github.run_id }}
-          path: |
-            reports/ci/
-            /tmp/hw_*.log
-            /tmp/lean-build.log
+          path: reports/ci/
           if-no-files-found: warn
           retention-days: 30
 
@@ -228,9 +223,7 @@ jobs:
         if: always()
         with:
           name: nightly-heavyweight-${{ github.run_id }}
-          path: |
-            reports/ci/
-            /tmp/hw_*.log
+          path: reports/ci/
           if-no-files-found: warn
           retention-days: 14
 

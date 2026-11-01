@@ -219,6 +219,7 @@ merge_lane() {
         bash -c "cd '$REPO_ROOT' && env TEST_ARGS='$CI_TEST_SKIP' make test"
 
     CI_SKIP_MAKE_TEST=1 run_umbrella merge "" --tier 1
+    cp -f /tmp/lean-build.log reports/ci/ 2>/dev/null || true
 
     gate "fast-only: repo doc links resolve" bash scripts/check-repo-doc-links.sh --check
     gate "fast-only: merge L1.5 production-path control" \
@@ -242,6 +243,7 @@ nightly_heavyweight() {
         env DWOW_TEST_LOGS=1 bash bin/dwowd/src/tests/heavyweight.sh \
         --deployooor --native-token --promissory-note --identity --oracle \
         --attestation --purse --box --multisig --nocapture
+    cp -f /tmp/hw_*.log reports/ci/ 2>/dev/null || true
     ci_summary
 }
 
