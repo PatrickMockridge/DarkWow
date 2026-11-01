@@ -956,9 +956,12 @@ comment above a single call site.
 
 ### A.4.8 Gas Metering
 
-The wasmer `Metering` middleware charges one gas unit per WASM opcode. Host
-functions additionally charge gas proportional to the operation's cost (data
-copy size, ZK validation, SMT operations).
+The wasmer `Metering` middleware charges a tiered per-opcode cost (1/2/4/8/256),
+and a second `BulkMemoryMetering` middleware charges bulk-memory operators by length
+(`len >> 2`) before `memory.fill`/`copy`/`init` (`vm_runtime.rs:399-445`,
+`bulk_metering.rs`; `OBL-C277`) — they are no longer flat-priced. Host functions
+additionally charge gas proportional to the operation's cost (data copy size, ZK
+validation, SMT operations).
 
 | Limit | Value | Scope |
 |-------|-------|-------|
@@ -1438,7 +1441,7 @@ defines ten constants.
 | Roulette | Fully V2 | place_bet_v2, settle_bet_v2, spin_wheel_v2 (settle_bet_v1 also fixed in-place) |
 | Box | V2 exists | put/take circuits |
 | Purse | V2 exists | deposit/withdraw/balance circuits |
-| Remaining ~150 circuits | **In progress** | V2 circuits exist but `get_metadata` may still reference V1 namespaces |
+| Remaining circuits | **Done** | 160 of 165 `.zk` files declare a V-suffixed circuit; the other five are box Put/Take and purse Deposit/Withdraw/Balance (listed in `circuit-versioning.md:57-64`); no entrypoint references a `_NS_V1` constant outside comments |
 
 **CI enforcement:** `scripts/check-circuit-domain-separation.sh` prevents new V1 circuits
 from being introduced. Any `poseidon_hash(...)` without a `DOMAIN_` prefix argument in a
