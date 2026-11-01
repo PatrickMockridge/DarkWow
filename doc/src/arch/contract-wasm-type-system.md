@@ -474,43 +474,13 @@ safety.md RC2 — *a witness the circuit does not bind*).
 
 The explicit encode/decode pattern SHALL follow these rules.
 
-**Encoding pattern:**
-
-```rust
-/// Encode a Purse to canonical fixed-offset bytes (ρ-calculus: quote).
-fn encode_purse(purse: &Purse) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(129);
-    buf.push(purse.version);
-    buf.extend_from_slice(&purse.purse_id.to_bytes());
-    buf.extend_from_slice(&purse.token_commit.to_repr());
-    buf.extend_from_slice(&purse.balance_commit.to_bytes());
-    buf.extend_from_slice(&purse.owner_commit.to_repr());
-    buf
-}
-
-/// Decode a Purse from canonical fixed-offset bytes (ρ-calculus: eval).
-/// Every field SHALL be validated through its named constructor.
-fn decode_purse(data: &[u8]) -> Result<Purse, ContractError> {
-    if data.len() != 129 {
-        return Err(ContractError::IoError(format!(
-            "Purse: expected 129 bytes, got {}", data.len()
-        )));
-    }
-    let version = data[0];
-    let purse_id = PurseId::from_bytes(data[1..33].try_into().unwrap())
-        .ok_or_else(|| ContractError::IoError("Purse: invalid purse_id".into()))?;
-    let token_commit = Option::<pallas::Base>::from(
-        pallas::Base::from_repr(data[33..65].try_into().unwrap())
-    ).ok_or_else(|| ContractError::IoError("Purse: invalid token_commit".into()))?;
-    let balance_commit = Option::<pallas::Point>::from(
-        pallas::Point::from_bytes(data[65..97].try_into().unwrap())
-    ).ok_or_else(|| ContractError::IoError("Purse: invalid balance_commit".into()))?;
-    let owner_commit = Option::<pallas::Base>::from(
-        pallas::Base::from_repr(data[97..129].try_into().unwrap())
-    ).ok_or_else(|| ContractError::IoError("Purse: invalid owner_commit".into()))?;
-    Ok(Purse { version, purse_id, token_commit, balance_commit, owner_commit })
-}
-```
+**The `Purse` record used as this section's example was removed.** It lived at
+`src/contract/purse/src/model/mod.rs` as a 129-byte record, but nothing could read it: a
+deposit carries no owner field, and the committed state lives in the Merkle leaf
+(`new_leaf = poseidon_hash(DOMAIN, purse_id, new_balance, state_nonce, owner_pub)`),
+which the host cannot invert. A record written and never read is dead state, so it was
+removed rather than wired (`OBL-C101`). Apply the encoding rules below to a current
+record (for example a `Box` or a `NativeToken` commitment), not to `Purse`.
 
 Rules:
 - Fixed byte layout with exact offsets. No variable-length codec.
