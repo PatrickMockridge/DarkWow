@@ -20,12 +20,15 @@ SRC = \
 
 BIN = zkas
 
+# Honor cargo's target-dir override (see script/contract-build-recipe.mk).
+TARGET_DIR = $(or $(CARGO_TARGET_DIR),../../target)
+
 all: $(BIN)
 
 $(BIN): $(SRC)
 	RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) build --target=$(RUST_TARGET) --release --locked --package $@
-	cp -f ../../target/$(RUST_TARGET)/release/$@ $@
-	cp -f ../../target/$(RUST_TARGET)/release/$@ ../../$@
+	cp -f $(TARGET_DIR)/$(RUST_TARGET)/release/$@ $@
+	cp -f $(TARGET_DIR)/$(RUST_TARGET)/release/$@ ../../$@
 
 clean:
 	RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) clean --target=$(RUST_TARGET) --release --package $(BIN)
