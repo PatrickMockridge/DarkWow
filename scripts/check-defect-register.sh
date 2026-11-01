@@ -262,10 +262,14 @@ def check(register_text, prev_text, changed, root, mode="work"):
         if oid not in rows and oid not in appendix:
             errors.append(f"{oid}: left the main table without a tombstone")
 
-    # The stated decisions count must match the file.
-    m = re.search(r"(\d+) decisions", register_text)
-    if m and int(m.group(1)) != len(decisions):
-        errors.append(f"stated decisions count {m.group(1)} != decisions.md rows {len(decisions)}")
+    # Every stated decisions count must match the file. The register states it in two places
+    # (the header and the Non-defects section); reading only the first let the second go stale
+    # and still pass — measured 2026-11-01: :32 said 47, :86 said 45, decisions.md had 47.
+    for m in re.finditer(r"(\d+) decisions", register_text):
+        if int(m.group(1)) != len(decisions):
+            line = register_text[:m.start()].count("\n") + 1
+            errors.append(f"stated decisions count {m.group(1)} at :{line} "
+                          f"!= decisions.md rows {len(decisions)}")
 
     # A severity/likelihood decrease needs a basis.
     for oid, row in rows.items():
@@ -479,6 +483,10 @@ def self_test():
         two_dec = (head + open_row + tomb + cycle_open + "\n2 decisions\n")
         expect("decisions count mismatch refused",
                any("decisions count" in e for e in check(two_dec, base, ["src/foo.rs"], tmp)[0]))
+        # A first count that is right must not mask a second that is wrong (the :32/:86 defect).
+        second_dec = (head + open_row + tomb + cycle_open + "\n1 decisions\n\n2 decisions\n")
+        expect("second decisions count mismatch refused",
+               any("decisions count 2" in e for e in check(second_dec, base, ["src/foo.rs"], tmp)[0]))
         write(APPROVAL_REL, "scope_sha256=" + "0" * 64 + "\nappendix_baseline_sha256="
               + appendix_baseline + "\nbatch=OBL-C1\n")
         expect("stale approval hash refused",

@@ -83,7 +83,7 @@ lapsed bound fails the register gate; it is not re-dated silently.
 
 ## Non-defects
 
-45 decisions, accepted risks and spec interpretations are in
+47 decisions, accepted risks and spec interpretations are in
 [`decisions.md`](decisions.md). They are not rows here and cannot green a defect.
 
 ## Settled ids (citation appendix)
