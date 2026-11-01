@@ -17,6 +17,15 @@
 #   P4 `gate walks ... N circuits`         -> the gate count
 #   P5 `N `.zk` circuits`                  -> the `src/contract/*/proof/*.zk` count
 #   P6 `NNN ZK circuits` (three-digit)     -> either count
+#   P7 `N contract files total`            -> the `doc/src/contract/*.md` count (the hand tree's
+#                                             figure; `arch/README.md:143` said 33 against 42)
+#   P8 `DarkWow has N contracts`           -> the contract count (32: 34 dirs minus the `entropy`
+#   P9 `N-contract catalog|ecosystem|suite`   library and `test-harness`)
+# The P8-P9 patterns are phrase-anchored on purpose. A blanket `N contracts` — and even
+# `all N contracts` — fires on legitimate local counts ("all 21 contracts through Deployooor",
+# "all 27 contracts" in a batch script, "31 contracts have integration.rs"), which is the
+# false-positive class the header warns about. The canonical population is stated in one of
+# these two shapes.
 # A number that is correct-in-context but not the derived value (a historical population, e.g. the
 # audit's "144") is waived in `script/doc_count_exceptions.txt` (`path : number : reason`). The class
 # this gate does NOT cover — an unflagged local count that has gone stale — is left to the LLM review
@@ -44,6 +53,9 @@ PATTERNS = [
     ("P4", re.compile(r'gate walks[^0-9]{0,14}\*{0,2}(\d+)\s+circuits'), "eq:circuits_gate"),
     ("P5", re.compile(r'(\d+)\s+`?\.zk`?\s+circuits\b'), "eq:circuits_contract"),
     ("P6", re.compile(r'(\d{3})\s+ZK circuits\b'), "in:circuits_contract,circuits_gate"),
+    ("P7", re.compile(r'(\d+)\s+contract files total\b'), "eq:contract_docs"),
+    ("P8", re.compile(r'DarkWow has \*{0,2}(\d+)\s+contracts\b'), "eq:contracts"),
+    ("P9", re.compile(r'(\d+)-contract\s+(?:catalog|ecosystem|suite)\b'), "eq:contracts"),
 ]
 
 
@@ -54,7 +66,12 @@ def derive(root):
     contract = list(c.glob("*/proof/*.zk"))
     gate = contract + list((root / "proofs" / "core").glob("*.zk")) \
         + list((root / "bin" / "darkirc" / "proof").glob("*.zk"))
+    # The population the prose counts: the 34 directories hold the contracts plus two
+    # non-contract members — `entropy` (a library, not a contract) and `test-harness`.
+    contracts = [d for d in dirs if d.name not in {"entropy", "test-harness"}]
+    contract_docs = list((root / "doc" / "src" / "contract").glob("*.md"))
     return {"contract_dirs": len(dirs), "with_proof": len(with_proof),
+            "contracts": len(contracts), "contract_docs": len(contract_docs),
             "circuits_contract": len(contract), "circuits_gate": len(gate)}
 
 
@@ -120,6 +137,21 @@ def main():
             print("FAIL: --self-test the derived gate count equals 180; cannot exercise P3")
             return 1
         print("OK: --self-test — P3 parses and would reject 'Inventory: 180 circuits'")
+        facts = derive(pathlib.Path(os.environ["DOC_CANONICAL_COUNTS_ROOT"]))
+        line3 = "the tree diagram ends (33 contract files total)"
+        got = [int(m.group(1)) for pid, rx, kind in PATTERNS if pid == "P7"
+               for m in rx.finditer(line3)]
+        if got != [33] or facts["contract_docs"] == 33:
+            print(f"FAIL: --self-test P7 did not parse a planted 33 or the tree holds 33: {got}")
+            return 1
+        print("OK: --self-test — P7 parses 'N contract files total' and would reject 33")
+        line4 = "the canonical 99-contract ecosystem"
+        got4 = [int(m.group(1)) for pid, rx, kind in PATTERNS if pid == "P9"
+                for m in rx.finditer(line4)]
+        if got4 != [99] or facts["contracts"] == 99:
+            print(f"FAIL: --self-test P9 did not parse a planted 99 or the tree holds 99: {got4}")
+            return 1
+        print("OK: --self-test — P9 parses 'N-contract ecosystem' and would reject 99")
         return 0
 
     root = pathlib.Path(os.environ["DOC_CANONICAL_COUNTS_ROOT"])
