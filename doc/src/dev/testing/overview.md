@@ -23,7 +23,7 @@ public-facing (LAN/internet).
 | 1.5 | **Pre-Production Bridge** | **Production-path integration: real ZK proofs, real AEAD encryption, real accept_block, real wallet scan** (BlockTarget::MAX, deterministic ZK). Enforces MoC gate before Docker pipeline. Nullifier replay + scan determinism verified. | ~2-7 min | `cargo test --release -p dwowd --lib -- test_wallet_coinbase_scan_only test_canonical_call_failure_rejects_block test_merge_mined_block_acceptance test_merge_mined_block_deterministic test_wallet_capability_scan` |
 | 2 | Heavyweight | Contract **functions, ZK proofs, uncle-merkle block execution** — all 32 contracts with exhaustive function coverage. Deployment not tested (uses direct path for setup). | Minutes | `./bin/dwowd/src/tests/heavyweight.sh --all`, `cargo test --release -p dwowd test_heavyweight_<contract>` |
 | 3 | Containerized Localnet | Multi-node Docker testnet (seed + mining nodes), P2P, RandomX, bridge lifecycle, wallet, 6 modes, 21 phases, composable flags | Persistent | `./test_pipeline.sh --mode native\|merge\|bridge\|wallet\|join-native\|join-merge` in `contrib/docker/darkwow-testnet/` |
-| 4 | Containerized Devnet | Public-facing mining node for shared devnets over LAN/internet | Persistent | `docker run --network=host -e IS_SEED=true darkwow-devnet` |
+| 4 | Containerized Devnet | Public-facing mining node for shared devnets over LAN/internet | Persistent | `docker run --network=host -e IS_SEED=true dwow-devnet:latest` |
 | Wallet | Wallet capabilities | L1: Bash CLI (seconds). L2: Rust in-process (`cargo test -p dwow_wallet --lib` — 60 tests, seconds; the `-- capability::tests` filter this cell used to name selected **nothing**, because `bin/dww/src/capability.rs` contains no tests — the capability assertions are in `bin/dww/src/walletdb.rs`, e.g. `test_get_capabilities_by_asset_filter`). L3: Docker container (persistent). | Seconds to Persistent | `./bin/dww/test_capability_lightweight.sh`, `cargo test -p dwow_wallet --lib -- capability::tests`, `./contrib/docker/darkwow-testnet/test-wallet.sh` |
 | Wallet | Wallet in Dockernet | End-to-end wallet testing with mining nodes + wallet container. Guardrailed commands, verified subcommand syntax, pre-flight checklist. | Persistent | See [Wallet Testing in Dockernet](wallet-testing.md) |
 | **Fee System** | **Cross-stack coordination** | **Invariant-driven integrative testing across wallet→mempool→miner→contract. Risk factor emergence, encrypted fee channel, PID congestion control, Pedersen accumulator lifecycle. Python model as executable specification (70 tests).** | Seconds to Persistent | `python3 contrib/model/fee_window_model.py`, `cargo test -p dwowd --lib -- fee`, see [Fee System Testing](fee-testing.md) |
@@ -259,7 +259,7 @@ Empty proofs for ZK-gated functions are rejected by the uniform runner's
 never a heuristic). There is no opt-in toggle — all heavyweight tests enforce
 STRICT_ZK. A CI audit test at `src/contract/test-harness/tests/zk_audit.rs`
 cross-checks every harness's `circuits()` list against the `.zk.bin` files on
-disk (175 `.zk.bin` files exist across contract `proof/` directories). Each
+disk (165 `.zk.bin` files exist under `src/contract/*/proof/`). Each
 harness `spawn()` builds its proving keys, so the audit is ZK-setup-bound
 (~80 min), not decode-bound.
 
@@ -268,7 +268,7 @@ Level 1 through the Deployooor contract. Level 2 uses the direct
 `deploy_contract()` path solely for test setup convenience.
 
 **Caveats:** Requires `--release` mode and `RUST_MIN_STACK=67108864` (64MB)
-for halo2 proving keys. All 43 tests complete in ~480 seconds.
+for halo2 proving keys. The suite’s own count (currently 45 `test_heavyweight_*` functions plus `test_relayer_lifecycle_heavyweight`) completes in ~480 seconds.
 
 See [Level 2: Heavyweight Tests](level-2-heavyweight.md).
 

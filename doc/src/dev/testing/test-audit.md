@@ -5,6 +5,11 @@ the testing documentation claims exists, against what is actually present in the
 tree. It is the evidence base for the [L3 Readiness Specification](l3-readiness-spec.md).
 
 Audit date: 2026-08-16. Branch: `linear-master`. All file paths are repo-root-relative.
+
+> **Counts are the 2026-08-16 measurement.** Since then the tree holds **165** `.zk.bin`
+> under `src/contract/*/proof/` (not 175/167) and **45** `test_heavyweight_*` functions plus
+> `test_relayer_lifecycle_heavyweight` (not 43/59). Read the figures below as the audit's
+> date, not today's; re-derive with `ls` / `grep -c 'fn test_heavyweight_'`.
 Findings are classified `BLOCKING` (must be remediated before the L3 pipeline is
 declared ready to run) or `NON-BLOCKING` (recorded; remediation deferred).
 

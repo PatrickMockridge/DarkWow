@@ -133,7 +133,7 @@ NETWORK="dwow-devnet"
 DRK="./target/release/dwow_wallet"
 
 # Generate a keypair
-$DRK -n $NETWORK wallet keygen
+# There is no `wallet keygen`: declare the identity in keys.toml (AccountManager).
 # Output: address (bs58) and secret (hex)
 
 # Write the secret to a secure temp file

@@ -4,6 +4,11 @@ Single container image for running a cross-chain bridge relayer with capital
 endowment. Combines dwowd fullnode, bridge/endowment contract deployment, and
 universal_relayer into one image with three runtime modes.
 
+> **Status: the relayer mode is not buildable from this tree.** `bin/universal_relayer` and the
+> per-chain relayer binaries are excluded from the workspace as stub code (`Cargo.toml:34-40`).
+> The dwowd and contract-deployment parts are real; the `universal_relayer` process described
+> below is not in this repository.
+
 ## Base Image
 
 This image inherits from `darkwow-base:24.04` — a pre-baked Ubuntu 24.04 image

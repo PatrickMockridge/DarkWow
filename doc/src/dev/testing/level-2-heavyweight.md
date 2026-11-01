@@ -23,7 +23,7 @@ This document is a user-facing guide. Where they conflict, `heavyweight-spec.md`
 
 ### Test Structure
 
-59 tests total across two patterns:
+The suite’s own count across two patterns (currently 45 `test_heavyweight_*` functions plus the relayer lifecycle test):
 - **32 spec-based tests** using `run_heavyweight_test()` (74.4%): each contract has a
   `ContractTestSpec` in `bin/dwowd/src/tests/specs/` and a 4-line wrapper in
   `heavyweight_pipeline.rs`
@@ -215,7 +215,7 @@ block.submit().await?;
 # Block execution suite
 ./heavyweight.sh --block-execution
 
-# All 59 tests
+# All heavyweight tests
 ./heavyweight.sh --all
 ```
 

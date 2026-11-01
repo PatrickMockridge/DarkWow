@@ -332,8 +332,9 @@ depends on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
   operand bound that `BaseDivGadget.less_than_or_equal_integer_reading` consumes is now **derived
   from the circuit's statement list** instead of being supplied as a hypothesis. `Transcribed.lean`
   is what supplies those lists — so what remains is exactly the `(r, s) ↦ a circuit` mapping and
-  nothing else, which is the residue `OBL-T7` records; that is why `OBL-Z12` stays `PARTLY` rather
-  than closing, since only one row should claim a single missing step. The conjunct's cost is
+  nothing else, which is the residue `OBL-T7` records. The quotient bounds for the known circuits are
+  pinned by `script/quotient_bounds.txt` and enforced by `check-circuit-quotient-bounds.sh`, so
+  `OBL-Z12` is **CLOSED** even though the `(r, s) ↦ circuit` mapping is not mechanized. The conjunct's cost is
   recorded where it was paid: a stronger `Satisfies` is a weaker `soundness`, and for a valuation of
   a real circuit it is no extra obligation, because the chip enforces the bound
   (`Comparison.range_check_64_is_bounded`). Measured after the change: 705 theorems, every budget
@@ -487,7 +488,7 @@ depends on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
   now in the tree**: `(r, s) ↦ a circuit` is `CircuitIndex.lean`, generated and gated, carrying one
   inhabitant of `Capability.Inversion.CircuitDerivable` per pair for the twelve pairs this layer
   instantiates. **The figures in this paragraph are the transcription's older readings** — it is
-  **178 circuits over 2677 statements** now (not 181/2747), **167** refute the strict property (not
+  **177 circuits over 2735 statements** now (not 181/2747), **166** refute the strict property (not
   170), decomposed **154 `redundant` / 12 `declared-free` / 1** the model's constant boundary; the
   three that were the checker's own `OBL-Z16` failures are gone with the sites that caused them, and
   the checker itself now exits 0.
@@ -675,8 +676,8 @@ sequence and no OOM-killer line**: swap thrash, not a clean OOM. The failed scop
 The module responsible is `src/Transcribed.lean` — a generated module of `decide` verdicts over the
 transcribed circuits, and the single most expensive elaboration in the tree. It was 181 `decide` proofs
 over 2747 statements when this paragraph was written; **measured 2026-09-24 by its own freshness gate,
-`python3 scripts/gen_circuit_transcription.py --check`, it is 178 circuits / 2677 statements / 11 strictly
-holding, 167 failing** — the figures here have moved twice with the sources, so quote them from the gate.
+`python3 scripts/gen_circuit_transcription.py --check`, it is 177 circuits / 2735 statements / 11 strictly
+holding, 166 failing** — the figures here have moved twice with the sources, so quote them from the gate.
 Until that day it was imported by `src/DarkFi.lean`, so it sat on the default path of *every* library
 build; it is now
 `lean_lib Transcribed`, built only when a gate asks for it.
@@ -782,7 +783,7 @@ proofs/lean/
     ├── CheckAxioms.lean        # `lean --run` collector: the fact base for `@[axiom_budget]`
     ├── Transcribed.lean        # GENERATED (scripts/gen_circuit_transcription.py, freshness-gated):
     │                           #   the account, and every circuit's `List Stmt` + one `decide`
-    │                           #   verdict each (178 circuits as of 2026-09-24), as one module. A
+    │                           #   verdict each (177 circuits at 2026-11-01), as one module. A
     │                           #   library of its own (`lean_lib Transcribed`), NOT on
     │                           #   `lake build DarkFi`'s path
     ├── CircuitIndex.lean       # GENERATED (scripts/gen_circuit_index.py, freshness-gated): the
@@ -894,6 +895,6 @@ To add a new capability type:
 To add a new ZK opcode proof:
 1. Model the constraint equations in `Gadgets.lean` or `Comparison.lean`
 2. State and prove the soundness theorem
-3. `lake build`
+3. `scripts/lean-build.sh build DarkFi Transcribed CircuitIndex`
 
 All Lean4 sources are AGPL-3.0-only.

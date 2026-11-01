@@ -3,6 +3,11 @@
 Single container image for joining the public DarkWow testnet as a mining node.
 One image, two mining modes, zero external dependencies beyond Docker.
 
+> **Status: this image predates the declared-key change.** Its entrypoint still presedes
+> `WALLET_SECRET_FILE`, but `dwowd` now starts with `--keys keys.toml` and never generates a
+> keypair (`AccountManager::open` hard-errors). Use `contrib/docker/darkwow-testnet/` (which
+> mounts `/run/config/keys.toml`) until this entrypoint is updated.
+
 ## Quick Start
 
 ```bash
@@ -133,7 +138,7 @@ Generate a wallet with `dwow_wallet` before starting the node:
 
 ```bash
 # Build from source first (`make`), then:
-./target/release/dwow_wallet -n darkwow-testnet wallet keygen
+# There is no `wallet keygen`: declare the identity in keys.toml (AccountManager).
 ./target/release/dwow_wallet -n darkwow-testnet wallet address
 
 # Write the secret to a file (never pass raw hex in CLI)
@@ -163,12 +168,12 @@ Without this, all chain data is lost when the container is removed.
 # dwowd RPC
 curl -s http://127.0.0.1:31345 -X POST \
     -H 'Content-Type: application/json' \
-    -d '{"method":"blockchain.info","params":[],"id":1}'
+    -d '{"method":"blockchain.get_height","params":[],"id":1}'
 
 # P2P connections
 curl -s http://127.0.0.1:31345 -X POST \
     -H 'Content-Type: application/json' \
-    -d '{"method":"p2p.info","params":[],"id":1}'
+    -d '{"method":"p2p.get_info","params":[],"id":1}'
 
 # p2pool stats (merge mode)
 curl -s http://127.0.0.1:3333/stats

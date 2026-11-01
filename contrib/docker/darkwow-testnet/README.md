@@ -29,7 +29,7 @@ NETWORK="darkwow-testnet"
 **Step 2: Generate a keypair for mining rewards**
 
 ```bash
-$DRK -n $NETWORK wallet keygen
+# There is no `wallet keygen`: declare the identity in keys.toml (AccountManager).
 # Output:
 #   Address: fao1... (bs58)
 #   Secret:  abc123... (hex)
@@ -313,7 +313,7 @@ to persist the hostlist and blockchain data.
 | `FORWARD_DESTINATION` | (empty) | Vestigial — captured in `entrypoint.sh` and passed through compose, but no code reads it. Coinbase rewards bind to the mining node's declared key (`NODE_NAME` + `--keys keys.toml`), not to this env var. |
 | `MERGE_MINING` | `false` | Enable merge mining via Monero p2pool |
 | `MM_RPC_PORT` | `31348` | Merge mining JSON-RPC port (p2pool protocol) |
-| `FINALITY_MODE` | `always` | Finality mode: `always`, `never`, or `auto` |
+| `FINALITY_MODE` | `always` | Finality mode: `always`, `native`, or `signaled` |
 | `FINALITY_DISABLE_CARIBINA` | `false` | Disable Caribina finality proofs |
 | `FINALITY_ENABLE_MONERO` | `false` | Enable Monero finality anchors (auto-enabled when MERGE_MINING=true) |
 | `MONERO_MIN_CONFIRMATIONS` | `3` | Minimum Monero confirmations before accepting anchor |
@@ -646,7 +646,7 @@ Run `python3 pipeline_spec.py` to validate the spec.
 | 1 | Clean | Container/volume teardown, kill stale cargo/rustc/dwowd/lilith processes, remove wallet secret. With `--fresh`: also prunes all Docker build cache, images, and buildx builders. |
 | 2 | Build | Verify BUILD_COMMIT on origin/linear-master, then `docker build` the testnet image once (all 32 contracts built through `make contracts` / the shared recipe, with the memory-max, genesis-purity and freshness gates run inside the image) and the wallet image when `--with-wallet`. With `--no-cache`: rebuilds all layers from scratch. With `--skip-build`: verify cached images exist. |
 | 3 | Validate prereqs | Check required files (entrypoint, compose, Dockerfile), mode-specific files (Dockerfile.monero, WASM contracts), bridge helper binary, `DWW --version` smoke test |
-| 4 | Generate wallet | Generate N keypairs via `DWW wallet keygen` (one per --with-wallet count), write secrets to `/tmp/dwow_mining_secret_N` |
+| 4 | Declare wallet keys | Read the sections for the N wallet containers from `keys.toml`; the wallet never generates a keypair |
 | 5 | Start | `docker compose --profile <mode> up -d` with staggered startup (RandomX init serialization). Bridge mode starts native containers first, verifies mesh, then starts bridge-node. With `--with-wallet`: starts wallet containers with per-wallet data volume + secret bind-mount + readiness probe. |
 | 6 | Verify containers | Every expected container's Docker state is `running` (a `Restarting`/`Exited`/`Dead` container fails, and an `unhealthy` healthcheck fails); varies by mode and --nodes count. With `--with-wallet`: also expects `dwow-wallet-N` containers. |
 | 7 | RPC health | TCP JSON-RPC ping to node0 (port 31345), node1 (31346); plus node2 (31350) and monerod (28081) for merge |

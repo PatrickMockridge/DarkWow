@@ -23,9 +23,10 @@ A privacy-preserving blockchain rebuilt around **six design commitments**:
    `LessThanOrEqual`, `IsNotEqual`, and `BaseDiv` are proved as gadgets on this
    fork — not inherited from upstream (`Gadgets.less_than_or_equal_sound`,
    `Gadgets.is_not_equal_fully_pure`, `BaseDivGadget.sqMul_is_inverse`). The
-   proofs take the range checks their soundness rests on as hypotheses; that the
-   253-bit comparison chip *discharges* them is the one step still open — OBL-Z12
-   in `doc/src/arch/verification-hazop.md`. [Read more →](doc/src/arch/zk/opcodes.md)
+   proofs take the range checks their soundness rests on as hypotheses; the
+   quotient operand bounds are pinned by `script/quotient_bounds.txt` and enforced by
+   `scripts/check-circuit-quotient-bounds.sh` (OBL-Z12 is CLOSED).
+   [Read more →](doc/src/arch/zk/opcodes.md)
 
 5. **No premine** — Every coin mined. No SAFT, no insider allocation.
 
@@ -60,11 +61,12 @@ miner shares the reward with uncle miners via merkle proofs. No overlay/diff.
 **[Dual Finality](doc/src/arch/caribina.md)** —
 Two anchoring layers are designed to protect against 51% attacks: Caribina
 (Arweave proof-of-storage, ~2min settlement, protects all miners) and Monero
-merge mining (p2pool, ~6min settlement, protects merge miners). **Both are
-currently partial**: Caribina publishes anchors but its verifier is not wired
-into the node, and the Monero anchoring gadget has never been switched on —
-merge mining itself is live. See `OBL-C63`–`OBL-C69` in the
-[defect tracker](doc/src/arch/verification-hazop.md).
+merge mining (p2pool, ~6min settlement, protects merge miners). **Caribina
+anchoring and verification are live** — acceptance calls `verify_anchor_proof` and
+enforces a verified anchor. The **Monero anchor is not enforced**: its header fields are
+never written and `verify_monero_anchor` has no production caller, although merge mining
+itself is live. See [decisions](doc/src/arch/decisions.md) and
+[residual risk](doc/src/arch/residual-risk.md) for the accepted gaps.
 [Caribina →](doc/src/arch/caribina.md)
 [Monero →](doc/src/arch/monero-merge-mining.md)
 

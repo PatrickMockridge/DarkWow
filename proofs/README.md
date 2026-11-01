@@ -44,7 +44,7 @@ in `src/contract/*/proof/`.
 
 Formal verification of the zkVM opcodes and gadgets, the cross-cutting theorems, and the
 assumption boundary — organised in three layers. **The counts are in the canonical table below:
-32 opcodes, 167 contract circuits, 6 assumptions.** This paragraph read "all 39 zkVM opcodes, all
+32 opcodes, 165 contract circuits, 6 assumptions.** This paragraph read "all 39 zkVM opcodes, all
 120 contract ZK circuits" until 2026-10-18; those numbers do not match the tree, and the circuit
 layer is a gate rather than a Lean proof.
 
@@ -56,9 +56,9 @@ curl -L https://github.com/leanprover/elan/releases/download/v4.2.1/elan-x86_64-
 ./elan-init -y --default-toolchain 4.12.0
 source ~/.elan/env
 
-# Run verification
-cd proofs/lean
-lean --run src/Main.lean
+# Run verification through the wrapper (never bare lake)
+scripts/lean-build.sh build DarkFi Transcribed CircuitIndex
+scripts/check-lean-suite.sh
 ```
 
 ### Canonical verification status (2026-10-18)
@@ -70,9 +70,9 @@ forward.** Where another document disagrees, this table and its command are the 
 |---|---|---|---|---|---|
 | zkVM opcodes | **32** (31 excluding the internal `Noop`) | the whole `define_opcodes!` block in `src/zkas/opcode.rs` | Lean theorems where `opcodes.md` names one per opcode; manual verdict elsewhere | **mixed** — per opcode, never a blanket "all verified" | `grep -cE '^\s+[A-Z][A-Za-z0-9]+ = 0x[0-9a-f]{2},' src/zkas/opcode.rs` |
 | Gadgets | **10** files | `src/zk/gadget/*.rs` — 9 implementations + `mod.rs` | Lean: `Gadgets.lean`, `Comparison.lean` | per gadget, see `opcodes.md` | `ls src/zk/gadget/*.rs \| wc -l` |
-| Contract circuits | **167** | `.zk` files under `src/contract/*/proof/` (34 contract dirs, 32 carrying proofs) | **gate**, not Lean — `script/circuit_instance_derivation.py` | **mechanized and passing** | `scripts/check-doc-canonical-counts.sh` |
-| Circuits the gate walks | **179** | 167 contract + `proofs/core/` 10 + `bin/darkirc/proof/` 2 | the same gate | **0 unclassified, exits 0** | `scripts/check-circuit-instance-derivation.sh` |
-| Transcribed circuits | **178** | the gate's set minus one; one `List Stmt` each, kernel-closed by `decide` | generated, freshness-gated | holds for the **transcription**, which is not the circuits | `python3 scripts/gen_circuit_transcription.py --check` |
+| Contract circuits | **165** | `.zk` files under `src/contract/*/proof/` (34 contract dirs, 31 carrying proofs) | **gate**, not Lean — `script/circuit_instance_derivation.py` | **mechanized and passing** | `scripts/check-doc-canonical-counts.sh` |
+| Circuits the gate walks | **177** | 165 contract + `proofs/core/` 10 + `bin/darkirc/proof/` 2 | the same gate | **0 unclassified, exits 0** | `scripts/check-circuit-instance-derivation.sh` |
+| Transcribed circuits | **177** | the gate's set; one `List Stmt` each, kernel-closed by `decide` | generated, freshness-gated | holds for the **transcription**, which is not the circuits | `python3 scripts/gen_circuit_transcription.py --check` |
 | Assumptions | **6** | every `axiom`/`opaque` in `Axioms.lean` | gate — four-field contract + inventory | **explicit and checked** | `python3 script/check_lean_axioms.py` |
 
 ### Proof status, per claim
@@ -95,23 +95,25 @@ forward.** Where another document disagrees, this table and its command are the 
 - **Nullifier determinism, signature binding (H2 fix), Merkle inclusion soundness, zero-cond
   soundness — NOT MODELLED.** The `: Prop` stubs that named them are deleted; the properties are
   enforced in the `.zk` constraints and audited by the gate, not proved in Lean.
-- **`OBL-Z12` — PARTLY**, open work: a circuit proving a value is the *integer quotient* of two
-  others proves it about the integers the field elements stand for, not their residues.
+- **`OBL-Z12` — CLOSED.** A circuit proving a value is the *integer quotient* of two others proves it
+  about the integers the field elements stand for, not their residues. The known quotient circuits
+  range-check every operand, `script/quotient_bounds.txt` pins them, and
+  `check-circuit-quotient-bounds.sh` fails if one loses its check.
 
 ### Citable status block
 
 ```
 DarkWow formal verification — canonical status, 2026-10-18
 Opcodes 32 zkVM opcodes (31 excluding internal Noop) — mixed: Lean per-opcode theorems where named, manual verdicts elsewhere; no blanket "all verified".
-Circuits 167 contract circuits under src/contract/*/proof/; the instance-derivation gate walks 179 (167 + proofs/core/ 10 + bin/darkirc/proof/ 2), 0 unclassified, exits 0 — a GATE, not a Lean proof.
-Assumptions 6, all in Axioms.lean (pallasPrime the only arithmetic one): Pedersen homomorphism PROVED; nullifier determinism, signature binding, Merkle inclusion, zero-cond NOT MODELLED; OBL-Z12 PARTLY (open).
+Circuits 165 contract circuits under src/contract/*/proof/; the instance-derivation gate walks 177 (165 + proofs/core/ 10 + bin/darkirc/proof/ 2), 0 unclassified, exits 0 — a GATE, not a Lean proof.
+Assumptions 6, all in Axioms.lean (pallasPrime the only arithmetic one): Pedersen homomorphism PROVED; nullifier determinism, signature binding, Merkle inclusion, zero-cond NOT MODELLED; OBL-Z12 CLOSED (quotient bounds gated).
 ```
 
 ### Superseded: the claim this section used to carry
 
 It read **"Layer 1 — 39 zkVM Opcodes: ALL VERIFIED … Layer 2 — 120 Contract Circuits: ALL VERIFIED
 … Layer 3 … ALL VERIFIED."** That claim is **superseded as of 2026-10-18** and must not be quoted.
-39 and 120 do not match the tree (32 opcodes, 167 contract circuits), and "ALL VERIFIED" was never
+39 and 120 do not match the tree (32 opcodes, 165 contract circuits), and "ALL VERIFIED" was never
 true of the circuit layer: `src/DarkFi/Circuits/` contains **no Lean declarations**, and the one
 declaration it ever had, `burn_v1_no_free_instances`, had the statement `x = x ∧ y ∧ True` and is
 deleted. Layer 3's Pedersen row said "ASSUMED" and is now **PROVED**; the four properties beneath it
@@ -128,7 +130,7 @@ proofs/lean/
 ├── lakefile.lean               # libraries: DarkFi, Transcribed (+ the generated CircuitIndex)
 ├── README.md                   # detailed results, including the honest-scope section
 └── src/
-    ├── Main.lean               # does NOT compile and is in no lean_lib; no gate runs it
+    ├── Main.lean               # a lean_exe (lakefile.lean:49), run by scripts/check-lean-suite.sh
     ├── Transcribed.lean        # generated per-circuit statement lists, freshness-gated
     ├── CircuitIndex.lean       # generated inhabitants of CircuitDerivable, freshness-gated
     └── DarkFi/
