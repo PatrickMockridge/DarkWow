@@ -164,7 +164,9 @@ jobs:
     # The single required branch-protection check. A skipped sibling (no relevant paths) is fine;
     # a failed one is not.
     needs: [fast-static, fast-compile, fast-models, fast-lean, fast-proof]
-    if: always() && (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch')
+    if: >-
+      always() && (github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch' && (inputs.lane == 'auto' || inputs.lane == 'fast')))
     runs-on: [self-hosted, linux, x64, darkwow]
     timeout-minutes: 5
     steps:
