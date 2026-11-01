@@ -300,7 +300,8 @@ dwowd --network darkwow-testnet --finality-enable-monero \
 By default, nodes run in **always** mode with **Caribina enabled**. This means:
 
 - Every mined block is anchored to Arweave
-- Every received block with a non-zero `anchor_tx_id` is verified
+- Every received block is checked by `caribina::verify_anchor_proof` when enforcement is on;
+  `anchor_tx_id` is not itself a finality signal
 - Anchored blocks cannot be replaced (enforced at `connect_block()`)
 - No configuration required — maximum resilience out of the box
 
@@ -383,7 +384,7 @@ hashpower:
 | `src/linear/src/consensus.rs` | PoW consensus (unchanged — Caribina is a constraint overlay) |
 | `bin/dwowd/src/rpc/miner.rs` | Mining integration |
 | `bin/dwowd/src/rpc/stratum.rs` | Stratum integration |
-| `bin/dwowd/src/proto/linear_broadcast.rs` | P2P verification |
+| `src/linear/src/caribina/` | Anchor construction and local proof verification |
 
 ## See Also
 

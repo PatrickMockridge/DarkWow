@@ -6,13 +6,16 @@ relying on zero-knowledge proofs to ensure validity without revealing
 any other information. **All transactions over the network are managed
 by smart contracts.**
 
-New tokens are created and destroyed every time you send an anonymous
-transaction. To send a transaction on DarkWow, you must first issue a
-credential that commits to some value you have in your wallet. This is
-called the **Mint** phase. Once the credential is spent, it destroys
-itself: what is called the **Burn.**
+> **Status (2026-11-01): this page describes an early coin model and is superseded.**
+> `NativeToken::MintV1` (0x01) is **disabled**; the value object is a promissory-note
+> commitment, and a transfer **consumes one commitment and creates another with the same
+> value** — it does not create and destroy tokens. Read the current model in
+> [native_token](../contract/native_token.md), [promissory_note](../contract/promissory_note.md)
+> and [privacy.md §2](privacy.md).
 
-Through this process, the link between inputs and outputs is broken.
+A transaction consumes the commitments it spends and creates new commitments for the
+recipients and change. The link between inputs and outputs is broken, and value is conserved
+per asset across the consuming transaction.
 
 ![](transaction.png)
 

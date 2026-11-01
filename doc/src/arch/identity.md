@@ -131,16 +131,21 @@ What the holder presents to prove they have a capability:
 
 ```rust
 struct CapabilityProof {
-    capability_id: [u8; 32],          // What capability
-    nullifier: IntentNullifier,        // From underlying credential
-    predicate_result: u8,             // 1 if requirements met
-    issuer_pub: [u8; 32],             // Issuer of underlying credential
-    schema_hash: [u8; 32],           // Schema of underlying credential
-    proof: Vec<u8>,                   // ZK proof
-    capability_secret: [u8; 32],     // Proves ownership of this cap
-    created_at: u64,                  // Timestamp
+    capability_id: CapabilityId,       // What capability
+    nullifier: IntentNullifier,        // From the underlying credential
+    predicate_result: u8,              // 1 if the threshold is met
+    issuer_pub: PublicKey,             // Issuer of the underlying credential
+    schema_hash: [u8; 32],             // Schema of the underlying credential
+    commitment: IntentCommitment,      // The credential commitment, bound in-circuit
+    attribute_1_name: pallas::Base,    // The attribute the predicate is over
+    threshold: u64,                    // The threshold the predicate used
+    proof: Vec<u8>,                    // ZK proof
+    created_at: u64,                   // Timestamp
 }
 ```
+
+There is no `capability_secret`: the holder proves possession with a signature over the
+message, and revocation is keyed by `(capability_id, holder_pub)`.
 
 ### StoredCapability
 
@@ -240,11 +245,15 @@ WHAT VERIFIER DOES NOT LEARN:
 | Tree | Purpose | What's Stored |
 |------|---------|---------------|
 | `capabilities` | Capability definitions | `capability_id → Capability` |
-| `capability_issuances` | Holder → capability mapping | `(capability_id, holder_pub) → StoredCapability` |
 | `credentials` | Issued credentials | `nullifier → Credential` |
-| `nullifiers` | Revocation tracking | `nullifier → reason` |
+| `nullifiers` | Revocation markers | `capability_revoke_key(capability_id, holder_pub) → marker` |
+| `issuers` | Registered issuers | `issuer → record` |
+| `config` | Contract configuration | config keys |
 
-**Key design:** The `capability_issuances` tree maps `(capability_id, holder_pub)` to the capability record. This allows efficient lookup of all capabilities a holder has, or all holders of a capability.
+**There is no `capability_issuances` tree.** Possession is proven by the holder's
+signature over the message, not by a stored holder→capability map (`src/contract/identity/src/lib.rs:196`,
+`OBL-C171`). The removal is why the host can refuse a revoked capability without a probe
+of another holder's state.
 
 ## Capability Revocation Comparison
 
