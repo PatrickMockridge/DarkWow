@@ -79,6 +79,30 @@ export CI_LANE="${LANE:-local}"
 export CI_DRY_RUN
 mkdir -p reports/ci
 
+# The contract Makefiles and bin/zkas/Makefile copy artifacts from the workspace's default
+# `target/`; they do not read CARGO_TARGET_DIR. The runner sets CARGO_TARGET_DIR so the build tree
+# lives in the shared cache, so point `target/` at that cache: cargo writes there, and make's copy
+# then reads the same bytes. A real target/ directory means the two disagree — fail loudly rather
+# than build twice or copy a stale artifact.
+align_target_dir() {
+    [ "${CI:-}" = "true" ] || return 0
+    [ -n "${CARGO_TARGET_DIR:-}" ] || return 0
+    case "$CARGO_TARGET_DIR" in
+        /*) ;;
+        *)
+            echo "CARGO_TARGET_DIR must be absolute in CI (got '$CARGO_TARGET_DIR')" >&2
+            return 1
+            ;;
+    esac
+    if [ -e target ] && [ ! -L target ]; then
+        echo "target/ is a real directory but CARGO_TARGET_DIR=$CARGO_TARGET_DIR;" >&2
+        echo "make would copy artifacts from a different tree than cargo writes to." >&2
+        return 1
+    fi
+    ln -sfn "$CARGO_TARGET_DIR" target
+}
+align_target_dir || exit 78
+
 if [ "$CI_ALL" = "1" ] && [ -z "$CI_GROUPS_ARG" ]; then
     CI_GROUPS_ARG="docs,contracts,shared-sdk,genesis,consensus,wallet,lean,models,ci,docker"
 fi
