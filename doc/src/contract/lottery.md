@@ -235,8 +235,9 @@ All Lottery PN child calls use **TransferV1 (0x04)** exclusively:
 | ExpireLotteryV1 | TransferV1 | House claims unclaimed prize pool remainder |
 
 This is architecturally correct: the Lottery contract manages a parimutuel pool of
-existing tokens. It does not mint or burn — tokens are created and destroyed by the
-[stablecoin](stablecoin.md) contract.
+existing tokens. It does not mint or burn — tokens are promissory-note commitments moved by PN
+transfers; the stablecoin's mint/redeem arms are currently refused
+([stablecoin](stablecoin.md) §Status).
 
 ### Custody Model
 

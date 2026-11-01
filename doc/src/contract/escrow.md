@@ -253,42 +253,22 @@ src/contract/escrow/
 └── README.md
 ```
 
-## Integration with PromissoryNote
+## Integration with PromissoryNote, Purse and Box
 
-The escrow contract manages its own value commitments but integrates with PromissoryNote for token operations:
+Escrow moves value through the genesis composition primitives. It does **not** emit spend-hook calls:
+the spend-hook design this section used to describe was replaced by PN + Purse (Fund) and PN + Box
+(Claim).
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                     Integration Architecture                         │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                       │
-│   PromissoryNote Contract                                            │
-│   ├── Owns commitment ledger (commitments, nullifiers, Merkle tree)             │
-│   ├── Issues tokens (IssueV1/RevokeV1)                                  │
-│   └── Transfer semantics (TransferV1)                                 │
-│                                                                       │
-│   Escrow Contract                                                    │
-│   ├── Owns escrow state machine (Created → Funded → Claimed/Refunded)│
-│   ├── Verifies ZK proofs for claim/refund                            │
-│   └── Emits spend_hook calls to PromissoryNote for fund release      │
-│                                                                       │
-│   Flow:                                                               │
-│   1. User creates escrow + funds via PromissoryNote::TransferV1      │
-│   2. Escrow::Claim → spend_hook → PromissoryNote::RevokeV1 (consumes)  │
-│                    + PromissoryNote::IssueV1 (mints to seller)        │
-│                                                                       │
-└─────────────────────────────────────────────────────────────────────┘
-```
+| Endpoint | Children (in order) | What each does |
+|---|---|---|
+| `FundV1` (0x02) | `promissory_note::TransferV1` (0x04), `purse::DepositV1` (0x01) | Moves the note and locks the funded amount in a genesis `Purse` |
+| `ClaimV1` (0x03) | `promissory_note::TransferV1` (0x04), `box::TakeV1` (0x02) | Releases the note and consumes the seller's claim `Box` by nullifier |
+| `RefundV1` (0x04) | `promissory_note::TransferV1` (0x04) | Returns the note on the refund path |
 
-### Phase 1: Standalone (MVP)
-- Escrow manages its own value pool
-- No PromissoryNote integration
-- Simplified trust model
-
-### Phase 2: Full Integration
-- Uses PromissoryNote's `spend_hook` mechanism
-- Funds locked as PromissoryNote commitments
-- Claim/refund triggers atomic burn+mint
+Escrow owns only the state machine (Created → Funded → Claimed/Refunded) and the ZK proofs for each
+transition; the value and its custody live in PN's commitment ledger and the Purse. There is no
+standalone value pool and no Phase-2 future integration — the composition above is the implemented
+design.
 
 ## Security Considerations
 
@@ -337,7 +317,7 @@ Pedersen commitment `C = value * G + blind * H` ensures:
 1. **ZK Circuit Compilation**: All 5 circuits compiled to `.zk.bin` via zkas
 2. **Entry Point Implementation**: Full `get_metadata()` + `process_instruction()` wired with ZK proof verification
 3. **State Management**: 5-state state machine (Created → Funded → Claimed/Refunded/Cancelled) with 30 error variants
-4. **PromissoryNote Integration**: Phase 1 standalone value pool; Phase 2 spend_hook integration for promissory_note
+4. **Composition**: Fund uses PN `TransferV1` + Purse `DepositV1`; Claim uses PN `TransferV1` + Box `TakeV1`; Refund uses PN `TransferV1`. There is no standalone value pool and no spend-hook path.
 
 ## References
 

@@ -340,7 +340,7 @@ The circuit verifies:
 - Worker's public key is correctly derived
 - Capability predicate result is 1 (satisfied)
 
-In addition to the ZK proof, the on-chain instruction phase validates a child call to `Identity::VerifyCapabilityV1 (0x0b)`. This cross-contract call provides on-chain verification that the Identity contract recognizes the capability as valid and non-revoked — the ZK proof proves the predicate, the child call proves the capability exists on-chain.
+In addition to the ZK proof, the on-chain instruction phase validates a child call to `Identity::VerifyCapabilityV1 (0x06)`. This cross-contract call provides on-chain verification that the Identity contract recognizes the capability as valid and non-revoked — the ZK proof proves the predicate, the child call proves the capability exists on-chain.
 
 ```zk
 worker_pub = ec_mul_base(worker_secret, NULLIFIER_K);
@@ -363,9 +363,9 @@ constrain_equal_base(capability_predicate_result, ONE);
 
 Labor Market uses cross-contract child calls to delegate authorization, verification, and payment to specialized contracts. For the complete cross-contract call map and mechanism, see [Composability](composability.md).
 
-### Identity Verification (0x0d → 0x0b)
+### Identity Verification (0x0d → 0x06)
 
-`AcceptJobWithCapabilityV1` requires a child call to `Identity::VerifyCapabilityV1 (0x0b)`. The Identity contract verifies on-chain that the worker's capability exists and has not been revoked. This is a defense-in-depth pattern: the ZK proof verifies the predicate, and the child call verifies the capability's on-chain state.
+`AcceptJobWithCapabilityV1` requires a child call to `Identity::VerifyCapabilityV1 (0x06)`. The Identity contract verifies on-chain that the worker's capability exists and has not been revoked. This is a defense-in-depth pattern: the ZK proof verifies the predicate, and the child call verifies the capability's on-chain state.
 
 ### Attestation Verification (0x02, 0x03 → 0x04)
 

@@ -149,21 +149,29 @@ the bridge cannot block or forge a withdrawal.
 | Failure modes | Limited — user owns redemption keys; worst case is delay, not loss |
 | Governance | 1:1 backing is structural (external proof + anti-double-claim); ecosystem governed by `dao_escrow` |
 
-**Stablecoin: On-Chain Collateralization**
+**Stablecoin: a design record, not a live issuer**
 
-The [stablecoin](stablecoin.md) issues USDx with full on-chain enforcement —
-the contract IS the issuer.
+The [stablecoin](stablecoin.md) was designed as USDx issuance over on-chain
+collateral, but its custody-dependent arms are **refused** with
+`CustodyModelUnavailable` before any state read: `OpenPositionV1` (0x01),
+`AddCollateralV1` (0x02), `MintStableV1` (0x04), `LiquidateV1` (0x06) and
+`RedeemStableV1` (0x0A). The contract does not custody collateral — a PN
+deposit's recipient is not parent-checkable — so the lifecycle below is the
+design target, not a capability you can call (register `OBL-C92`, `OBL-C273`;
+`decisions.md` `OBL-C272`).
 
-| PN Limitation | How the Stablecoin Handles It |
+| PN Limitation | Stablecoin design target |
 |---|---|
-| Collateralization | On-chain CDP over-collateralization with automatic liquidation |
+| Collateralization | On-chain CDP over-collateralization with liquidation |
 | Supply cap | Bounded by collateral deposits |
-| Redemption | Calls `RedeemV1`, closing the full bearer-instrument lifecycle |
+| Redemption | `RedeemV1`, closing the bearer-instrument lifecycle |
 | Governance | On-chain audit: `total_collateral >= outstanding` |
 
-If you're building an issuer contract, study these two as reference
-implementations. Set `spend_hook` on every mint so burns route through your
-contract. Track your supply on-chain. Make redemption a real code path.
+If you're building an issuer contract, the usable reference today is PN's own
+transfer/redeem/revoke path (set `spend_hook` on outputs so burns route through
+your contract, and track supply on-chain). Do not treat the stablecoin's
+minting or redemption arms as a working example until the custody primitive
+exists.
 
 For a full adversarial analysis of how these properties interact with Bearer
 Bond coverage reports and composability risk, see

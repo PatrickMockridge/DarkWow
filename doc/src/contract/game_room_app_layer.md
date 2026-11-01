@@ -38,36 +38,34 @@ App developers build game logic on top of the Game Room contract. The contract h
 ### Initialize Client
 
 ```rust
-use dwow_sdk::game_room::{GameRoomClient, RoomConfig, EntropyMode};
+use dwow_sdk::game_room::{GameRoomClient, EntropyMode};
 use dwow_sdk::crypto::{ContractId, Keypair};
 
-// Connect to existing room
+// Connect to the Game Room contract. `GameRoomClient` holds an RPC URL, a
+// contract id and a keypair; it builds `ContractCall`s and does not send them.
 let keypair = Keypair::random();
 let client = GameRoomClient::new(
     "http://localhost:8080",  // RPC URL
     contract_id,              // Game Room contract ID
     keypair,                  // User's keypair
 );
-
-// Room configuration (builder pattern)
-let config = RoomConfig::new(
-    owner_dao,
-    asset_id,
-    100,                      // min_stake
-    10000,                    // max_stake
-    EntropyMode::TrustedSetup,
-)
-.with_confirmation_depth(6)
-.with_entropy_contributions(3, current_block + 100)
-.with_max_players(6);
 ```
 
 ### Create Room
 
 ```rust
-// Room owner creates room
-let tx = client.create_room(config)?;
-send_to_channel(channel_id, tx)?;
+// Room owner creates room. There is no RoomConfig builder: the parameters are
+// passed directly to create_room (owner, asset_id, min_stake, max_stake,
+// entropy_mode, nonce), and the call is built synchronously.
+let call = client.create_room(
+    owner_pubkey,
+    asset_id,
+    100,      // min_stake
+    10000,    // max_stake
+    EntropyMode::TrustedSetup,
+    nonce,
+);
+send_to_channel(channel_id, call)?;
 ```
 
 ### Join Room (Deposit Stake)
@@ -157,13 +155,13 @@ send_to_channel(channel_id, tx)?;
 ### Claim Winnings
 
 ```rust
-// Winner claims their share
-let tx = client.claim(room_id, pot_id, winner_pubkey)?;
-send_to_channel(channel_id, tx)?;
+// Winner claims their share. The winner is the client's own keypair, so claim
+// takes only the room and the pot; the call is built synchronously.
+let call = client.claim(room_id, pot_id);
+send_to_channel(channel_id, call)?;
 
-// Check new balance
-let account = client.get_account(room_id, winner_pubkey).await?;
-println!("New balance: {}", account.balance);
+// There is no `get_account`: a balance is read from chain state by the caller,
+// not by GameRoomClient.
 ```
 
 ## DarkIRC Integration
@@ -286,8 +284,14 @@ struct PokerRoom {
 }
 
 impl PokerRoom {
-    pub async fn new(room_id: RoomId, player: Keypair) -> Result<Self> {
-        let client = GameRoomClient::new(rpc.clone(), room_id, player, contract_id);
+    pub fn new(
+        rpc_url: &str,
+        contract_id: ContractId,
+        player: Keypair,
+        channel_id: ChannelId,
+    ) -> Result<Self> {
+        // GameRoomClient::new takes the RPC URL, the contract id and the keypair.
+        let client = GameRoomClient::new(rpc_url, contract_id, player);
 
         Ok(Self {
             client,
@@ -299,29 +303,36 @@ impl PokerRoom {
     pub async fn handle_message(&mut self, msg: GameMessage) -> Result<()> {
         match msg {
             GameMessage::Deposit(params) => {
-                self.client.deposit(params.room_id, params.amount).await?;
+                // Builders are synchronous and return a ContractCall; the app
+                // sends it through its own channel (`send` below).
+                let call = self.client.deposit(params.room_id, params.amount);
+                self.send(call).await?;
             }
             GameMessage::PlaceBet(params) => {
                 // Validate bet is legal
                 self.validate_bet(&params)?;
-                self.client.place_bet(
+                let call = self.client.place_bet(
                     params.room_id,
                     params.amount,
                     params.bet_type,
                     params.nonce,
-                ).await?;
+                );
+                self.send(call).await?;
                 self.game_state.current_bet = params.amount;
             }
             GameMessage::Raise(params) => {
                 self.validate_raise(&params)?;
-                self.client.raise(params.room_id, params.amount, params.nonce).await?;
+                let call = self.client.raise(params.room_id, params.amount, params.nonce);
+                self.send(call).await?;
                 self.game_state.current_bet += params.amount;
             }
             GameMessage::Call(params) => {
-                self.client.call(params.room_id, params.nonce).await?;
+                let call = self.client.call(params.room_id, params.nonce);
+                self.send(call).await?;
             }
             GameMessage::Fold(params) => {
-                self.client.fold(params.room_id).await?;
+                let call = self.client.fold(params.room_id);
+                self.send(call).await?;
                 self.game_state.remove_player(params.player);
             }
             // ... handle other messages

@@ -212,8 +212,8 @@ All Betting Stake PN child calls use **TransferV1 (0x04)** exclusively:
 | ClaimEarningsV1 | TransferV1 | Contract pays accumulated earnings to staker |
 
 This is architecturally correct: Betting Stake manages existing tokens on behalf of
-stakers. It does not mint or burn — tokens are created and destroyed by the
-[stablecoin](stablecoin.md) contract.
+stakers. It does not mint or burn — tokens are promissory-note commitments moved by PN transfers;
+the stablecoin's mint/redeem arms are currently refused ([stablecoin](stablecoin.md) §Status).
 
 ### Custody Model
 

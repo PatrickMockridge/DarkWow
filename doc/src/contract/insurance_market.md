@@ -369,7 +369,7 @@ Bond mechanics:
 | Contract | Integration |
 |----------|-------------|
 | Identity | O-Cap authorization via capabilities and DAGs |
-| PromissoryNote | Premium payments and claim payouts via `transfer_v1` (0x04) — every child call this contract makes is a transfer; no `RevokeV1` or `IssueV1` |
+| PromissoryNote | Premium payments and claim payouts via `transfer_v1` (0x04); no `RevokeV1` or `IssueV1`. The plain paths use only a PN transfer child; the capability-gated underwrite path has **two** children — PN `transfer_v1` and `Identity::VerifyCapabilityV1` |
 | Oracle | Claim resolution attestation |
 
 ## Promissory Note Lifecycle Integration
@@ -389,8 +389,9 @@ All Insurance Market PN child calls use **TransferV1 (0x04)** exclusively:
 | WithdrawPremiumV1 | TransferV1 | Underwriter withdraws earned premiums |
 
 This is architecturally correct: the Insurance Market manages capital on behalf of
-underwriters and buyers. It does not mint or burn — tokens are created and destroyed
-by the [stablecoin](stablecoin.md) contract.
+underwriters and buyers. It does not mint or burn — tokens are promissory-note commitments moved
+by PN transfers; the stablecoin's mint/redeem arms are currently refused
+([stablecoin](stablecoin.md) §Status).
 
 ### Custody Model
 

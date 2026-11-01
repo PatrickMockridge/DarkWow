@@ -227,17 +227,13 @@ instance exists):
 1. `subscription_id` is the commitment derived from the prover's own inputs (`derived_id`)
 2. The transaction binding pair, `tx_binding` and `tx_nonce`
 
-**Public Inputs**:
-- `subscription_id`: Commitment hash
-- `subscriber_pub_x/y`: Public key coordinates
-- `plan_id`: Subscription tier
-- `deposit`: Amount locked
-- `asset_id`: Which token
-- `lock_until_block`: Expiration height
-- `plan_merkle_root`: Plan registry root
-- `dao_escrow_bulla`: Insurance pool identifier
-- `dao_membership_note`: Membership proof from DAO-Escrow
-- `dao_escrow_merkle_root`: Insurance pool's membership root
+**Public inputs** (the circuit's instances, exactly):
+- `derived_id` — the subscription commitment
+- `tx_binding`, `tx_nonce` — the transaction binding pair
+
+Everything else in the call — subscriber key, plan id, deposit, asset id, `lock_until_block` — is a
+witness consumed by the circuit, not a public input. There is no plan-registry root and no
+DAO-Escrow membership note or membership root in `subscribe.zk`.
 
 ### Verify Access V1 (`verify_access.zk`)
 

@@ -40,7 +40,7 @@ Private chat groups on DarkIRC can organize staked games with partial and reveal
 |----------|-----|---------|
 | CreateRoomV1 | 0x00 | Create room (owner DAO) |
 | DepositV1 | 0x01 | Bring cash into room (stake) |
-| WithdrawV1 | 0x02 | Take cash out (if not locked) |
+| WithdrawV1 | 0x02 | Withdraw tokens (one PN transfer child) |
 | PlaceBetV1 | 0x03 | Place ante/blind/bet |
 | RaiseV1 | 0x04 | Raise current bet |
 | CallV1 | 0x05 | Call current bet |
@@ -49,6 +49,7 @@ Private chat groups on DarkIRC can organize staked games with partial and reveal
 | SettlePotV1 | 0x08 | Settle pot to winners (owner DAO) |
 | ContributeEntropyV1 | 0x09 | TrustedSetup entropy commit/reveal |
 | ClaimV1 | 0x0A | Claim winnings from pot |
+| CreatePotV1 | 0x0b | Create a pot in an open/active room |
 
 ## State Machines
 
@@ -132,7 +133,7 @@ pub enum BetType {
     Bet,     // Initial bet in a round
     Raise,   // Raise existing bet
     Call,    // Match existing bet
-    AllIn,   // All remaining balance
+    AllIn,   // All remaining stake
     Fold,    // Forfeit hand (no pot claim)
 }
 ```
@@ -177,29 +178,29 @@ Security: 1 block = 33%, 6 blocks = 0.14%, 10 blocks = 0.005%
 
 ```
 User Deposits (bring cash in):
-  DepositV1 → balance += amount (via promissory_note::transfer_v1, 0x04)
+  DepositV1 → one promissory_note::transfer_v1 child (0x04)
+  (the room records no per-player balance)
 
 User Places Bet:
-  PlaceBetV1 → balance -= amount, locked += amount, pot.total += amount
+  PlaceBetV1 → one PN transfer child (0x04);
+  Pot.total += amount and a PotContribution(player, amount, bet_type, block) is appended
 
-User Raises:
-  RaiseV1 → same transfer into pot
-
-User Calls:
-  CallV1 → same transfer into pot
+User Raises / Calls:
+  RaiseV1 / CallV1 → one PN transfer child (0x04), recorded the same way
 
 User Folds:
-  FoldV1 → locked stays (goes to eventual winner)
+  FoldV1 → has_folded = true; the contribution stays in the pot
 
 User Withdraws (cash out):
-  WithdrawV1 → balance -= amount (via promissory_note::transfer_v1, 0x04)
-  (Only available for balance > locked)
+  WithdrawV1 → one PN transfer child (0x04)
+  (there is no stored balance to debit)
 
 Owner DAO Settles Pot:
-  SettlePotV1 → pot.closed, winners determined
+  SettlePotV1 → pot state closed, winners and payout determined
 
 User Claims Winnings:
-  ClaimV1 → winner.balance += amount
+  ClaimV1 → PN transfer of the settled payout_amount;
+  a nullifier prevents a second claim
 ```
 
 ## Escrow-DAO Integration
@@ -238,7 +239,7 @@ All **12** circuits compiled to `.zk.bin`:
 | `settle_pot.zk` | Prove DAO-authorized pot settlement |
 | `contribute_entropy.zk` | Prove an entropy commitment or reveal (TrustedSetup mode) |
 | `claim.zk` | Prove winner claim with payout verification |
-| `withdraw.zk` | Prove a balance withdrawal from the room |
+| `withdraw.zk` | Prove an amount withdrawal from the room |
 
 **This table listed five and said "All 5 circuits"** until 2026-10-12 (`F-003`); the tree holds
 twelve, and the seven added here — `create_pot`, `raise`, `call`, `fold`, `close_pot`,
@@ -257,21 +258,23 @@ All Game Room PN child calls use **TransferV1 (0x04)** exclusively:
 
 | Operation | PN Child Call | What Actually Happens |
 |-----------|--------------|----------------------|
-| DepositV1 | TransferV1 | Player deposits tokens into room balance |
-| WithdrawV1 | TransferV1 | Player withdraws available (non-locked) tokens |
-| PlaceBetV1 / RaiseV1 / CallV1 | TransferV1 | Tokens moved from player balance to pot |
+| DepositV1 | TransferV1 | Player deposits tokens via a PN transfer; no room balance is written |
+| WithdrawV1 | TransferV1 | Player withdraws tokens via a PN transfer |
+| PlaceBetV1 / RaiseV1 / CallV1 | TransferV1 | The transfer is recorded as a `PotContribution`; `Pot.total` increases |
 | ClaimV1 | TransferV1 | Winner claims pot payout |
 
 This is architecturally correct: the Game Room manages existing tokens within a game
-session. It does not mint or burn — tokens are created and destroyed by the
-[stablecoin](stablecoin.md) contract.
+session. It does not mint or burn — tokens are promissory-note commitments moved by PN transfers;
+the stablecoin's mint/redeem arms are currently refused ([stablecoin](stablecoin.md) §Status).
 
 ### Custody Model
 
-The Game Room contract tracks per-player balances and locked pot contributions.
-Players deposit tokens via DepositV1 and withdraw available balance (balance minus
-locked) via WithdrawV1. Pot funds are held until the owner DAO settles the pot,
-at which point winners can claim via ClaimV1.
+The Game Room does **not** hold a per-player balance. Value stays in promissory-note
+commitments; the room tracks `Pot.total` and `Pot.contributions`
+(`player`, `amount`, `bet_type`, `block`). Every value-moving endpoint —
+DepositV1, WithdrawV1, PlaceBetV1, RaiseV1, CallV1 and ClaimV1 — carries one
+`promissory_note::transfer_v1` (0x04) child. Claim pays the settled `payout_amount`
+and a nullifier prevents a second claim.
 
 ### Cross-Contract Validation
 
@@ -283,7 +286,7 @@ and ensure the correct deposit, bet, or payout amount is transferred.
 1. **Player identification**: All functions take `player: PublicKey` in params (verified by ZK proof/signature at app layer)
 2. **Owner verification**: Uses `ContractId::derive_public(caller) == owner_dao` pattern
 3. **Double-claim prevention**: Nullifiers track claimed pots per player
-4. **Balance validation**: Available balance = balance - locked
+4. **Payout validation**: the settled `payout_amount` is ZK-proven for the winner; nullifiers prevent a second claim
 
 ## See Also
 - [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract

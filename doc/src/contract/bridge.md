@@ -31,6 +31,13 @@ anti-double-claim — not by secret custody.
 | `0x01` | `DepositV1` | Verify external deposit → issue wrapped PN (child `PN::IssueV1`) |
 | `0x02` | `WithdrawV1` | Redeem wrapped PN (child `PN::RedeemV1`) → record external-release signal |
 
+**Status of `DepositV1`.** In the default build the external-deposit proof is fail-closed:
+`verify_chain_proof` returns "verification not compiled", so `DepositV1` refuses and issues no
+wrapped PN. The `bridge-verify` feature does **not** compile a working verifier either
+(`src/contract/bridge/src/lib.rs:49-57`, `OBL-C21`); the deposit path is inert until a real verifier
+is implemented. `WithdrawV1` records the external-release signal; execution of the external release
+is the relayer's, not the contract's.
+
 ### 2.1 Deposit (`0x01`)
 
 Transaction = `[Bridge::DepositV1, PN::IssueV1 (child)]`.

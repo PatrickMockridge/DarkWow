@@ -78,8 +78,9 @@ All Dice PN child calls use **TransferV1 (0x04)** exclusively:
 | HouseCloseV1 | TransferV1 | House reclaims stale bet amounts |
 
 This is architecturally correct: DarkToshi Dice is not a token issuer. It manages
-existing tokens on behalf of players and the house. Tokens are created and destroyed
-by the [stablecoin](stablecoin.md) contract.
+existing tokens on behalf of players and the house. Tokens are promissory-note commitments moved
+by PN transfers; the stablecoin's mint/redeem arms are currently refused
+([stablecoin](stablecoin.md) §Status).
 
 ### Custody Model
 

@@ -115,7 +115,13 @@ delegated to PN's TransferV1 circuit.
 
 ### Issuer: Full Lifecycle Validation
 
-The stablecoin is the sole issuer contract. It implements the complete lifecycle:
+**Status (2026-10-25): the stablecoin's custody-dependent arms are refused.** All five arms in the
+table below — `OpenPositionV1`, `AddCollateralV1`, `MintStableV1`, `LiquidateV1` and
+`RedeemStableV1` — return `CustodyModelUnavailable` before any state read; the contract does not
+custody collateral, so the child-call map is the design target, not a callable lifecycle
+([stablecoin.md](stablecoin.md) §Status; register `OBL-C92`/`OBL-C273`, decision `OBL-C272`).
+
+The stablecoin is the sole issuer contract in the design. It defines the complete lifecycle:
 
 | Operation | PN Child Call | Validation |
 |-----------|--------------|------------|
@@ -148,11 +154,16 @@ and redemptions without requiring every token mover to call RevokeV1 directly.
 
 ## Reference Implementations
 
-### Stablecoin — Full Lifecycle Issuer
+### Stablecoin — Full Lifecycle Issuer (design; custody arms refused)
 
 **Source:** [`src/contract/stablecoin/src/lib.rs`](../../../src/contract/stablecoin/src/lib.rs)
 
-The stablecoin is the **reference implementation** for an issuer contract. It demonstrates:
+**The mint, repay, redeem and spend-hook paths below are not callable today.** Every custody arm
+refuses with `CustodyModelUnavailable` before any state read ([stablecoin.md](stablecoin.md)
+§Status; `OBL-C92`/`OBL-C273`). The section is retained as the design record of the intended
+issuer lifecycle.
+
+The stablecoin is the **design reference** for an issuer contract. It defines:
 
 - **Minting** via `MintStableV1 (0x04)`: calls PN::TransferV1 as a child, sets `spend_hook = self` on output commitments. Collateral is held in the stablecoin contract.
 - **Repayment** via `RepayStableV1 (0x04)`: calls PN::TransferV1 to return stablecoins to the contract.
@@ -390,7 +401,7 @@ All 21 PN-interacting contracts, with their current validation status.
 
 | Contract | PN Opcodes | Validates Contract ID | Validates Value Commit | spend_hook | Redemption |
 |----------|------------|----------------------|------------------------|------------|------------|
-| **stablecoin** | 0x04, 0x01, 0x03 (callback) | Yes | Yes | Implemented | RedeemStableV1 |
+| **stablecoin** | 0x04, 0x01, 0x03 (callback) | Yes | Yes | Implemented | RedeemStableV1 (**refused**, `CustodyModelUnavailable`) |
 
 ### OTC
 
@@ -402,7 +413,7 @@ All 21 PN-interacting contracts, with their current validation status.
 
 | # | Contract | PN Opcodes | Validates Contract ID | Validates Value Commit |
 |---|---|-----------|----------------------|------------------------|
-| 1 | **bridge** | 0x04 | Yes | Yes |
+| 1 | **bridge** | 0x02 (issue), 0x01 (redeem) | Yes | No — no TransferV1 child |
 | 2 | **darkbet_exchange** | 0x04 | Yes | Yes |
 | 3 | **labor_market** | 0x04 | Yes | Yes |
 | 4 | **lottery** | 0x04 | Yes | Yes |
@@ -466,14 +477,14 @@ per token_commit group. This prevents creating tokens out of thin air within a t
 
 **Unauthorized minting.** IssueV1 requires a ZK proof demonstrating knowledge of the
 mint backing secret (`mint_public = poseidon_hash(backing_secret)` constrained in-circuit
-at `mint.zk:41-43`). The entrypoint verifies `mint_public == stored_token_auth_parent`
+at `issue.zk:43-45`). The entrypoint verifies `mint_public == stored_token_auth_parent`
 against the on-chain token registry.
 
 **Double-spending.** Nullifiers are tracked in a Sparse Merkle Tree. Every burn/transfer
 checks that the nullifier is not already spent before accepting the transaction.
 
 **Signature separation.** The burn circuit derives `signature_secret = poseidon_hash(coin_secret, nullifier)`
-in-circuit (`burn.zk:83-84`), cryptographically binding the transaction signer to the
+in-circuit (`revoke.zk:82-83`), cryptographically binding the transaction signer to the
 commitment owner. Each burn produces a unique `signature_public`, preserving privacy across burns.
 
 **Spend hook replay.** The stablecoin's `process_spend_hook()` records nullifiers and

@@ -160,31 +160,44 @@ The dispute carries the `dao_escrow_bulla` (which DAO instance handles this job)
 
 ---
 
-#### Step 9: DAO Votes on Dispute
+#### Step 9: The DAO Governance Group Decides the Dispute
 
-**What happens:** DAO members vote on the dispute. Each vote is a ZK-proofed membership claim — members prove they hold the `member_vote` capability without revealing their identity or vote direction. Only the final tally is public.
+**What happens:** The endowment's MultiSig governance group decides the claim. Membership does **not**
+confer a vote: members pay premiums and hold membership notes, but the group's threshold is the
+quorum. Each governance step carries a `multisig::FinalizeV1` (0x03) child over a role-scoped
+message; a second source of truth that could disagree with the group's threshold is deliberately not
+kept.
 
-**Business analogy:** A jury deliberating a case. Each juror votes privately. Only the verdict — "release payment" or "refund employer" — is announced.
+**Business analogy:** A board resolving a dispute by a signed resolution. The resolution is the
+decision; there is no separate tally to recount.
 
 **Contract calls:**
-- `dao_escrow::ProposeClaimV1 (0x07)` — member proposes a resolution
-- `dao_escrow::VoteClaimV1 (0x08)` — members vote
+- `dao_escrow::ProposeClaimV1 (0x07)` — role-1 group approval over `claim_id`
+- `dao_escrow::VoteClaimV1 (0x08)` — role-2 group approval over
+  `poseidon_hash(claim_id, voter_x, voter_y, direction)`; the vote nullifier prevents replay, and the
+  decision is written as `Approved` or `Rejected`
 
-ZK proofs verify `member_vote` capability. Vote nullifier (`H(capability_secret, proposal_id)`) prevents double-voting. Vote direction is hidden via Pedersen commitment.
+There is no `member_vote` capability and no Pedersen-hidden vote direction: the approval message names
+the voter and the direction (`OBL-C160`), and a successful `FinalizeV1` means the group decided
+(`OBL-C159`).
 
 ---
 
 #### Step 10: Resolution Executed
 
-**What happens:** Once the voting window closes and quorum + approval threshold are met, an arbitrator executes the DAO's decision. Multiple independent oracles confirm the facts on-chain (e.g., 3 of 5 oracles attest to deliverable quality). The contract verifies the oracles' attestations and transfers funds accordingly.
+**What happens:** `ExecuteClaimV1` reads the `Approved` state the group already wrote and pays the
+claim. Oracle attestations are checked earlier, where the work is verified; the execution arm itself
+requires exactly one PN transfer whose `(bulla, value, recipient)` match the approved proposal.
 
-**Business analogy:** A court bailiff executing the jury's verdict after confirming the evidence with multiple independent expert witnesses.
+**Business analogy:** A court bailiff executing the verdict of record, not re-litigating it.
 
-**Contract call:** `dao_escrow::ResolveDisputeV1 (0x0c)`
+**Contract call:** `dao_escrow::ExecuteClaimV1 (0x09)` — no approval child; the authority is the
+`Approved` state.
 
-**Child calls:** Multiple `attestation::VerifyClaimV1 (0x04)` for oracle attestations + `promissory_note::TransferV1 (0x04)` for the payout.
+**Child call:** `promissory_note::TransferV1 (0x04)` for the payout.
 
-**Anti-replay protection:** `db_contains_key(disputes_db, dispute_id)` check prevents the same dispute from being resolved twice. The `dispute_id` is derived as `poseidon_hash(proposal_id, attestation_count, payout_recipient)` — unique per resolution attempt.
+**Anti-replay protection:** the proposal must still be `Approved` and inside `execution_deadline`;
+`apply` writes `Executed`, and `ResolveDisputeV1` no longer exists.
 
 ### Complete Call Flow Diagram
 
@@ -210,7 +223,7 @@ ZK proofs verify `member_vote` capability. Vote nullifier (`H(capability_secret,
 │                                                                                      │
 │  STEP 5: Worker accepts job                                                          │
 │  ┌──────────────────────┐                                                            │
-│  │ AcceptJobWithCapV1   │──→ Identity::VerifyCapabilityV1 (0x0b)                     │
+│  │ AcceptJobWithCapV1   │──→ Identity::VerifyCapabilityV1 (0x06)                     │
 │  │ (0x0d)               │                                                            │
 │  └──────────────────────┘                                                            │
 │                                                                                      │
@@ -236,20 +249,21 @@ ZK proofs verify `member_vote` capability. Vote nullifier (`H(capability_secret,
 │           │                                                                          │
 │           ▼                                                                          │
 │  ┌──────────────────────┐                                                            │
-│  │ DAO-Escrow           │──→ Identity::VerifyCapabilityV1 (0x0b) [member vote check] │
+│  │ DAO-Escrow           │──→ multisig::FinalizeV1 (0x03) [group approval = quorum]   │
 │  │ VoteClaimV1 (0x08)   │                                                            │
 │  └──────────────────────┘                                                            │
 │           │                                                                          │
 │           ▼                                                                          │
 │  ┌──────────────────────┐                                                            │
-│  │ DAO-Escrow           │──→ Attestation::VerifyClaimV1 (0x04) [×N oracle attests]   │
-│  │ ResolveDisputeV1     │──→ promissory_note::TransferV1 (0x04) [payout]                    │
-│  │ (0x0c)               │                                                            │
+│  │ DAO-Escrow           │──→ promissory_note::TransferV1 (0x04) [payout]             │
+│  │ ExecuteClaimV1 (0x09) │                                                            │
 │  └──────────────────────┘                                                            │
 │                                                                                      │
 │  FUNCTION CODE LEGEND:                                                               │
-│    0x0b = Identity::VerifyCapabilityV1        0x04 = Attestation::VerifyClaimV1      │
-│    0x07 = DAO-Escrow::ProposeClaimV1          0x04 = promissory_note::TransferV1            │
+│    0x06 = Identity::VerifyCapabilityV1        0x04 = Attestation::VerifyClaimV1      │
+│    0x07 = DAO-Escrow::ProposeClaimV1          0x03 = multisig::FinalizeV1            │
+│    0x08 = DAO-Escrow::VoteClaimV1             0x09 = DAO-Escrow::ExecuteClaimV1       │
+│    0x04 = promissory_note::TransferV1                                                │
 │                                                                                      │
 └─────────────────────────────────────────────────────────────────────────────────────┘
 ```

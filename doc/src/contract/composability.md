@@ -105,7 +105,7 @@ against a locally computed commitment.
 
 | Source Function | Opcode | Child Validates | Target Function |
 |---|---|---|---|
-| `CreateJobV1` | 0x00 | `child.data[0] != 0x04` | promissory_note::TransferV1 |
+| `CreateJobV1` | 0x00 | two children: `0x04` + `0x0d` | promissory_note::TransferV1 + Attestation::CheckAttestationV1 |
 | `AcceptJobV1` | 0x01 | *none (ZK-only, no child calls)* | — |
 | `SubmitDeliverableV1` | 0x02 | `child.data[0] != 0x04` | Attestation::VerifyClaimV1 |
 | `SubmitGitDeliverableV1` | 0x03 | `child.data[0] != 0x04` | Attestation::VerifyClaimV1 |
@@ -113,7 +113,7 @@ against a locally computed commitment.
 | `DisputeV1` | 0x05 | `child.data[0] != 0x07` | DAO-Escrow::ProposeClaimV1 |
 | `RefundV1` | 0x06 | `child.data[0] != 0x04` | promissory_note::TransferV1 |
 | `CancelV1` | 0x07 | `child.data[0] != 0x04` | promissory_note::TransferV1 |
-| `CreateJobWithMilestonesV1` | 0x08 | *none (ZK-only, no child calls)* | — |
+| `CreateJobWithMilestonesV1` | 0x08 | `child.data[0] != 0x04` | promissory_note::TransferV1 |
 | `InitiateDisputeV1` | 0x0b | `child.data[0] != 0x07` | DAO-Escrow::ProposeClaimV1 |
 | `CreateJobWithCapabilityV1` | 0x0c | `child.data[0] != 0x04` | promissory_note::TransferV1 |
 | `AcceptJobWithCapabilityV1` | 0x0d | `child.data[0] != 0x06` | Identity::VerifyCapabilityV1 |

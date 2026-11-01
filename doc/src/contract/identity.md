@@ -212,21 +212,15 @@ tender issuer — learns exactly one bit: "authorised" or "not authorised." The
 capability model means authority is **bounded.** Each capability is a key that
 opens exactly one door.
 
-> **Status, read 2026-09-20: the mechanism above is the design, not the implementation.** Of the four
-> claims in that paragraph, one holds: the *predicate* is proved (`less_than_or_equal(threshold,
-> attribute_value)` pinned to `predicate_result`, both operands range-checked in
-> `proof/verify_capability.zk`). The other three do not. The capability *id* is a circuit witness the
-> proof neither exposes nor binds to the credential — the circuit computes
-> `computed_capability = poseidon_hash(DOMAIN_NULLIFIER, capability_secret, capability_id)` and then
-> uses it nowhere — so the id the host checks and the credential the proof is about are unrelated.
-> *Revocation* is checked nowhere: the circuit exposes a nullifier and no host reads it. And the exec
-> path sets `verified: true` unconditionally (`src/contract/identity/src/entrypoint.rs:555-562`), with a comment
-> saying possession is "verified via Box::Take child call" — a call that is never validated. So the
-> gates in the table above reduce to "a capability with this id exists, and the prover attached a
-> proof about some credential", which any caller can satisfy. OBL-Z17 in
-> `doc/src/arch/verification-hazop.md` carries the evidence and the four-part remedy; it is the
-> reason the `with_capability` paths in `insurance_market` were recorded rather than patched — the
-> pattern they would have been patched with is the empty one.
+> **Status, corrected 2026-11-01.** The 2026-09-20 note that stood here described a claim the code
+> no longer has. All four claims now hold: the *predicate* is proved (`less_than_or_equal(threshold,
+> attribute_value)` pinned to `predicate_result`, both operands range-checked); the circuit computes
+> the nullifier over the **bound commitment** and exposes it (`verify_capability.zk:101-104`), and
+> the host reads the authenticated revocation marker keyed by the stored holder and capability id,
+> refusing with `CapabilityRevoked` (`entrypoint.rs:678-693`); the capability id, schema hash and
+> issuer are public inputs compared two-sided against the stored credential; and `verified: true` is
+> written only after credential, signature, revocation, schema, issuer, commitment, predicate,
+> attribute and threshold checks (`entrypoint.rs:780`). `OBL-Z17`/`OBL-C255` record the fix.
 
 ---
 
