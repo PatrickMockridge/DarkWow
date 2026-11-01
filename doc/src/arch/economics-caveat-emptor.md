@@ -29,7 +29,7 @@ because both derive their value from the same thing: **the issuer's credibility*
 An attack that undermines coverage report trust also damages PN token prices
 (because expected redemption value falls). An attack that undermines PN redemption
 credibility also damages BB stake value (because staked capital may be
-devalued PN tokens). And because 22 contracts interact with Promissory Note,
+devalued PN tokens). And because 21 contract crates (excluding the test harness) interact with Promissory Note,
 many holding each other's tokens as reserves, a single collateral failure can
 cascade through the composability layer.
 
@@ -347,7 +347,7 @@ redemption never happens on-chain for most token types.
 
 Maturity is enforced at the entrypoint level — not just the wallet.
 The `unstake_v1` entrypoint at
-`src/contract/bearer_bond/src/entrypoint/mod.rs:878` enforces maturity
+`bearer_bond::unstake_v1` (in `entrypoint/mod.rs`) enforces maturity
 on-chain:
 ```rust
 if params.current_block < stake_commitment.maturity_block {
@@ -508,7 +508,7 @@ They depend entirely on issuer honesty:
 | Coverage is current | No report freshness requirement. A report filed at block 1000 is treated as valid at block 50000. |
 | Anyone will redeem your notes | RedeemV1 exists but is unused by most token types. Redemption is purely voluntary. |
 | Stake commitments will pay yield or hold principal | Profits can be zero. Coverage can be fraudulent. |
-| Maturity locks prevent early unstaking | Enforced on-chain at entrypoint level (`entrypoint/mod.rs:878`) | N/A (protocol-enforced) |
+| Maturity locks prevent early unstaking | Enforced on-chain in `bearer_bond::unstake_v1` (`entrypoint/mod.rs`) | N/A (protocol-enforced) |
 | Supply doesn't explode | No supply cap at IssueV1. `mint_secret` compromise = unlimited minting. |
 
 ### Summary Table

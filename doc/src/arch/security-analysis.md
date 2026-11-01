@@ -552,7 +552,10 @@ Since the manual security audit, all 120 contract ZK circuits across 26 contract
 `constrain_instance` — the exact bug class that enabled unlimited minting in Zcash for ~4 years)
 and the audit is documented per circuit.
 
-**Correction (2026-09-24) to the opening count.** Measured now: **179 circuits** are what the gate
+**Correction (2026-11-01) to the figures below.** The gate now prints **177 circuits** and
+**31** `src/contract/*/proof/` directories; 179 and 32 were the 2026-09-24 measurement.
+
+**Correction (2026-09-24) to the opening count.** Measured then: **179 circuits** are what the gate
 walks, over a tree with **34 contract directories** (32 of them carrying proofs) — not 120 over 26. The
 paragraph's own next line already concedes the shape ("the audit they describe is manual"), and its
 Correction below records what replaced it; only this opening count had not been brought along. The word

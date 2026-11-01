@@ -21,8 +21,10 @@ the non-consensus side.
 
 ## 2. The Consensus-Critical Boundary
 
-**RG-1.** The **only** consensus-critical proof SHALL be the per-block **Pedersen mass balance** of
-the native token. This comprises two meters, both in `[domain: mass_balance]`:
+**RG-1.** The **only consensus-critical *value* proof** SHALL be the per-block **Pedersen mass
+balance** of the native token — the hardwired value meter, as distinct from the per-call ZK proofs
+that `zk_verifier.rs:29-31` also enforces at admission and block accept. This comprises two meters,
+both in `[domain: mass_balance]`:
 
 - **Supply audit** — the cumulative supply commitment chain `S_H = S_{H-1} + C_H`, verified by
   additive Pedersen homomorphism without ZK proofs. See [Consensus: Supply

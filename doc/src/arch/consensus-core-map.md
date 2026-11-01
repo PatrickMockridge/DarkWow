@@ -34,22 +34,24 @@ state.
 * `Semantics/Ledger.lean` proves that pairwise-disjoint calls commute, while saying nothing about what a
   call's write set *is* — and `OBL-C100` is the row that finding created.
 
-So each mechanism below needs four things named before it can be built: the Rust that enforces it, the
-Python that specifies it, the proposed Lean shape, and the **witness** that keeps the model from being
-vacuous. The last is not decoration — this layer has deleted more than one statement that was true of
+So each mechanism below names four things: the Rust that enforces it, the Python that specifies it,
+the Lean shape, and the **witness** that keeps the model from being vacuous. The Lean modules have
+landed where the table's "Lean today" column names them. The last is not decoration — this layer has deleted more than one statement that was true of
 nothing, and its gate cannot see vacuity inside a `∀ … →`.
 
-The repository's own rule governs readiness: **the Python model is the specification** (register,
-`OBL-C29`), except the two declared mirrors `wallet_model.py` and `fee_model.py`
-(`reports/register-audit-2026-10-25.md` §7). A mechanism whose Python does not exist is not ready to be
+The repository's own rule governs readiness: **the Python model is the specification** (see
+[Python Simulations](../dev/testing/python-simulations.md); the model-authority classification,
+including the mirrors and the discovery/tool scripts, is in `reports/register-audit-2026-10-25.md`
+§7). `OBL-C29` does not state this doctrine — it is about genesis filter modes and the Path-B
+tie-breaker. A mechanism whose Python does not exist is not ready to be
 modelled, and the table says which those are.
 
 ## The mechanisms
 
 | # | mechanism | Rust | Python spec (lines) | Lean today | register |
 |---|---|---|---|---|---|
-| 1 | block mass balance (Pedersen sum) | `src/linear/src/proof_of_token_balance.rs` (`verify_proof_of_token_balance`) | `contrib/model/proof_of_token_balance.py` (428) | `CrossCutting.value_conservation_no_wraparound`, and `Semantics/Ledger.lean`'s `exec_perm` | `OBL-C1` |
-| 2 | nullifier replay gate, and maturity | `src/linear/src/chain_state.rs` (`connect_block`'s duplicate check; `check_coinbase_maturity`); `src/linear/src/lib.rs` (`COINBASE_MATURITY`) | `contrib/model/nullifier_lifecycle.py` (590) | the three fragments above | `OBL-C8`, `OBL-T4` |
+| 1 | block mass balance (Pedersen sum) | `src/linear/src/proof_of_token_balance.rs` (`verify_proof_of_token_balance`) | `contrib/model/proof_of_token_balance.py` (428) | `Consensus/MassBalance.lean`; `CrossCutting.value_conservation_no_wraparound`; `Semantics/Ledger.lean`'s `exec_perm` | `OBL-C1` |
+| 2 | nullifier replay gate, and maturity | `src/linear/src/chain_state.rs` (`connect_block`'s duplicate check; `check_coinbase_maturity`); `src/linear/src/lib.rs` (`COINBASE_MATURITY`) | `contrib/model/nullifier_lifecycle.py` (590) | `Consensus/NullifierLifecycle.lean`, with `Capability/NativeToken.lean` (maturity) and `Capability/Exercise.lean` (single use) | `OBL-C8`, `OBL-T4` |
 | 3 | commitment set | `src/linear/src/chain_state.rs` (`commitment_set : Mutex<BTreeMap<Commitment, BlockHeight>>`) | `contrib/model/chain_model.py`, `contrib/model/fee_model.py` | `Consensus/CommitmentSet.lean` | `OBL-C109` |
 | 4 | block and transaction validity | `src/linear/src/validation.rs` (`check_block_header`, `validate_block_structure`, `check_block_timestamp`) | `contrib/model/chain_validation_model.py` (3918) | `Consensus/BlockTimestamp.lean` (the timestamp rule only) | `OBL-C110` |
 | 5 | cumulative supply chain | `src/linear/src/supply_chain.rs` (`compute_next`) | `contrib/model/supply_chain_model.py` (1622) | `SupplyChain.lean` (the schedule half) + `Consensus/SupplyReconciliation.lean` (the two trees, reconciled) | `OBL-C45`, `OBL-C5` |
