@@ -171,12 +171,13 @@ combinations is `∏(nᵢ + 1) − 1`:
 | `combinationsIncludingIdle_append_doubles` | `2 · f C ≤ f (C+1)` |
 | `combinationCount_gt_sum` | the count exceeds `Σ nᵢ` at every `C ≥ 2` — the refutation of the additive reading, in Lean |
 | `card_biUnion_le_sum` | **what *is* additive**: `\|⋃_{c∈S} B c\| ≤ Σ_{c∈S} \|B c\|` — the size of one composition, i.e. containment |
-| `contractOps_combinationCount` | **615 192 791 076 863 999 999 999** over the 31 contracts / 166 circuits in the tree, by `norm_num`; see `genesisOps_combinationCount` (6911) for the genesis subset |
+| `contractOps_combinationCount` | **615 192 791 076 863 999 999 999** over the theorem's 31-contract / 166-circuit list, by `norm_num`; the tree now holds 165 circuits (product−1 `503 339 556 335 615 999 999 999`), so re-derive before quoting. See `genesisOps_combinationCount` (6911) for the genesis subset |
 
 **This corrects the documents, and the correction is the point.** `privacy.md` §6, `safety.md`
-Lesson 23, `contract-wasm-type-system.md` §C.7 and `ai-index.md` all state that o-cap composition is
-additive — "the state spaces add, not multiply" — and cite
-`CompositionBounds.ocap_additive_composition`. That theorem is a rewriting lemma: after
+Lesson 23 and `contract-wasm-type-system.md` §C.7 stated that o-cap composition is additive — "the
+state spaces add, not multiply" — and cited `CompositionBounds.ocap_additive_composition`; the retired
+`ai-index.md` (now a stub) repeated the claim. The live documents now state the containment/count
+distinction. The theorem cited is a rewriting lemma: after That theorem is a rewriting lemma: after
 `rw [box_total_linear, purse_total_linear]` its two sides are syntactically identical, and no
 operation composing two contracts appears anywhere in the tree. O-caps isolate contract *state*; they
 do not divide the *number of ways to combine contracts*, which is a product with or without them.

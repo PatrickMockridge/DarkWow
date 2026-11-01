@@ -1,11 +1,19 @@
 # AGENTS.md — how to work in this repository
 
-Read this before changing anything. It is short on purpose. The rules below were each earned by a defect that
-reached the tree, and most were earned **twice** — the lesson was recorded once, in a place the next agent did not
-read, and the defect recurred.
+Read this before changing anything. It is short on purpose. The rules below were each earned by a
+defect that reached the tree, and most were earned **twice** — the lesson was recorded once, in a
+place the next agent did not read, and the defect recurred.
 
-`doc/src/arch/ai-index.md` is the map of the documentation. `doc/src/dev/hazop-rules.md` is the normative copy of
-these rules, with the incidents written out.
+This is the **first read**. The second read is [`REPO-MAP.md`](REPO-MAP.md), the verified map of
+the tree. The normative copy of these rules, with the incidents written out, is
+[`doc/src/dev/hazop-rules.md`](doc/src/dev/hazop-rules.md).
+
+DarkWow is a privacy-preserving, proof-of-work blockchain built around object capabilities and
+promissory-note value. In one breath: `src/` is the `dwow_core` crate and its modules (`linear/`
+consensus, `runtime/` WASM, `zk/`, `sdk/`, `serial/`, `contract/`); `bin/` holds `dwowd` (node),
+`dww` (wallet), `darkwow` (top-level CLI), `darkirc`, `lilith` and the tools; `proofs/lean/` is the
+Lean 4 tree; `contrib/model/` the Python specifications; `contrib/docker/` the test pipeline;
+`doc/src/` the book. `REPO-MAP.md` gives each one a line.
 
 ---
 
@@ -84,10 +92,11 @@ These are mechanical, not advisory. They are here because agents have broken eac
   reports a running test while the build is still compiling, which is how the author of this rule broke it
   within the hour. A build of a mid-edit tree is worthless, and a *mixed* build is worse than none: it can
   succeed.
-- **Everything heavy runs inside a cgroup scope**, the repository's own pattern
-  (`scripts/lean-build.sh`): `systemd-run --user --scope -q --unit=<name> -p MemoryMax=28G -p MemorySwapMax=0
-  -- bash -c '<cmd>'`. **Lean is the exception** — it always goes through `scripts/lean-build.sh`, which owns its
-  own thread cap and memory ceiling. Never wrap Lean in another scope; never hand-set a Lean cap.
+- **Everything heavy runs inside a cgroup scope** with an explicit memory ceiling and no swap:
+  `systemd-run --user --scope -q --unit=<name> -p MemoryMax=<cap> -p MemorySwapMax=0 -- bash -c '<cmd>'`.
+  Choose the cap from the job's measured peak, not from a copied number. **Lean is the exception** — it always
+  goes through `scripts/lean-build.sh`, which owns its own thread cap and its 16G ceiling
+  (`LEAN_MEMORY_MAX`). Never wrap Lean in another scope; never hand-set a Lean cap.
 - **Never add a timeout** to a Bash call running cargo or the pipeline. Send all test output to `/tmp/`, complete,
   never truncated.
 - **`RUST_MIN_STACK = 67108864`** comes from `.cargo/config.toml`'s `[env]`; do not remove it. halo2's FFT and
@@ -98,19 +107,18 @@ These are mechanical, not advisory. They are here because agents have broken eac
   artifact at once. Rebuild once, after the last such edit.
 - **A stale contract artifact cannot be refreshed by `make all`.** It is `make -C src/contract/<name> clean &&
   make -C src/contract/<name> all`; the Makefile exits 1 and says so.
-- **`bin/dwowd/genesis_hash.txt`** pins genesis. Any change to a genesis artifact's inputs —
-  including `src/sdk/**` — moves it: rebuild, recompute, re-record, re-run the pin test
-  (`bin/dwowd/src/tests/genesis.rs`) and its negative control. This is a routine, recorded procedure the repository
-  has performed repeatedly (17 times by 2026-09-25); it is **not** a reason to defer a fix (R1).
+- **`bin/dwowd/genesis_hash.txt`** pins genesis. Any change to a genesis artifact's inputs — including
+  `src/sdk/**` — moves it: rebuild, recompute, re-record, re-run the pin test (`bin/dwowd/src/tests/genesis.rs`)
+  and its negative control. This is a routine, recorded procedure; it is **not** a reason to defer a fix (R1).
   **The hash itself is deliberately not quoted here.** It was, and it went stale within hours of being written —
-  which is the failure mode a constant in a doctrine document always has. Quote the procedure, never the value;
+  the failure mode a constant in a doctrine document always has. Quote the procedure, never the value;
   `genesis_pin_is_current` is what reports the value.
 - **A finding is decided or it is not.** `OPEN`, `BLOCKED` and `DEFERRED` are undecided and block every
-  verification surface: no Docker, no pipeline (any mode, wallet-only included), no umbrella sweep (any
-  tier), no release verdict. `scripts/check-tracker-settled.sh` enforces it before the pipeline's first
-  phase and at the top of the umbrella; there is no override. `CLOSED` (code + failing-before control) and
-  `RESIDUAL` (signed ALARP record) are the only exits. A targeted control run directly by the fix in
-  progress is not a verdict. See `doc/src/dev/hazop-rules.md`, "The binary finding lifecycle".
+  verification surface: no Docker, no pipeline (any mode, wallet-only included), no umbrella sweep (any tier), no
+  release verdict. `scripts/check-tracker-settled.sh` enforces it before the pipeline's first phase and at the top
+  of the umbrella; there is no override. `CLOSED` (code + failing-before control) and `RESIDUAL` (signed ALARP
+  record) are the only exits. A targeted control run directly by the fix in progress is not a verdict. See
+  `doc/src/dev/hazop-rules.md`, "The binary finding lifecycle".
 - **Never modify `src/zk/vm.rs`.** The VM is off-limits.
 - **Never `sed` Rust.** Use precise edits so changes are auditable.
 - **Never `git add -A`, `git stash`, `checkout` or `reset` in the shared tree.** Several sessions share it; commit
@@ -118,6 +126,10 @@ These are mechanical, not advisory. They are here because agents have broken eac
   commit early — another session staging whole files can otherwise carry your edit away.
 - **`src/contract/deployooor/**` and the other genesis contracts are production-critical.** Never mock, shortcut
   or work around genesis in testing. Changing it deliberately, with the pin re-recorded, is normal work.
+- **Keys are declared, never generated.** `AccountManager::open()` reads one `wallet_secret` from a `keys.toml`
+  section and hard-errors when it is missing; it never synthesises or caches a key. AccountManager is the single
+  key/account authority, and the wallet is a generic capability engine — no per-contract special cases. Only
+  wallet forwarding keys may be copied; **mining keys never leave the mining node.**
 
 ---
 
@@ -136,3 +148,8 @@ correct every copy of any claim you invalidated (R11).
 **When you are about to defer, stop.** If the reason is a test, a gate, a pin or a process, it is R1 and the answer
 is to do the fix. If the reason is that you do not understand the mechanism, say so (R7) and measure — but do not
 turn the not-knowing into an obstacle for the work.
+
+---
+
+`doc/src/arch/ai-index.md` is **retired**; [`REPO-MAP.md`](REPO-MAP.md) replaces it. No `ai-entrypoint` document has
+ever existed in this repository.

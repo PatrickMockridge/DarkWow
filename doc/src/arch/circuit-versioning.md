@@ -262,5 +262,5 @@ function. The circuit inside describes which version it is.
 - [Contract Manifest](manifest.md) — the versioning mechanism
 - [Contract Catalog](../contracts.md) — all 32 contracts
 - [Formal Specification](formal-specification.md) — architectural commitments
-- [AI Documentation Index](ai-index.md) — full document map
+- [Repository Map](../../../REPO-MAP.md) — verified tree and document map
 - [Naming Conventions](#naming-conventions) — naming rules with failure-prevention rationale
