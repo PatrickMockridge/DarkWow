@@ -33,7 +33,7 @@ ROOT="${LEDGER_PROMOTION_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 export LEDGER_PROMOTION_ROOT="$ROOT"
 
 python3 - "$@" <<'PY'
-import os, re, sys, pathlib
+import os, re, subprocess, sys, pathlib
 
 ROOT = pathlib.Path(os.environ["LEDGER_PROMOTION_ROOT"])
 LEDGER = ROOT / "doc" / "src" / "arch" / "audit" / "docs-review-2026-10-10.md"
@@ -82,6 +82,30 @@ def _slug(heading):
     return re.sub(r'\s', '-', re.sub(r'[^\w\s-]', '', heading.strip().lower()))
 
 
+def _slugs(text):
+    return {_slug(h) for h in re.findall(r'^#{1,6}\s+(.*)$', text, re.M)}
+
+
+def _headings_at(root, path, commit):
+    """Heading slugs in `path` at `commit`, or None when the commit/path cannot be read.
+
+    A `doc:<path>#<anchor>@<commit>` stamp is a citation *of that commit*. Resolving the anchor
+    against the working tree makes a legitimate later restructure retroactively break a dated
+    ledger — observed 2026-11-01 on verification-hazop.md, whose 2026-10 headings were replaced by
+    the five-column tracker while seven stamps still (correctly) cite the old document at the
+    commits that carried it. Resolve at the stamp's own commit; fall back to the working tree only
+    when there is no commit to read (the `--self-test` temp root is not a git repository).
+    """
+    try:
+        proc = subprocess.run(["git", "-C", str(root), "show", f"{commit}:{path}"],
+                              capture_output=True, text=True)
+    except OSError:
+        return None
+    if proc.returncode != 0:
+        return None
+    return _slugs(proc.stdout)
+
+
 def unresolved(root):
     """Every `doc:` stamp whose path is absent, or whose anchor names no heading in that file.
 
@@ -104,14 +128,18 @@ def unresolved(root):
             continue
         fid = line.split(":", 1)[0]
         for m in DOC_STAMP.finditer(line):
-            path, anchor = m.group(1), m.group(2)
+            path, anchor, commit = m.group(1), m.group(2), m.group(3)
             f = root / path
-            if not f.exists():
+            slugs = _headings_at(root, path, commit)
+            exists = slugs is not None or f.exists()
+            if not exists:
                 out.append(f"{fid}: doc:{path} — no such file")
             elif anchor and path.endswith(".md"):
-                slugs = {_slug(h) for h in re.findall(r'^#{1,6}\s+(.*)$', f.read_text(), re.M)}
+                if slugs is None:
+                    slugs = _slugs(f.read_text())
                 if anchor not in slugs:
-                    out.append(f"{fid}: doc:{path}#{anchor} — no heading produces that anchor")
+                    out.append(f"{fid}: doc:{path}#{anchor} — no heading produces that anchor "
+                               f"at {commit}")
     return out
 
 
@@ -155,6 +183,44 @@ def main():
                 print("FAIL: --self-test planted an unresolvable stamp (F-998) and it was not reported")
                 return 1
             print("OK: --self-test — a stamp citing a path that does not exist is reported")
+
+            # Control 4: a stamp is a citation of its commit. An anchor that existed at the
+            # stamped commit must resolve even when the working tree has since restructured the
+            # document — the 2026-11-01 register/tracker case.
+            # Names are assembled at run time: `scripts/check-doc-index.sh` scans this file for
+            # `.md` citations and would read a literal fixture name as a citation of a missing
+            # document (the same trap the other self-tests document).
+            subject_rel = "doc/src/arch/sub" + "ject" + ".m" + "d"
+            repo = t / "gitroot"
+            (repo / "doc" / "src" / "arch" / "audit").mkdir(parents=True)
+            subject = repo / subject_rel
+            subject.write_text("# Kept heading\n")
+            git = ["git", "-C", str(repo), "-c", "user.email=self@test", "-c", "user.name=self"]
+            subprocess.run(git + ["init", "-q"], check=True, capture_output=True)
+            subprocess.run(git + ["add", "."], check=True, capture_output=True)
+            subprocess.run(git + ["commit", "-qm", "carry the heading"], check=True, capture_output=True)
+            sha = subprocess.run(git + ["rev-parse", "HEAD"], check=True,
+                                 capture_output=True, text=True).stdout.strip()
+            subject.write_text("# A different heading\n")  # restructured, not committed
+            (repo / "doc" / "src" / "arch" / "audit" / "docs-review-2026-10-10.md").write_text(
+                text.replace(BLOCK_CLOSE,
+                             f"F-997: doc:{subject_rel}#kept-heading@{sha}\n" + BLOCK_CLOSE))
+            bad_commit = unresolved(repo)
+            if any("F-997" in b for b in bad_commit):
+                print(f"FAIL: --self-test an anchor present at the stamped commit was reported: "
+                      f"{[b for b in bad_commit if 'F-997' in b]}")
+                return 1
+            print("OK: --self-test — an anchor resolves at the stamped commit, not the working tree")
+
+            # ...and the same stamp with an anchor that never existed must still fail.
+            (repo / "doc" / "src" / "arch" / "audit" / "docs-review-2026-10-10.md").write_text(
+                text.replace(BLOCK_CLOSE,
+                             f"F-996: doc:{subject_rel}#never-existed@{sha}\n" + BLOCK_CLOSE))
+            bad_missing = unresolved(repo)
+            if not any("F-996" in b for b in bad_missing):
+                print("FAIL: --self-test an anchor absent at the stamped commit was not reported")
+                return 1
+            print("OK: --self-test — an anchor absent at the stamped commit is reported")
         return 0
 
     rows, refuted, stamped, pending, invalid = scan(ROOT)
