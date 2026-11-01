@@ -392,8 +392,11 @@ actually true, and now proved in `Combinatorial/Combinations.lean`:
 * **the combination count is a product.** The number of distinct operation combinations across C
   contracts is `∏(nᵢ + 1) − 1`, and it remains a product under o-cap isolation, because a
   transaction touching several contracts picks one operation per contract *simultaneously*. For the
-  31 contracts in the tree that is `615 192 791 076 863 999 999 999` combinations against a
-  `Σ nᵢ = 166` additive reading.
+  31 manifest-bearing contracts in the tree that is `503 339 556 335 615 999 999 999`
+  combinations against a `Σ nᵢ = 165` additive reading. (The Lean theorem
+  `contractOps_combinationCount` was proved by `norm_num` over an earlier 166-circuit list
+  and states `615 192 791 076 863 999 999 999`; the tree now holds 165 circuits across the
+  31 manifests. Re-derive before quoting either figure.)
 
 Isolating contract *state* does not divide the number of ways to combine contracts, so there is no
 "cross-contract combinatorial explosion" that o-caps prevent in the count. What o-caps prevent is

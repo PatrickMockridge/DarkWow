@@ -100,18 +100,18 @@ producing blocks via mining.
 ```
 MiningState {
     last_block_time: LastBlockTime,               // rate-limit timestamp
-    current_linear_template: Mutex<Option<LinearBlockTemplate>>,
-    template_height: TemplateHeight,              // template staleness check (type-system.md §9.3)
+    active_template: Mutex<Option<ActiveTemplate>>, // written only via store_template
+    template_generation: AtomicU64,               // publication counter (OBL-C54)
+    mining_gate: Arc<Mutex<()>>,                  // sync-check vs mining act (OBL-C56)
     linear_stratum_publisher: Mutex<Option<...>>,
-    linear_recipient_config: Mutex<Option<...>>,
     linear_submit_lock: Mutex<()>,
     linear_genesis_hash: Mutex<Option<HeaderHash>>,
-    mm_jobs: Mutex<HashMap<JobId, ()>>,
-    mm_jobs_submitted: Mutex<HashSet<JobId>>,
+    mm_jobs: Mutex<HashMap<JobId, u64>>,          // JobId -> insertion seq (OBL-C55)
+    mm_jobs_submitted: Mutex<HashMap<JobId, u64>>,
+    mm_jobs_seq: AtomicU64,
     miner_config: MinerConfig,                    // fee policy, gas limits, tx count
-    sync_state: Arc<AtomicU8>,    // SyncState: 2 = CaughtUp (mine), else Behind (pause)
-                                  // with SyncState::load() typed accessor
-                                  // — type-system.md §9.3, consensus.md Type-Level Enforcement
+    sync_state: Arc<AtomicU8>,    // 2 = CaughtUp (mine); anything else = Behind (pause)
+                                  // legacy 0/1/4 fold into Behind (P2-7)
 }
 ```
 
