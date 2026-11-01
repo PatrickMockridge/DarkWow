@@ -23,7 +23,6 @@ bin/dww/src/rpc.rs : docs-review-2026-10-10/F-327 and contract-metadata.md both 
 src/linear/src/block_acceptor.rs : docs-review-2026-10-10/F-616 and heavyweight-spec.md cite the path that does not exist; the acceptor lives at bin/dwowd/src/block_acceptor.rs
 src/linear/src/sync_handler.rs : sync-red-team-audit.md is a point-in-time red-team record; the handler moved during the remediation the document describes
 bin/xmr_relayer/src/withdrawal.rs : monero.md explicitly says there is no such component to name; the citation records the correction
-contrib/localnet/dwowd-single-node/dwowd.toml : localnet-dev.md:20 records that this path and contrib/localnet/ do not exist (F-601); the runnable config is bin/dwowd/dwowd_config.toml
 proofs/lean/src/DarkWow/Field.lean : opcodes.md records that the path does not exist — the project is proofs/lean/src/DarkFi/
 
 # --- rows that record a deliberate removal: the deleted path is the row's evidence ---
