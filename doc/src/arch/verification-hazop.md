@@ -24,12 +24,13 @@ resolving control or `plan:<text>`; `—` is forbidden. A row is capped at 600 c
 not resolve, whose script control has no `--self-test`, or whose control is the locus itself; refuses
 a closure commit that changes only docs, reports, `scripts/`, `hooks/` or `contrib/ci/`; refuses an
 ID that disappears without a tombstone; refuses an ID live in the tracker and in `decisions.md` or
-`residual-risk.md`; refuses an unknown status; requires every `OPEN` row to be in a live fix cycle;
-and verifies the approval's `scope_sha256` over the acceptance boundary and its
-`appendix_baseline_sha256` over the frozen historical tombstones. `CLOSED` still means impossible in
-current code with a failing-before control (the nine conditions in `hazop-rules.md`).
+`residual-risk.md`; refuses an unknown status; requires every undecided (`OPEN`/`BLOCKED`/`DEFERRED`)
+row to be in a live fix cycle; and verifies the approval's `scope_sha256` over the acceptance
+boundary and its `appendix_baseline_sha256` over the frozen historical tombstones. `CLOSED` still
+means impossible in current code with a failing-before control (the nine conditions in
+`hazop-rules.md`).
 
-**Counts.** 47 decisions and interpretations live in [`decisions.md`](decisions.md); the gate checks
+**Counts.** 48 decisions and interpretations live in [`decisions.md`](decisions.md); the gate checks
 this number.
 
 ## The Lean assumption inventory, and the check that keeps it honest
@@ -65,12 +66,14 @@ and in the accounts in [`type-system.md`](type-system.md) and
 
 ## Fix cycles
 
-Every `OPEN` row is in exactly one cycle. A cycle is a commitment by its owner to end every listed
-row as `CLOSED` (code + failing-before control) or `RESIDUAL` (signed ALARP record) by its bound. A
-lapsed bound fails the register gate; it is not re-dated silently.
+Every undecided row (`OPEN`, `BLOCKED`, `DEFERRED`) is in exactly one cycle. A cycle is a commitment
+by its owner to end every listed row as `CLOSED` (code + failing-before control) or `RESIDUAL`
+(signed ALARP record) by its bound. A lapsed bound fails the register gate; it is not re-dated
+silently.
 
 | Cycle | Owner | Bound | Rows |
 |---|---|---|---|
+| pow-hash-determinism | project lead | by:2026-12-31 | OBL-C279 |
 
 | ID | Status | Defect | Locus | Control | Risk |
 |---|---|---|---|---|---|
@@ -114,7 +117,7 @@ lapsed bound fails the register gate; it is not re-dated silently.
 
 ## Non-defects
 
-47 decisions, accepted risks and spec interpretations are in
+48 decisions, accepted risks and spec interpretations are in
 [`decisions.md`](decisions.md). They are not rows here and cannot green a defect.
 
 ## Settled ids (citation appendix)
@@ -421,3 +424,4 @@ a new row may not use one, and the set is hashed by the approval manifest
 | OBL-C262 | residual (R-01, see residual-risk.md) |
 | OBL-T22 | residual (R-03, see residual-risk.md) |
 | OBL-T24 | residual (R-04, see residual-risk.md) |
+| OBL-C280 | decision (see decisions.md) |

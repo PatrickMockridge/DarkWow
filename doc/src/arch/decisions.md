@@ -54,4 +54,5 @@ land; nothing here can be cited to green a defect. The full analysis of each ent
 | OBL-Z5 | decision | The deliberately free witnesses are enumerated and each carries its host-side obligation |
 | OBL-Z6 | decision | The Orchard-tree hash is **Sinsemilla**: 10-bit altitude ‖ two 255-bit halves under `"z.cash:Orchard-MerkleCRH"`, depth 32, empty leaf **2** |
 | OBL-Z8 | accepted | ZK binaries are well-formed |
+| OBL-C280 | decision | Launch materials claim only the mechanized verification subset and the audit status of the launch commit. No whole-system "formally verified" or "audited" claim is made without a current report. Recorded from the retired launch register's `LR-D3` (added 2026-11-02); see [Launch Risk Register](launch-risk-register.md). |
 

@@ -143,8 +143,9 @@ def parse_register(text, register_rel=REGISTER_REL):
 def parse_cycles(text, register_rel=REGISTER_REL):
     """Return (cycles, errors) from the `## Fix cycles` table.
 
-    A cycle names an owner, a bound (`by:YYYY-MM-DD`) and the OPEN rows it covers. Every OPEN row
-    is in exactly one cycle; a listed row that is not OPEN is a stale entry.
+    A cycle names an owner, a bound (`by:YYYY-MM-DD`) and the undecided rows it covers. Every
+    undecided row (OPEN, BLOCKED, DEFERRED) is in exactly one cycle; a listed row that is not
+    undecided is a stale entry.
     """
     cycles, errors = [], []
     in_section = False
@@ -175,7 +176,7 @@ def parse_cycles(text, register_rel=REGISTER_REL):
 
 
 def check_cycles(rows, cycles, register_rel=REGISTER_REL):
-    """Every OPEN row in exactly one cycle; no stale or lapsed entry."""
+    """Every undecided row in exactly one cycle; no stale or lapsed entry."""
     from datetime import date
 
     errors = []
@@ -192,21 +193,23 @@ def check_cycles(rows, cycles, register_rel=REGISTER_REL):
                 errors.append(
                     f"{register_rel}: cycle '{c['cycle']}' lists {oid}, which is not a live row"
                 )
-            elif rows[oid]["status"] != "OPEN":
+            elif rows[oid]["status"] not in BLOCKING:
                 errors.append(
                     f"{register_rel}: cycle '{c['cycle']}' lists {oid}, which is "
-                    f"{rows[oid]['status']}, not OPEN"
+                    f"{rows[oid]['status']}, not OPEN/BLOCKED/DEFERRED"
                 )
             else:
                 covered[oid] = covered.get(oid, 0) + 1
     for oid, row in rows.items():
-        if row["status"] == "OPEN":
+        if row["status"] in BLOCKING:
             n = covered.get(oid, 0)
             if n == 0:
-                errors.append(f"{register_rel}: {oid} OPEN row is in no fix cycle")
+                errors.append(
+                    f"{register_rel}: {oid} {row['status']} row is in no fix cycle"
+                )
             elif n > 1:
                 errors.append(
-                    f"{register_rel}: {oid} OPEN row is in {n} fix cycles"
+                    f"{register_rel}: {oid} {row['status']} row is in {n} fix cycles"
                 )
     return errors
 
