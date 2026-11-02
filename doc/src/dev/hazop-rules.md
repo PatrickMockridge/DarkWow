@@ -168,8 +168,9 @@ appendix; it stays unresolved, and the health report counts it.
    a `CLOSED` row whose control does not resolve, whose script control has no `--self-test`, or
    whose control is the locus itself, refuses an ID that disappears without a tombstone and an ID
    live in the tracker and in `decisions.md`/`residual-risk.md`, refuses an unknown status, requires
-   every `OPEN` row to be in a live fix cycle, and verifies the approval's `scope_sha256` over the
-   acceptance boundary and its `appendix_baseline_sha256` over the frozen historical tombstones;
+   every undecided (`OPEN`/`BLOCKED`/`DEFERRED`) row to be in a live fix cycle, and verifies the
+   approval's `scope_sha256` over the acceptance boundary and its `appendix_baseline_sha256` over
+   the frozen historical tombstones;
    `hooks/pre-commit` blocks the same cases. A closure the gate refuses is not a closure.
    A **process row** — one whose locus is under `scripts/`, `hooks/` or `script/` — is closed by
    the change to its control script: that script is the row's production artifact, and the gate
@@ -208,9 +209,10 @@ There is no third exit. `plan:` is an annotation on an undecided row, never a di
 `restated`, `accepted` and `dissolved` are frozen pre-migration history, not a vocabulary a new row
 may use; the approval manifest hashes that set.
 
-Every `OPEN` row is in exactly one dated cycle in the tracker; a lapsed bound fails the gate. The
-approval hashes the **acceptance boundary** (the residual register and the policy) and the frozen
-appendix, not the live tracker: a closure is earned by evidence, an acceptance is signed by the lead.
+Every undecided row (`OPEN`, `BLOCKED`, `DEFERRED`) is in exactly one dated cycle in the tracker; a
+lapsed bound fails the gate. The approval hashes the **acceptance boundary** (the residual register
+and the policy) and the frozen appendix, not the live tracker: a closure is earned by evidence, an
+acceptance is signed by the lead.
 Hashing the live tracker made every legitimate closure a re-approval, the treadmill that let the
 process drift back to "open but verified".
 

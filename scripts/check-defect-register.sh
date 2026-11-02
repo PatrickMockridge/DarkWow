@@ -9,9 +9,9 @@
 #      schema error, never silently dropped. The band is computed from risk-management.md:
 #      Intolerable >= 15, Tolerable 6-14, Broadly <= 5, with C and H never Broadly. An OPEN row
 #      carries a resolving control or `plan:<text>`; `—` fails.
-#   2. Fix cycles: every OPEN row is in exactly one cycle in the tracker's `## Fix cycles` table;
-#      a cycle has an owner and a `by:YYYY-MM-DD` bound that has not lapsed; a cycle that lists a
-#      non-OPEN or unknown row is stale.
+#   2. Fix cycles: every undecided row (OPEN/BLOCKED/DEFERRED) is in exactly one cycle in the
+#      tracker's `## Fix cycles` table; a cycle has an owner and a `by:YYYY-MM-DD` bound that has
+#      not lapsed; a cycle that lists a decided or unknown row is stale.
 #   3. Locus resolves: the file exists and, when `path:identifier` is written, the identifier
 #      (the last segment of `A::b`) appears in the file.
 #   4. CLOSED rows: the control resolves, a script control has a `--self-test`, the control is not
@@ -503,8 +503,21 @@ def self_test():
         expect("OPEN row without a fix cycle refused",
                any("in no fix cycle" in e for e in
                    check(head + open_row + tomb, base, ["src/foo.rs"], tmp)[0]))
-        expect("cycle listing a non-OPEN row refused",
-               any("not OPEN" in e for e in
+        deferred_row = ("| OBL-C1 | DEFERRED | a defect | `src/foo.rs:foo` | "
+                        "`deferred:next-release — plan: t` | M/P |\n")
+        blocked_row = ("| OBL-C1 | BLOCKED | a defect | `src/foo.rs:foo` | "
+                       "`blocked: upstream` | M/P |\n")
+        expect("DEFERRED row without a fix cycle refused",
+               any("in no fix cycle" in e for e in
+                   check(head + deferred_row + tomb, base, ["src/foo.rs"], tmp)[0]))
+        expect("DEFERRED row in a fix cycle accepted",
+               not check(head + deferred_row + tomb + cycle_open, base,
+                         ["src/foo.rs"], tmp)[0])
+        expect("BLOCKED row without a fix cycle refused",
+               any("in no fix cycle" in e for e in
+                   check(head + blocked_row + tomb, base, ["src/foo.rs"], tmp)[0]))
+        expect("cycle listing a decided row refused",
+               any("not OPEN/BLOCKED/DEFERRED" in e for e in
                    check(ok + cycle_open, base, ["src/foo.rs"], tmp)[0]))
         lapsed = (head + open_row + tomb
                   + "\n## Fix cycles\n\n| Cycle | Owner | Bound | Rows |\n|---|---|---|---|\n"
