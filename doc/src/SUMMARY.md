@@ -106,6 +106,11 @@
   - [Documentation Review — Findings Ledger](arch/audit/docs-review-2026-10-10.md) ← docs-vs-code campaign: 486 findings / 239 confirmed rows, remediated — all 270 ledger rows promoted as of 2026-10-12 at `b45b4d02d1`; `scripts/check-ledger-promotion.sh --check` proves it
   - [Consensus Core Map](arch/consensus-core-map.md) ← the consensus mechanisms with no Lean model, their Python specs, and the agreed shape of each
 
+## Policies
+  - [Security Disclosure Policy](arch/disclosure-policy.md) ← private reporting, response targets, coordinated disclosure
+  - [Incident Runbook](arch/incident-runbook.md) ← first actions, evidence, per-class playbooks, recovery
+  - [Compatibility Policy](arch/compatibility-policy.md) ← what a release may change, by domain
+
 # Contracts
 
 - [Contract Catalog](contracts.md) ← Canonical catalog (all 32)
